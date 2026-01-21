@@ -1,0 +1,12 @@
+name = "url-shortener"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "url-shortener"
+database_id = "b47f73ea-a441-4f8f-986b-5080a7d2a1c9"
+
+[routes]
+pattern = "links.jbcloud.app/*"
+custom_domain = true
