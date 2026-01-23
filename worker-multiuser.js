@@ -1607,17 +1607,11 @@ function getAdminHTML(userEmail) {
     });
 
     // Setup event listeners
-    document.getElementById('logoutBtn').addEventListener('click', function() {
-      window.location.href = '/cdn-cgi/access/logout';
-    });
-
+    document.getElementById('logoutBtn').addEventListener('click', logout);
     document.getElementById('importBtn').addEventListener('click', function() {
       document.getElementById('importFile').click();
     });
-
-    document.getElementById('importFile').addEventListener('change', function(e) {
-      importLinks(e);
-    });
+    document.getElementById('importFile').addEventListener('change', importLinks);
 
     // Init
     init();
