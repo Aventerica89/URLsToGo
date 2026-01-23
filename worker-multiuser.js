@@ -782,6 +782,39 @@ function getAdminHTML(userEmail) {
     .pagination-btn.active { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); border-color: hsl(var(--primary)); }
     .pagination-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+    /* Modal */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgb(0 0 0 / 0.8);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 100;
+      opacity: 0; visibility: hidden;
+      transition: opacity 150ms, visibility 150ms;
+    }
+    .modal-overlay.open { opacity: 1; visibility: visible; }
+    .modal {
+      width: 100%; max-width: 500px;
+      background: hsl(var(--card));
+      border: 1px solid hsl(var(--border));
+      border-radius: var(--radius);
+      box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+      transform: scale(0.95);
+      transition: transform 150ms;
+    }
+    .modal-overlay.open .modal { transform: scale(1); }
+    .modal-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 24px;
+      border-bottom: 1px solid hsl(var(--border));
+    }
+    .modal-title { font-size: 16px; font-weight: 600; }
+    .modal-body { padding: 24px; }
+    .modal-footer {
+      display: flex; justify-content: flex-end; gap: 8px;
+      padding: 16px 24px;
+      border-top: 1px solid hsl(var(--border));
+    }
+
     /* Toast */
     .toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 100; display: flex; flex-direction: column; gap: 8px; }
     .toast {
@@ -1033,6 +1066,45 @@ function getAdminHTML(userEmail) {
 
   <div class="toast-container" id="toastContainer"></div>
 
+  <!-- Edit Modal -->
+  <div class="modal-overlay" id="editModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 class="modal-title">Edit Link</h3>
+        <button class="btn btn-ghost btn-icon sm" onclick="closeEditModal()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="editCode">
+        <div class="form-group" style="margin-bottom: 16px;">
+          <label class="label">Short Code</label>
+          <input type="text" class="input" id="editCodeDisplay" disabled style="opacity: 0.6;">
+        </div>
+        <div class="form-group" style="margin-bottom: 16px;">
+          <label class="label">Destination URL</label>
+          <input type="url" class="input" id="editDestination" placeholder="https://example.com">
+        </div>
+        <div class="form-group" style="margin-bottom: 16px;">
+          <label class="label">Category</label>
+          <select class="select" id="editCategory">
+            <option value="">No category</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="label">Tags</label>
+          <div class="tag-input" id="editTagInput">
+            <input type="text" placeholder="Add tag..." id="editTagInputField">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeEditModal()">Cancel</button>
+        <button class="btn btn-default" onclick="saveEdit()">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const baseUrl = window.location.origin;
     let allLinks = [];
@@ -1149,6 +1221,12 @@ function getAdminHTML(userEmail) {
             <td class="cell-date">\${date}</td>
             <td>
               <div class="cell-actions">
+                <button class="btn btn-ghost btn-icon sm" onclick='openEditModal(\${JSON.stringify(link).replace(/'/g, "&#39;")})' title="Edit">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                    <path d="m15 5 4 4"/>
+                  </svg>
+                </button>
                 <button class="btn btn-ghost btn-icon sm" onclick="deleteLink('\${link.code}')" title="Delete">
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M3 6h18"/>
@@ -1420,6 +1498,104 @@ function getAdminHTML(userEmail) {
     });
     document.getElementById('newDestination').addEventListener('keypress', e => {
       if (e.key === 'Enter') createLink();
+    });
+
+    // Edit Modal
+    let editTags = [];
+
+    function openEditModal(link) {
+      document.getElementById('editCode').value = link.code;
+      document.getElementById('editCodeDisplay').value = '/' + link.code;
+      document.getElementById('editDestination').value = link.destination;
+      document.getElementById('editCategory').value = link.category_id || '';
+
+      // Populate category dropdown
+      const catSelect = document.getElementById('editCategory');
+      catSelect.innerHTML = '<option value="">No category</option>' + allCategories.map(cat =>
+        \`<option value="\${cat.id}" \${cat.id === link.category_id ? 'selected' : ''}>\${cat.name}</option>\`
+      ).join('');
+
+      // Set tags
+      editTags = link.tags ? [...link.tags] : [];
+      renderEditTags();
+
+      document.getElementById('editModal').classList.add('open');
+    }
+
+    function closeEditModal() {
+      document.getElementById('editModal').classList.remove('open');
+      editTags = [];
+    }
+
+    async function saveEdit() {
+      const code = document.getElementById('editCode').value;
+      const destination = document.getElementById('editDestination').value.trim();
+      const category_id = document.getElementById('editCategory').value || null;
+
+      if (!destination) {
+        showToast('Missing destination', 'Please enter a destination URL', 'error');
+        return;
+      }
+
+      const res = await fetch('/api/links/' + code, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ destination, category_id, tags: editTags })
+      });
+
+      if (res.ok) {
+        closeEditModal();
+        showToast('Link updated', 'Your changes have been saved');
+        await Promise.all([loadLinks(), loadStats(), loadCategories(), loadTags()]);
+      } else {
+        const data = await res.json();
+        showToast('Error', data.error || 'Failed to update link', 'error');
+      }
+    }
+
+    function renderEditTags() {
+      const container = document.getElementById('editTagInput');
+      const input = document.getElementById('editTagInputField');
+      container.innerHTML = '';
+      editTags.forEach((tag, i) => {
+        const el = document.createElement('span');
+        el.className = 'tag';
+        el.innerHTML = tag + '<span class="tag-close" onclick="removeEditTag(' + i + ')"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span>';
+        container.appendChild(el);
+      });
+      container.appendChild(input);
+    }
+
+    function removeEditTag(index) {
+      editTags.splice(index, 1);
+      renderEditTags();
+    }
+
+    // Edit tag input handling
+    document.getElementById('editTagInputField').addEventListener('keydown', (e) => {
+      const input = e.target;
+      if (e.key === 'Enter' || e.key === ',') {
+        e.preventDefault();
+        const tag = input.value.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
+        if (tag && !editTags.includes(tag)) {
+          editTags.push(tag);
+          renderEditTags();
+        }
+        input.value = '';
+      } else if (e.key === 'Backspace' && !input.value && editTags.length) {
+        editTags.pop();
+        renderEditTags();
+      }
+    });
+
+    // Close modal on escape or backdrop click
+    document.getElementById('editModal').addEventListener('click', (e) => {
+      if (e.target.id === 'editModal') closeEditModal();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && document.getElementById('editModal').classList.contains('open')) {
+        closeEditModal();
+      }
     });
 
     // Init
