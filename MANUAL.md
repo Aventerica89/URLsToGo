@@ -206,7 +206,7 @@ To add additional users after initial setup:
 1. Go to [Cloudflare Zero Trust](https://one.dash.cloudflare.com) → **Access** → **Applications**
 2. Click on your application (**URL Shortener Admin**)
 3. Go to the **Policies** tab
-4. Click on your policy (**Allow Users**)
+4. Click **Edit** on your policy (**Allow Users**)
 5. Under **Configure rules**, find the **Emails** selector
 6. Add the new email address (comma-separated if multiple)
    - Example: `user1@gmail.com, admin@jbmdcreations.com`
@@ -216,7 +216,7 @@ The new user can now log in immediately - no app restart or deployment needed.
 
 **Tip:** For easier management with many users, consider using:
 - **Emails ending in** - allows entire domain (e.g., `@yourcompany.com`)
-- **Access Groups** - create reusable groups in Zero Trust → Access → Access Groups
+- **Access Groups** - create reusable groups in Zero Trust → Access → Access Groups, then update your policy to use the **Access Groups** selector instead of individual emails
 
 ### 4.5 Test Authentication
 
