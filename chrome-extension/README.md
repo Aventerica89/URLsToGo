@@ -117,7 +117,7 @@ chrome-extension/
 - This extension only runs on `claude.ai`
 - It only communicates with your configured Artifact Manager URL
 - No data is sent to any third parties
-- All settings are stored locally in Chrome
+- Settings are stored in Chrome sync storage (syncs across your devices when signed in)
 
 ## License
 

@@ -235,8 +235,6 @@
       '[class*="CodeBlock"]'
     ];
 
-    const processedArtifacts = new Set();
-
     for (const selector of artifactSelectors) {
       try {
         const artifacts = document.querySelectorAll(selector);

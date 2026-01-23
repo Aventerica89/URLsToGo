@@ -13,13 +13,14 @@ const CORS_HEADERS = {
 
 // Helper to add CORS headers to a response
 function corsResponse(response) {
-  const newHeaders = new Headers(response.headers);
+  const cloned = response.clone();
+  const newHeaders = new Headers(cloned.headers);
   for (const [key, value] of Object.entries(CORS_HEADERS)) {
     newHeaders.set(key, value);
   }
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
+  return new Response(cloned.body, {
+    status: cloned.status,
+    statusText: cloned.statusText,
     headers: newHeaders
   });
 }

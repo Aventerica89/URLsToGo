@@ -4,12 +4,11 @@
   "version": "1.0.0",
   "description": "Save Claude.ai artifacts to your Artifact Manager with one click",
   "permissions": [
-    "storage",
-    "activeTab"
+    "storage"
   ],
   "host_permissions": [
     "https://claude.ai/*",
-    "https://*.workers.dev/*"
+    "https://artifact-manager.jbmd-creations.workers.dev/*"
   ],
   "action": {
     "default_popup": "popup.html",
