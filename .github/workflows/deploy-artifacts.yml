@@ -1,0 +1,35 @@
+name: Deploy Artifact Manager
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'artifacts-app/**'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy Artifact Manager
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run D1 Migrations
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '3.90.0'
+          workingDirectory: 'artifacts-app'
+          command: d1 execute artifact-manager --remote --file=migrations.sql
+        continue-on-error: true
+
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '3.90.0'
+          workingDirectory: 'artifacts-app'
+          command: deploy
