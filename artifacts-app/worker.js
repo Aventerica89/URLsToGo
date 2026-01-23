@@ -500,9 +500,21 @@ async function getUserEmail(request) {
   }
 }
 
+// Server-side HTML escaping
+function escapeHtmlServer(text) {
+  if (!text) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // ============ APP HTML ============
 
 function getAppHtml(userEmail) {
+  const safeEmail = escapeHtmlServer(userEmail);
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1362,7 +1374,7 @@ function getAppHtml(userEmail) {
     </nav>
 
     <div class="sidebar-footer">
-      <div>${userEmail}</div>
+      <div>${safeEmail}</div>
     </div>
   </aside>
 
@@ -1655,9 +1667,9 @@ function getAppHtml(userEmail) {
     function renderCollectionsNav() {
       const nav = document.getElementById('collections-nav');
       nav.innerHTML = allCollections.map(c => \`
-        <div class="nav-item" data-filter="collection" data-value="\${c.slug}" onclick="setFilter('collection', '\${c.slug}')">
-          <div class="collection-dot" style="background: \${c.color}"></div>
-          \${c.name}
+        <div class="nav-item" data-filter="collection" data-value="\${escapeAttr(c.slug)}" onclick="setFilter('collection', '\${escapeAttr(c.slug)}')">
+          <div class="collection-dot" style="background: \${escapeAttr(c.color)}"></div>
+          \${escapeHtml(c.name)}
           <span class="nav-item-count">\${c.artifact_count || 0}</span>
         </div>
       \`).join('') + \`
@@ -1674,7 +1686,7 @@ function getAppHtml(userEmail) {
     function renderCollectionsSelect() {
       const select = document.getElementById('artifact-collection');
       select.innerHTML = '<option value="">No Collection</option>' +
-        allCollections.map(c => \`<option value="\${c.id}">\${c.name}</option>\`).join('');
+        allCollections.map(c => \`<option value="\${escapeAttr(c.id)}">\${escapeHtml(c.name)}</option>\`).join('');
     }
 
     async function loadTags() {
@@ -1686,12 +1698,12 @@ function getAppHtml(userEmail) {
       const nav = document.getElementById('tags-nav');
       const topTags = allTags.slice(0, 8);
       nav.innerHTML = topTags.map(t => \`
-        <div class="nav-item" data-filter="tag" data-value="\${t.name}" onclick="setFilter('tag', '\${t.name}')">
+        <div class="nav-item" data-filter="tag" data-value="\${escapeAttr(t.name)}" onclick="setFilter('tag', '\${escapeAttr(t.name)}')">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
             <line x1="7" y1="7" x2="7.01" y2="7"/>
           </svg>
-          \${t.name}
+          \${escapeHtml(t.name)}
           <span class="nav-item-count">\${t.usage_count || 0}</span>
         </div>
       \`).join('');
@@ -1866,7 +1878,7 @@ function getAppHtml(userEmail) {
 
       container.innerHTML = \`
         <div class="filter-pill">
-          \${currentFilter.type}: \${currentFilter.value || currentFilter.type}
+          \${escapeHtml(currentFilter.type)}: \${escapeHtml(currentFilter.value || currentFilter.type)}
           <button onclick="setFilter('all')">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="18" y1="6" x2="6" y2="18"/>
@@ -1896,6 +1908,17 @@ function getAppHtml(userEmail) {
       return div.innerHTML;
     }
 
+    // Escape for use in JavaScript string literals (onclick handlers, etc.)
+    function escapeAttr(text) {
+      if (!text) return '';
+      return String(text)
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+
     // Tags Input
     function setupTagsInput() {
       const input = document.getElementById('tags-input');
@@ -1921,7 +1944,7 @@ function getAppHtml(userEmail) {
       container.innerHTML = currentTags.map(tag => \`
         <span class="tag-badge">
           \${escapeHtml(tag)}
-          <button type="button" onclick="removeTag('\${tag}')">
+          <button type="button" onclick="removeTag('\${escapeAttr(tag)}')">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="18" y1="6" x2="6" y2="18"/>
               <line x1="6" y1="6" x2="18" y2="18"/>
@@ -2098,7 +2121,7 @@ function getAppHtml(userEmail) {
             ? '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>'
             : '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>'}
         </svg>
-        <span>\${message}</span>
+        <span>\${escapeHtml(message)}</span>
       \`;
       container.appendChild(toast);
       setTimeout(() => toast.remove(), 5000);
