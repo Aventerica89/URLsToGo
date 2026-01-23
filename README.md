@@ -113,4 +113,4 @@ Prefer to set things up yourself? See **[MANUAL.md](MANUAL.md)** for:
 
 ## License
 
-MIT - Use it however you want.
+GPL-3.0 - See [LICENSE](LICENSE) for details.
