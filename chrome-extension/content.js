@@ -39,10 +39,33 @@
       description: '',
       artifact_type: 'code',
       source_type: 'downloaded',
+      published_url: '',
       file_content: '',
       language: '',
       conversation_url: window.location.href
     };
+
+    // Check if current URL contains artifact info
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('artifactId')) {
+      data.artifact_id = url.searchParams.get('artifactId');
+    }
+
+    // Look for published claude.site URL in the page
+    // Check links in the panel for claude.site URLs
+    const links = document.querySelectorAll('a[href*="claude.site"]');
+    if (links.length > 0) {
+      data.published_url = links[0].href;
+      data.source_type = 'published';
+    }
+
+    // Also check if there's a share/publish URL visible
+    const allText = document.body.innerText;
+    const claudeSiteMatch = allText.match(/https:\/\/claude\.site\/artifacts\/[a-zA-Z0-9-]+/);
+    if (claudeSiteMatch) {
+      data.published_url = claudeSiteMatch[0];
+      data.source_type = 'published';
+    }
 
     // Find the artifact title - look for text content in the header area
     // The title appears as text like "Smith event options" with type "HTML" nearby
@@ -51,7 +74,7 @@
       const text = el.textContent.trim();
       // Skip very short or very long text, and skip known labels
       if (text.length > 2 && text.length < 100 &&
-          !['Copy', 'HTML', 'Code', 'Preview', 'Download'].includes(text) &&
+          !['Copy', 'HTML', 'Code', 'Preview', 'Download', 'Save'].includes(text) &&
           !el.querySelector('*')) { // Only leaf text nodes
         data.name = text;
         break;
@@ -63,22 +86,32 @@
     if (panelText.includes('html')) {
       data.artifact_type = 'html';
       data.language = 'HTML';
-    } else if (panelText.includes('react') || panelText.includes('jsx')) {
+    } else if (panelText.includes('react') || panelText.includes('jsx') || panelText.includes('tsx')) {
       data.artifact_type = 'code';
       data.language = 'React';
-    } else if (panelText.includes('python')) {
+    } else if (panelText.includes('python') || panelText.includes('.py')) {
       data.artifact_type = 'code';
       data.language = 'Python';
-    } else if (panelText.includes('javascript') || panelText.includes('typescript')) {
+    } else if (panelText.includes('javascript') || panelText.includes('typescript') || panelText.includes('.js') || panelText.includes('.ts')) {
       data.artifact_type = 'code';
       data.language = 'JavaScript';
+    } else if (panelText.includes('svg')) {
+      data.artifact_type = 'image';
+      data.language = 'SVG';
+    } else if (panelText.includes('css')) {
+      data.artifact_type = 'code';
+      data.language = 'CSS';
+    } else if (panelText.includes('markdown') || panelText.includes('.md')) {
+      data.artifact_type = 'document';
+      data.language = 'Markdown';
     }
 
     // Try to get content by clicking Copy button and reading clipboard
-    // This is async and may not always work
-    const copyBtn = panel.querySelector('button[aria-label*="Copy"], button:has(svg)');
+    // Look for the Copy button more specifically
+    const copyBtn = panel.querySelector('button[aria-label*="Copy"]') ||
+                    Array.from(panel.querySelectorAll('button')).find(b => b.textContent.includes('Copy'));
     if (copyBtn) {
-      data._copyButton = copyBtn; // Store reference for later
+      data._copyButton = copyBtn;
     }
 
     return data;

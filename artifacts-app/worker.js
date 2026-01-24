@@ -1142,6 +1142,20 @@ function getAppHtml(userEmail) {
       color: var(--muted-foreground);
     }
 
+    .artifact-card-actions {
+      padding: 0.75rem 1rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .artifact-card-actions .btn {
+      flex: 1;
+      min-width: fit-content;
+      justify-content: center;
+    }
+
     .artifact-card-footer {
       padding: 0.75rem 1rem;
       border-top: 1px solid var(--border);
@@ -1692,6 +1706,56 @@ function getAppHtml(userEmail) {
     </div>
   </div>
 
+  <!-- Content Viewer Modal -->
+  <div class="modal-overlay" id="content-modal">
+    <div class="modal" style="max-width: 900px; max-height: 90vh;">
+      <div class="modal-header">
+        <h3 id="content-modal-title">View Artifact</h3>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+          <button class="btn btn-secondary btn-sm" onclick="copyContent()" title="Copy to clipboard">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+            Copy
+          </button>
+          <button class="btn btn-ghost btn-icon" onclick="closeContentModal()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="modal-body" style="padding: 0; overflow: hidden;">
+        <div id="content-viewer-info" style="padding: 1rem; background: var(--secondary); border-bottom: 1px solid var(--border);">
+          <div style="display: flex; gap: 1rem; flex-wrap: wrap; font-size: 0.875rem;">
+            <span id="content-viewer-type"></span>
+            <span id="content-viewer-language"></span>
+            <a id="content-viewer-claude" href="#" target="_blank" style="color: var(--indigo); text-decoration: none;">Open in Claude</a>
+            <a id="content-viewer-published" href="#" target="_blank" style="color: var(--emerald); text-decoration: none;">View Published</a>
+          </div>
+        </div>
+        <div id="content-viewer-preview" style="display: none; height: 400px; border-bottom: 1px solid var(--border);">
+          <iframe id="content-preview-iframe" sandbox="allow-scripts" style="width: 100%; height: 100%; border: none; background: white;"></iframe>
+        </div>
+        <pre id="content-viewer-code" style="margin: 0; padding: 1rem; overflow: auto; max-height: 500px; background: var(--background); font-size: 0.8125rem; line-height: 1.5;"><code id="content-viewer-text"></code></pre>
+      </div>
+      <div class="modal-footer">
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="btn btn-secondary" id="toggle-preview-btn" onclick="togglePreview()" style="display: none;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+            Toggle Preview
+          </button>
+        </div>
+        <button class="btn btn-primary" onclick="closeContentModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Container -->
   <div class="toast-container" id="toast-container"></div>
 
@@ -1784,7 +1848,7 @@ function getAppHtml(userEmail) {
       const nav = document.getElementById('collections-nav');
       nav.innerHTML = allCollections.map(c => \`
         <div class="nav-item" data-filter="collection" data-value="\${escapeAttr(c.slug)}" onclick="setFilter('collection', '\${escapeAttr(c.slug)}')">
-          <div class="collection-dot" style="background: \${escapeAttr(c.color)}"></div>
+          <div class="collection-dot" style="background: \${safeColor(c.color)}"></div>
           \${escapeHtml(c.name)}
           <span class="nav-item-count">\${c.artifact_count || 0}</span>
         </div>
@@ -1880,7 +1944,7 @@ function getAppHtml(userEmail) {
               <div class="artifact-name">\${escapeHtml(a.name)}</div>
               <div class="artifact-meta">
                 <span class="source-badge \${a.source_type}">\${a.source_type}</span>
-                \${a.language ? \`<span>\${a.language}</span>\` : ''}
+                \${a.language ? \`<span>\${escapeHtml(a.language)}</span>\` : ''}
               </div>
             </div>
             <div class="artifact-actions">
@@ -1899,25 +1963,45 @@ function getAppHtml(userEmail) {
               </div>
             \` : ''}
           </div>
+          <div class="artifact-card-actions">
+            \${a.conversation_url ? \`
+              <a href="\${escapeAttr(a.conversation_url)}" target="_blank" class="btn btn-secondary btn-sm" title="Open conversation in Claude">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                </svg>
+                Claude
+              </a>
+            \` : ''}
+            \${a.published_url ? \`
+              <a href="\${escapeAttr(a.published_url)}" target="_blank" class="btn btn-secondary btn-sm" title="View published artifact">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="2" y1="12" x2="22" y2="12"/>
+                  <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                </svg>
+                Published
+              </a>
+            \` : ''}
+            \${a.file_content ? \`
+              <button class="btn btn-primary btn-sm" onclick="viewContent(\${a.id})" title="View artifact content">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+                View
+              </button>
+            \` : ''}
+          </div>
           <div class="artifact-card-footer">
             <div>
               \${a.collection_name ? \`
                 <span class="collection-badge">
-                  <span class="collection-dot" style="background: \${a.collection_color}; width: 6px; height: 6px;"></span>
+                  <span class="collection-dot" style="background: \${safeColor(a.collection_color)}; width: 6px; height: 6px;"></span>
                   \${escapeHtml(a.collection_name)}
                 </span>
               \` : '<span style="color: var(--muted-foreground)">No collection</span>'}
             </div>
             <div style="display: flex; gap: 0.5rem;">
-              \${a.published_url ? \`
-                <a href="\${a.published_url}" target="_blank" class="btn btn-ghost btn-sm">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-                    <polyline points="15 3 21 3 21 9"/>
-                    <line x1="10" y1="14" x2="21" y2="3"/>
-                  </svg>
-                </a>
-              \` : ''}
               <button class="btn btn-ghost btn-sm" onclick="openEditModal(\${a.id})">Edit</button>
               <button class="btn btn-ghost btn-sm" onclick="deleteArtifact(\${a.id})" style="color: var(--rose);">Delete</button>
             </div>
@@ -2033,6 +2117,14 @@ function getAppHtml(userEmail) {
         .replace(/"/g, '&quot;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
+    }
+
+    // Validate and sanitize color values (prevents CSS injection)
+    function safeColor(color) {
+      if (!color) return '#6366f1';
+      // Only allow valid hex colors
+      const hexPattern = /^#([0-9a-fA-F]{3}){1,2}$/;
+      return hexPattern.test(color) ? color : '#6366f1';
     }
 
     // Tags Input
@@ -2177,6 +2269,110 @@ function getAppHtml(userEmail) {
     function closeCollectionModal() {
       document.getElementById('collection-modal').classList.remove('active');
       document.getElementById('collection-name').value = '';
+    }
+
+    // Content Viewer Modal
+    let currentViewingArtifact = null;
+    let showingPreview = false;
+
+    async function viewContent(id) {
+      try {
+        const response = await fetch(\`/api/artifacts/\${id}\`);
+        if (!response.ok) {
+          throw new Error(\`Failed to load artifact (HTTP \${response.status})\`);
+        }
+        const artifact = await response.json();
+        if (artifact.error) {
+          throw new Error(artifact.error);
+        }
+        currentViewingArtifact = artifact;
+        showingPreview = false;
+
+        // Set title
+        document.getElementById('content-modal-title').textContent = artifact.name || 'View Artifact';
+
+      // Set info
+      document.getElementById('content-viewer-type').textContent = \`Type: \${artifact.artifact_type || 'unknown'}\`;
+      document.getElementById('content-viewer-language').textContent = artifact.language ? \`Language: \${artifact.language}\` : '';
+
+      // Set links
+      const claudeLink = document.getElementById('content-viewer-claude');
+      const publishedLink = document.getElementById('content-viewer-published');
+
+      if (artifact.conversation_url) {
+        claudeLink.href = artifact.conversation_url;
+        claudeLink.style.display = 'inline';
+      } else {
+        claudeLink.style.display = 'none';
+      }
+
+      if (artifact.published_url) {
+        publishedLink.href = artifact.published_url;
+        publishedLink.style.display = 'inline';
+      } else {
+        publishedLink.style.display = 'none';
+      }
+
+      // Set content
+      const content = artifact.file_content || 'No content available';
+      document.getElementById('content-viewer-text').textContent = content;
+
+      // Show/hide preview toggle for HTML
+      const previewBtn = document.getElementById('toggle-preview-btn');
+      const previewContainer = document.getElementById('content-viewer-preview');
+      const codeContainer = document.getElementById('content-viewer-code');
+
+      if (artifact.artifact_type === 'html' || (content.includes('<html') || content.includes('<!DOCTYPE'))) {
+        previewBtn.style.display = 'inline-flex';
+      } else {
+        previewBtn.style.display = 'none';
+      }
+
+      previewContainer.style.display = 'none';
+      codeContainer.style.display = 'block';
+
+      document.getElementById('content-modal').classList.add('active');
+      } catch (error) {
+        console.error('Error loading artifact:', error);
+        showToast(error.message || 'Failed to load artifact content', 'error');
+      }
+    }
+
+    function closeContentModal() {
+      document.getElementById('content-modal').classList.remove('active');
+      currentViewingArtifact = null;
+      // Clear iframe
+      document.getElementById('content-preview-iframe').srcdoc = '';
+    }
+
+    function copyContent() {
+      const content = currentViewingArtifact?.file_content || '';
+      navigator.clipboard.writeText(content).then(() => {
+        showToast('Content copied to clipboard', 'success');
+      }).catch(() => {
+        showToast('Failed to copy content', 'error');
+      });
+    }
+
+    function togglePreview() {
+      if (!currentViewingArtifact) return;
+
+      const previewContainer = document.getElementById('content-viewer-preview');
+      const codeContainer = document.getElementById('content-viewer-code');
+      const iframe = document.getElementById('content-preview-iframe');
+
+      showingPreview = !showingPreview;
+
+      if (showingPreview) {
+        // Show preview
+        iframe.srcdoc = currentViewingArtifact.file_content || '';
+        previewContainer.style.display = 'block';
+        codeContainer.style.display = 'none';
+      } else {
+        // Show code
+        previewContainer.style.display = 'none';
+        codeContainer.style.display = 'block';
+      }
     }
 
     async function createCollection() {
