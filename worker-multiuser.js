@@ -37,9 +37,9 @@ export default {
           if (request.method === 'POST') {
             const formData = await request.formData();
             const password = formData.get('password') || '';
-            const passwordHash = await hashPassword(password);
+            const isValid = await verifyPassword(password, link.password_hash);
 
-            if (passwordHash !== link.password_hash) {
+            if (!isValid) {
               return new Response(getPasswordHTML(path, true), {
                 status: 401,
                 headers: { 'Content-Type': 'text/html' }
@@ -741,18 +741,31 @@ function parseBrowser(ua) {
 }
 
 // Rate limiting configuration
-const RATE_LIMITS = {
-  'api/links:POST': { limit: 30, windowSeconds: 60 },    // 30 creates per minute
-  'api/links:DELETE': { limit: 30, windowSeconds: 60 },  // 30 deletes per minute
-  'api/search': { limit: 60, windowSeconds: 60 },        // 60 searches per minute
-  'api/import': { limit: 5, windowSeconds: 60 },         // 5 imports per minute
-  'redirect': { limit: 300, windowSeconds: 60 },         // 300 redirects per minute per IP
-  'default': { limit: 100, windowSeconds: 60 }           // Default: 100 requests per minute
-};
+// These defaults can be overridden via environment variables in wrangler.toml:
+//   [vars]
+//   RATE_LIMIT_CREATE = "30"
+//   RATE_LIMIT_DELETE = "30"
+//   RATE_LIMIT_SEARCH = "60"
+//   RATE_LIMIT_IMPORT = "5"
+//   RATE_LIMIT_REDIRECT = "300"
+//   RATE_LIMIT_DEFAULT = "100"
+//   RATE_LIMIT_WINDOW = "60"
+function getRateLimits(env) {
+  const windowSeconds = parseInt(env?.RATE_LIMIT_WINDOW) || 60;
+  return {
+    'api/links:POST': { limit: parseInt(env?.RATE_LIMIT_CREATE) || 30, windowSeconds },
+    'api/links:DELETE': { limit: parseInt(env?.RATE_LIMIT_DELETE) || 30, windowSeconds },
+    'api/search': { limit: parseInt(env?.RATE_LIMIT_SEARCH) || 60, windowSeconds },
+    'api/import': { limit: parseInt(env?.RATE_LIMIT_IMPORT) || 5, windowSeconds },
+    'redirect': { limit: parseInt(env?.RATE_LIMIT_REDIRECT) || 300, windowSeconds },
+    'default': { limit: parseInt(env?.RATE_LIMIT_DEFAULT) || 100, windowSeconds }
+  };
+}
 
 // Check rate limit - returns { allowed: boolean, remaining: number, resetAt: Date }
 async function checkRateLimit(env, identifier, endpoint) {
-  const config = RATE_LIMITS[endpoint] || RATE_LIMITS['default'];
+  const rateLimits = getRateLimits(env);
+  const config = rateLimits[endpoint] || rateLimits['default'];
   const windowStart = new Date(Date.now() - config.windowSeconds * 1000).toISOString();
 
   // Clean up old entries (older than 5 minutes)
@@ -789,8 +802,9 @@ async function checkRateLimit(env, identifier, endpoint) {
 }
 
 // Get rate limit response headers
-function getRateLimitHeaders(result, endpoint) {
-  const config = RATE_LIMITS[endpoint] || RATE_LIMITS['default'];
+function getRateLimitHeaders(env, result, endpoint) {
+  const rateLimits = getRateLimits(env);
+  const config = rateLimits[endpoint] || rateLimits['default'];
   return {
     'X-RateLimit-Limit': config.limit.toString(),
     'X-RateLimit-Remaining': Math.max(0, result.remaining).toString(),
@@ -888,13 +902,44 @@ function validateCode(code) {
   return { valid: true, code };
 }
 
-// Hash password using SHA-256
+// Hash password with random salt for security
 async function hashPassword(password) {
+  // Generate 16-byte random salt
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const saltHex = Array.from(salt).map(b => b.toString(16).padStart(2, '0')).join('');
+
+  // Hash password with salt
   const encoder = new TextEncoder();
-  const data = encoder.encode(password);
+  const data = encoder.encode(saltHex + password);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+  // Return salt:hash format
+  return saltHex + ':' + hashHex;
+}
+
+// Verify password against stored salted hash
+async function verifyPassword(password, storedHash) {
+  // Parse salt and hash from stored value
+  const [salt, hash] = storedHash.split(':');
+
+  // If no salt separator found, it's an old unsalted hash - upgrade on next password change
+  if (!hash) {
+    // Legacy fallback for old hashes (will be replaced when user changes password)
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const computedHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+    return computedHash === storedHash;
+  }
+
+  // Verify with salt
+  const encoder = new TextEncoder();
+  const data = encoder.encode(salt + password);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const computedHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+  return computedHash === hash;
 }
 
 // Generate HTML for password prompt
@@ -3248,7 +3293,12 @@ function getAdminHTML(userEmail) {
       }
     }
 
-    // Minimal QR Code Generator (supports alphanumeric mode for URLs)
+    // Minimal QR Code Generator
+    // Note: Custom implementation used because Cloudflare Workers doesn't natively support
+    // npm packages without a bundler. This self-contained implementation handles URL encoding
+    // with byte mode for versions 1-10. For production deployments requiring extensive QR
+    // features, consider adding a build step with Wrangler and using a library like 'qrcode-svg'.
+    // See: https://developers.cloudflare.com/workers/wrangler/bundling/
     function generateQR(text) {
       // Use a simple approach: encode as binary/byte mode
       const data = encodeData(text);
