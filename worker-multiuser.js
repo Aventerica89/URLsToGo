@@ -3163,7 +3163,14 @@ function getAdminHTML(userEmail) {
         const time = new Date(click.clicked_at).toLocaleString('en-US', {
           month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
         });
-        const referrer = click.referrer ? new URL(click.referrer).hostname : 'Direct';
+        let referrer = 'Direct';
+        if (click.referrer) {
+          try {
+            referrer = new URL(click.referrer).hostname;
+          } catch {
+            referrer = click.referrer.substring(0, 30) + (click.referrer.length > 30 ? '...' : '');
+          }
+        }
 
         return \`
           <tr>
