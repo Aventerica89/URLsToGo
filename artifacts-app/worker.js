@@ -1638,6 +1638,11 @@ function getAppHtml(userEmail) {
               <input type="text" id="artifact-filename" placeholder="component.tsx">
             </div>
 
+            <div class="form-group full-width" id="content-group" style="display: none;">
+              <label>HTML/Code Content</label>
+              <textarea id="artifact-content" rows="10" placeholder="Paste your HTML or code here..." style="font-family: monospace; font-size: 0.8125rem;"></textarea>
+            </div>
+
             <div class="form-group full-width">
               <label>Description</label>
               <textarea id="artifact-description" placeholder="What does this artifact do?"></textarea>
@@ -1808,6 +1813,7 @@ function getAppHtml(userEmail) {
         const isPublished = e.target.value === 'published';
         document.getElementById('url-group').style.display = isPublished ? 'block' : 'none';
         document.getElementById('filename-group').style.display = isPublished ? 'none' : 'block';
+        document.getElementById('content-group').style.display = isPublished ? 'none' : 'block';
       });
 
       // Tags input
@@ -2180,6 +2186,7 @@ function getAppHtml(userEmail) {
       document.getElementById('edit-id').value = '';
       document.getElementById('url-group').style.display = 'block';
       document.getElementById('filename-group').style.display = 'none';
+      document.getElementById('content-group').style.display = 'none';
       currentTags = [];
       renderCurrentTags();
       document.getElementById('artifact-modal').classList.add('active');
@@ -2195,6 +2202,7 @@ function getAppHtml(userEmail) {
       document.getElementById('artifact-type').value = artifact.artifact_type || 'code';
       document.getElementById('artifact-url').value = artifact.published_url || '';
       document.getElementById('artifact-filename').value = artifact.file_name || '';
+      document.getElementById('artifact-content').value = artifact.file_content || '';
       document.getElementById('artifact-description').value = artifact.description || '';
       document.getElementById('artifact-collection').value = artifact.collection_id || '';
       document.getElementById('artifact-language').value = artifact.language || '';
@@ -2204,6 +2212,7 @@ function getAppHtml(userEmail) {
       const isPublished = artifact.source_type === 'published';
       document.getElementById('url-group').style.display = isPublished ? 'block' : 'none';
       document.getElementById('filename-group').style.display = isPublished ? 'none' : 'block';
+      document.getElementById('content-group').style.display = isPublished ? 'none' : 'block';
 
       currentTags = artifact.tags || [];
       renderCurrentTags();
@@ -2223,6 +2232,7 @@ function getAppHtml(userEmail) {
         artifact_type: document.getElementById('artifact-type').value,
         published_url: document.getElementById('artifact-url').value || null,
         file_name: document.getElementById('artifact-filename').value || null,
+        file_content: document.getElementById('artifact-content').value || null,
         description: document.getElementById('artifact-description').value || null,
         collection_id: document.getElementById('artifact-collection').value || null,
         language: document.getElementById('artifact-language').value || null,
