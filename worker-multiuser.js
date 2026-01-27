@@ -1652,18 +1652,69 @@ function getAdminHTML(userEmail) {
     .toast-close { color: hsl(var(--muted-foreground)); cursor: pointer; background: none; border: none; }
     .toast-close:hover { color: hsl(var(--foreground)); }
 
+    /* Mobile Menu Button */
+    .mobile-menu-btn {
+      display: none;
+      padding: 0.5rem;
+      background: none;
+      border: none;
+      color: hsl(var(--foreground));
+      cursor: pointer;
+      border-radius: 6px;
+      min-width: 44px;
+      min-height: 44px;
+      align-items: center;
+      justify-content: center;
+    }
+    .mobile-menu-btn:hover { background: hsl(var(--muted)); }
+
+    /* Mobile Overlay */
+    .mobile-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 40;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .mobile-overlay.active {
+      display: block;
+      opacity: 1;
+    }
+
     /* Responsive */
     @media (max-width: 1024px) {
       .stats-grid { grid-template-columns: repeat(2, 1fr); }
       .form-grid { grid-template-columns: 1fr 1fr; }
     }
     @media (max-width: 768px) {
-      .sidebar { transform: translateX(-100%); transition: transform 200ms; }
+      .mobile-menu-btn { display: flex; }
+      .mobile-overlay.active { display: block; }
+      .sidebar {
+        transform: translateX(-100%);
+        transition: transform 0.3s ease;
+        z-index: 50;
+        width: 85%;
+        max-width: 320px;
+      }
       .sidebar.open { transform: translateX(0); }
       .main { margin-left: 0; }
-      .stats-grid { grid-template-columns: 1fr; }
+      .header { padding: 0.75rem 1rem; gap: 0.5rem; }
+      .search { flex: 1; }
+      .search-trigger { padding: 0.5rem 0.75rem; }
+      .search-kbd { display: none; }
+      .header-actions { gap: 0.25rem; }
+      .header-actions .btn { padding: 0.5rem; }
+      .stats-grid { grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+      .stat-card { padding: 1rem; }
+      .stat-value { font-size: 1.5rem; }
       .form-grid { grid-template-columns: 1fr; }
-      .mobile-menu { display: block; }
+      .content { padding: 1rem; }
+      .content-header { flex-direction: column; align-items: flex-start; gap: 0.75rem; }
+      .links-table { font-size: 0.8125rem; }
+      .links-table th:nth-child(3), .links-table td:nth-child(3) { display: none; }
+      .links-table th:nth-child(4), .links-table td:nth-child(4) { display: none; }
     }
 
     /* Analytics Styles */
@@ -1788,6 +1839,9 @@ function getAdminHTML(userEmail) {
   </style>
 </head>
 <body>
+  <!-- Mobile Overlay -->
+  <div class="mobile-overlay" id="mobileOverlay" onclick="closeMobileMenu()"></div>
+
   <div class="app-layout">
     <!-- Sidebar -->
     <aside class="sidebar" id="sidebar">
@@ -1865,6 +1919,13 @@ function getAdminHTML(userEmail) {
     <!-- Main -->
     <main class="main">
       <header class="header">
+        <button class="mobile-menu-btn" id="mobileMenuBtn" onclick="toggleMobileMenu()" aria-label="Open menu">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="3" y1="6" x2="21" y2="6"/>
+            <line x1="3" y1="12" x2="21" y2="12"/>
+            <line x1="3" y1="18" x2="21" y2="18"/>
+          </svg>
+        </button>
         <div class="search">
           <button class="search-trigger" id="searchTrigger">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2308,6 +2369,28 @@ function getAdminHTML(userEmail) {
         await fetch('/api/init-categories', { method: 'POST' });
         await loadCategories();
       }
+    }
+
+    // Mobile menu functions
+    function toggleMobileMenu() {
+      const sidebar = document.getElementById('sidebar');
+      const overlay = document.getElementById('mobileOverlay');
+      const isOpen = sidebar.classList.contains('open');
+      if (isOpen) {
+        closeMobileMenu();
+      } else {
+        sidebar.classList.add('open');
+        overlay.classList.add('active');
+        document.body.style.overflow = 'hidden';
+      }
+    }
+
+    function closeMobileMenu() {
+      const sidebar = document.getElementById('sidebar');
+      const overlay = document.getElementById('mobileOverlay');
+      sidebar.classList.remove('open');
+      overlay.classList.remove('active');
+      document.body.style.overflow = '';
     }
 
     async function loadStats() {
@@ -3560,6 +3643,13 @@ function getAdminHTML(userEmail) {
       updateThemeIcon();
     }
     initTheme();
+
+    // Close mobile menu when clicking sidebar nav items
+    document.getElementById('sidebar').addEventListener('click', (e) => {
+      if (e.target.closest('.nav-item') && window.innerWidth <= 768) {
+        closeMobileMenu();
+      }
+    });
 
     // Init
     init();
