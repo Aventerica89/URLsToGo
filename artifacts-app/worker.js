@@ -59,6 +59,48 @@ export default {
       return corsResponse(Response.json({ error: 'Not found' }, { status: 404 }));
     }
 
+    // ============ PWA MANIFEST ============
+    if (path === 'manifest.json') {
+      return new Response(JSON.stringify({
+        name: 'Artifact Manager',
+        short_name: 'Artifacts',
+        description: 'Track and organize Claude.ai artifacts',
+        start_url: '/',
+        display: 'standalone',
+        background_color: '#09090b',
+        theme_color: '#6366f1',
+        orientation: 'portrait-primary',
+        icons: [
+          { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+          { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+        ]
+      }), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Serve PWA icons as purple gradient cubes
+    if (path === 'icon-192.png' || path === 'icon-512.png') {
+      const size = path === 'icon-192.png' ? 192 : 512;
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}">
+        <defs>
+          <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#6366f1"/>
+            <stop offset="100%" style="stop-color:#8b5cf6"/>
+          </linearGradient>
+        </defs>
+        <rect width="${size}" height="${size}" rx="${size * 0.15}" fill="url(#bg)"/>
+        <g transform="translate(${size * 0.25}, ${size * 0.2}) scale(${size / 48})" fill="none" stroke="white" stroke-width="1.5">
+          <path d="M12 2l10 6v12l-10 6-10-6V8l10-6z"/>
+          <path d="M12 2v10m0 10V12m10-4l-10 4m-10 0l10-4"/>
+        </g>
+      </svg>`;
+
+      return new Response(svg, {
+        headers: { 'Content-Type': 'image/svg+xml' }
+      });
+    }
+
     // ============ MAIN APP UI ============
 
     if (!path || path === 'admin' || path === '') {
@@ -573,9 +615,23 @@ function getAppHtml(userEmail) {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Artifact Manager - Claude Artifacts</title>
   <link rel="icon" type="image/svg+xml" href="${ARTIFACT_MANAGER_FAVICON}">
+
+  <!-- PWA Meta Tags -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#6366f1">
+  <meta name="mobile-web-app-capable" content="yes">
+
+  <!-- iOS PWA Meta Tags -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Artifacts">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+
+  <!-- Prevent phone number detection -->
+  <meta name="format-detection" content="telephone=no">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1496,11 +1552,89 @@ function getAppHtml(userEmail) {
       color: var(--foreground);
     }
 
-    /* Responsive */
+    /* Mobile Menu Button */
+    .mobile-menu-btn {
+      display: none;
+      padding: 0.5rem;
+      background: none;
+      border: none;
+      color: var(--foreground);
+      cursor: pointer;
+      border-radius: var(--radius);
+      min-width: 44px;
+      min-height: 44px;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .mobile-menu-btn:hover {
+      background: var(--accent);
+    }
+
+    /* Mobile Overlay */
+    .mobile-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 40;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+
+    .mobile-overlay.active {
+      opacity: 1;
+    }
+
+    /* Safe area insets for iOS */
+    @supports (padding: env(safe-area-inset-top)) {
+      .header {
+        padding-top: calc(1rem + env(safe-area-inset-top));
+      }
+      .sidebar {
+        padding-top: env(safe-area-inset-top);
+        padding-bottom: env(safe-area-inset-bottom);
+      }
+      .content {
+        padding-bottom: calc(2rem + env(safe-area-inset-bottom));
+      }
+    }
+
+    /* Responsive - Tablet */
+    @media (max-width: 1024px) {
+      .stats-grid {
+        grid-template-columns: repeat(3, 1fr);
+      }
+
+      .artifacts-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .header-actions .btn span {
+        display: none;
+      }
+
+      .header-actions .btn {
+        padding: 0.5rem;
+      }
+    }
+
+    /* Responsive - Mobile */
     @media (max-width: 768px) {
+      .mobile-menu-btn {
+        display: flex;
+      }
+
+      .mobile-overlay {
+        display: block;
+      }
+
       .sidebar {
         transform: translateX(-100%);
         z-index: 50;
+        transition: transform 0.3s ease;
+        width: 85%;
+        max-width: 320px;
       }
 
       .sidebar.open {
@@ -1511,19 +1645,178 @@ function getAppHtml(userEmail) {
         margin-left: 0;
       }
 
+      .header {
+        padding: 0.75rem 1rem;
+        gap: 0.5rem;
+      }
+
+      .search-box {
+        max-width: none;
+        flex: 1;
+      }
+
+      .search-box input {
+        font-size: 16px; /* Prevents iOS zoom on focus */
+      }
+
+      .header-actions {
+        gap: 0.25rem;
+      }
+
+      .header-actions .btn-secondary {
+        display: none;
+      }
+
+      .content {
+        padding: 1rem;
+      }
+
       .stats-grid {
         grid-template-columns: repeat(2, 1fr);
+        gap: 0.75rem;
+      }
+
+      .stat-card {
+        padding: 1rem;
+      }
+
+      .stat-value {
+        font-size: 1.5rem;
       }
 
       .artifacts-grid {
         grid-template-columns: 1fr;
+        gap: 0.75rem;
+      }
+
+      .artifacts-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.75rem;
+      }
+
+      .artifacts-header > div {
+        width: 100%;
+      }
+
+      .artifacts-header select {
+        flex: 1;
+      }
+
+      /* Touch-friendly nav items */
+      .nav-item {
+        padding: 0.875rem 1.5rem;
+        min-height: 48px;
+      }
+
+      .nav-item-content {
+        padding: 0.75rem 1rem;
+      }
+
+      /* Modal improvements */
+      .modal {
+        width: 95%;
+        max-width: none;
+        margin: 1rem;
+        max-height: calc(100vh - 2rem);
+      }
+
+      .modal-body {
+        max-height: calc(100vh - 12rem);
+      }
+
+      .form-grid {
+        gap: 0.75rem;
+      }
+
+      .form-group input,
+      .form-group select,
+      .form-group textarea {
+        font-size: 16px; /* Prevents iOS zoom */
+        padding: 0.75rem;
+      }
+
+      /* Artifact card touch improvements */
+      .artifact-card {
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      .artifact-actions {
+        opacity: 1; /* Always visible on mobile */
+      }
+
+      .artifact-actions button {
+        min-width: 44px;
+        min-height: 44px;
+        padding: 0.5rem;
+      }
+
+      /* Filter pills scroll horizontally */
+      .filter-pills {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        padding-bottom: 0.5rem;
+        flex-wrap: nowrap;
+      }
+
+      .filter-pill {
+        flex-shrink: 0;
+      }
+    }
+
+    /* Small mobile */
+    @media (max-width: 375px) {
+      .stats-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .stat-card {
+        padding: 0.75rem;
+      }
+
+      .stat-label {
+        font-size: 0.65rem;
+      }
+
+      .stat-value {
+        font-size: 1.25rem;
+      }
+    }
+
+    /* Touch device improvements */
+    @media (hover: none) and (pointer: coarse) {
+      .artifact-actions {
+        opacity: 1;
+      }
+
+      .nav-item-delete {
+        display: flex;
+        opacity: 0.5;
+      }
+
+      .btn, button {
+        min-height: 44px;
+      }
+
+      .artifact-card:active {
+        transform: scale(0.98);
+      }
+    }
+
+    /* Standalone PWA mode */
+    @media (display-mode: standalone) {
+      body {
+        padding-top: env(safe-area-inset-top);
       }
     }
   </style>
 </head>
 <body>
+  <!-- Mobile Overlay -->
+  <div class="mobile-overlay" id="mobile-overlay" onclick="closeMobileMenu()"></div>
+
   <!-- Sidebar -->
-  <aside class="sidebar">
+  <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <div class="logo">
         <div class="logo-icon">
@@ -1610,12 +1903,21 @@ function getAppHtml(userEmail) {
   <!-- Main Content -->
   <main class="main">
     <header class="header">
+      <!-- Mobile Menu Button -->
+      <button class="mobile-menu-btn" id="mobile-menu-btn" onclick="toggleMobileMenu()" aria-label="Open menu">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="3" y1="6" x2="21" y2="6"/>
+          <line x1="3" y1="12" x2="21" y2="12"/>
+          <line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
+      </button>
+
       <div class="search-box">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="11" cy="11" r="8"/>
           <line x1="21" y1="21" x2="16.65" y2="16.65"/>
         </svg>
-        <input type="text" placeholder="Search artifacts... (Cmd+K)" id="search-input">
+        <input type="text" placeholder="Search..." id="search-input">
         <button class="clear-search" id="clear-search" onclick="clearSearch()" title="Clear search">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"/>
@@ -1630,7 +1932,7 @@ function getAppHtml(userEmail) {
             <polyline points="17 8 12 3 7 8"/>
             <line x1="12" y1="3" x2="12" y2="15"/>
           </svg>
-          Export
+          <span>Export</span>
         </button>
         <button class="btn btn-secondary" id="importBtn">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1638,7 +1940,7 @@ function getAppHtml(userEmail) {
             <polyline points="7 10 12 15 17 10"/>
             <line x1="12" y1="15" x2="12" y2="3"/>
           </svg>
-          Import
+          <span>Import</span>
         </button>
         <input type="file" id="import-input" accept=".json" class="hidden-input">
         <button class="btn btn-primary" id="addArtifactBtn">
@@ -1646,7 +1948,7 @@ function getAppHtml(userEmail) {
             <line x1="12" y1="5" x2="12" y2="19"/>
             <line x1="5" y1="12" x2="19" y2="12"/>
           </svg>
-          Add Artifact
+          <span>Add</span>
         </button>
       </div>
     </header>
@@ -1905,6 +2207,37 @@ function getAppHtml(userEmail) {
 
     let currentFilter = { type: 'all', value: null };
 
+    // Mobile menu functions
+    function toggleMobileMenu() {
+      const sidebar = document.getElementById('sidebar');
+      const overlay = document.getElementById('mobile-overlay');
+      const isOpen = sidebar.classList.contains('open');
+
+      if (isOpen) {
+        closeMobileMenu();
+      } else {
+        sidebar.classList.add('open');
+        overlay.classList.add('active');
+        document.body.style.overflow = 'hidden';
+      }
+    }
+
+    function closeMobileMenu() {
+      const sidebar = document.getElementById('sidebar');
+      const overlay = document.getElementById('mobile-overlay');
+      sidebar.classList.remove('open');
+      overlay.classList.remove('active');
+      document.body.style.overflow = '';
+    }
+
+    // Close menu when clicking a nav item on mobile
+    function handleNavClick(callback) {
+      if (window.innerWidth <= 768) {
+        closeMobileMenu();
+      }
+      if (callback) callback();
+    }
+
     // Initialize
     document.addEventListener('DOMContentLoaded', init);
 
@@ -1917,13 +2250,36 @@ function getAppHtml(userEmail) {
         loadArtifacts()
       ]);
 
-      // Search shortcut
+      // Keyboard shortcuts
       document.addEventListener('keydown', (e) => {
+        // Search shortcut
         if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
           e.preventDefault();
           document.getElementById('search-input').focus();
         }
+        // Escape to close mobile menu
+        if (e.key === 'Escape') {
+          closeMobileMenu();
+        }
       });
+
+      // Swipe to close mobile menu
+      let touchStartX = 0;
+      let touchEndX = 0;
+      const sidebar = document.getElementById('sidebar');
+
+      sidebar.addEventListener('touchstart', (e) => {
+        touchStartX = e.changedTouches[0].screenX;
+      }, { passive: true });
+
+      sidebar.addEventListener('touchend', (e) => {
+        touchEndX = e.changedTouches[0].screenX;
+        const swipeDistance = touchStartX - touchEndX;
+        // Swipe left to close
+        if (swipeDistance > 50 && sidebar.classList.contains('open')) {
+          closeMobileMenu();
+        }
+      }, { passive: true });
 
       // Search debounce
       let searchTimeout;
@@ -2230,6 +2586,11 @@ function getAppHtml(userEmail) {
 
     function setFilter(type, value = null) {
       currentFilter = { type, value };
+
+      // Close mobile menu if open
+      if (window.innerWidth <= 768) {
+        closeMobileMenu();
+      }
 
       // Update nav active state
       document.querySelectorAll('.nav-item').forEach(item => {
