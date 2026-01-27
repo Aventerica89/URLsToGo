@@ -368,7 +368,14 @@ async function handleApiRequest(path, request, env, userEmail, url) {
       // DELETE /api/tags/:name
       if (path.match(/^api\/tags\/.+$/) && request.method === 'DELETE') {
         const name = decodeURIComponent(path.split('/')[2]);
-        await env.DB.prepare('DELETE FROM tags WHERE name = ? AND user_email = ?').bind(name, userEmail).run();
+        // Get the tag ID first
+        const tag = await env.DB.prepare('SELECT id FROM tags WHERE name = ? AND user_email = ?').bind(name, userEmail).first();
+        if (tag) {
+          // Delete artifact_tags relationships first
+          await env.DB.prepare('DELETE FROM artifact_tags WHERE tag_id = ?').bind(tag.id).run();
+          // Then delete the tag
+          await env.DB.prepare('DELETE FROM tags WHERE id = ?').bind(tag.id).run();
+        }
         return Response.json({ success: true });
       }
 
@@ -693,6 +700,38 @@ function getAppHtml(userEmail) {
       background: var(--muted);
       padding: 0.125rem 0.5rem;
       border-radius: 9999px;
+    }
+
+    .nav-item.has-actions {
+      padding: 0;
+    }
+
+    .nav-item-content {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.5rem 1rem;
+      flex: 1;
+      cursor: pointer;
+    }
+
+    .nav-item-delete {
+      display: none;
+      padding: 0.5rem;
+      background: none;
+      border: none;
+      color: var(--muted-foreground);
+      cursor: pointer;
+      border-radius: var(--radius);
+    }
+
+    .nav-item.has-actions:hover .nav-item-delete {
+      display: flex;
+    }
+
+    .nav-item-delete:hover {
+      color: var(--destructive);
+      background: var(--destructive-foreground);
     }
 
     .collection-dot {
@@ -1040,6 +1079,48 @@ function getAppHtml(userEmail) {
 
     .tag-badge button:hover {
       opacity: 1;
+    }
+
+    .tag-suggestions {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-top: 0.25rem;
+      max-height: 200px;
+      overflow-y: auto;
+      z-index: 100;
+      display: none;
+    }
+
+    .tag-suggestions.visible {
+      display: block;
+    }
+
+    .tag-suggestion {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.5rem 0.75rem;
+      cursor: pointer;
+      font-size: 0.875rem;
+    }
+
+    .tag-suggestion:hover,
+    .tag-suggestion.focused {
+      background: var(--secondary);
+    }
+
+    .tag-suggestion .tag-name {
+      color: var(--foreground);
+    }
+
+    .tag-suggestion .tag-count {
+      color: var(--muted-foreground);
+      font-size: 0.75rem;
     }
 
     /* Artifacts Grid */
@@ -1704,11 +1785,12 @@ function getAppHtml(userEmail) {
               <input type="text" id="artifact-language" placeholder="React, Python, etc.">
             </div>
 
-            <div class="form-group full-width">
+            <div class="form-group full-width" style="position: relative;">
               <label>Tags (press Enter to add)</label>
               <div class="tags-input-container" id="tags-container">
-                <input type="text" id="tags-input" placeholder="Add tags...">
+                <input type="text" id="tags-input" placeholder="Add tags..." autocomplete="off">
               </div>
+              <div class="tag-suggestions" id="tag-suggestions"></div>
             </div>
 
             <div class="form-group full-width">
@@ -1945,13 +2027,21 @@ function getAppHtml(userEmail) {
       const nav = document.getElementById('tags-nav');
       const topTags = allTags.slice(0, 8);
       nav.innerHTML = topTags.map(t => \`
-        <div class="nav-item" data-filter="tag" data-value="\${escapeAttr(t.name)}" onclick="setFilter('tag', '\${escapeAttr(t.name)}')">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
-            <line x1="7" y1="7" x2="7.01" y2="7"/>
-          </svg>
-          \${escapeHtml(t.name)}
-          <span class="nav-item-count">\${t.usage_count || 0}</span>
+        <div class="nav-item has-actions" data-filter="tag" data-value="\${escapeAttr(t.name)}">
+          <div class="nav-item-content" onclick="setFilter('tag', '\${escapeAttr(t.name)}')">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+              <line x1="7" y1="7" x2="7.01" y2="7"/>
+            </svg>
+            \${escapeHtml(t.name)}
+            <span class="nav-item-count">\${t.usage_count || 0}</span>
+          </div>
+          <button class="nav-item-delete" onclick="event.stopPropagation(); deleteTag('\${escapeAttr(t.name)}')" title="Delete tag">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"/>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+            </svg>
+          </button>
         </div>
       \`).join('');
     }
@@ -2240,18 +2330,67 @@ function getAppHtml(userEmail) {
     // Tags Input
     function setupTagsInput() {
       const input = document.getElementById('tags-input');
+
       input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ',') {
           e.preventDefault();
+          // If a suggestion is focused, select it
+          if (focusedSuggestionIndex >= 0 && input.dataset.focusedTag) {
+            selectTagSuggestion(input.dataset.focusedTag);
+            delete input.dataset.focusedTag;
+            return;
+          }
           const tag = input.value.trim().replace(',', '');
           if (tag && !currentTags.includes(tag)) {
             currentTags.push(tag);
             renderCurrentTags();
           }
           input.value = '';
+          hideTagSuggestions();
         } else if (e.key === 'Backspace' && !input.value && currentTags.length > 0) {
           currentTags.pop();
           renderCurrentTags();
+        } else if (e.key === 'Escape') {
+          hideTagSuggestions();
+        } else if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          focusNextSuggestion();
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          focusPrevSuggestion();
+        }
+      });
+
+      // Handle paste - split comma-separated tags
+      input.addEventListener('paste', (e) => {
+        e.preventDefault();
+        const pastedText = (e.clipboardData || window.clipboardData).getData('text');
+        const tags = pastedText.split(/[,;\\n]+/).map(t => t.trim()).filter(t => t);
+
+        tags.forEach(tag => {
+          if (tag && !currentTags.includes(tag)) {
+            currentTags.push(tag);
+          }
+        });
+
+        renderCurrentTags();
+        hideTagSuggestions();
+      });
+
+      // Handle input for autocomplete
+      input.addEventListener('input', (e) => {
+        const value = e.target.value.trim();
+        if (value.length > 0) {
+          showTagSuggestions(value);
+        } else {
+          hideTagSuggestions();
+        }
+      });
+
+      // Hide suggestions when clicking outside
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('.tags-input-container')) {
+          hideTagSuggestions();
         }
       });
     }
@@ -2277,6 +2416,98 @@ function getAppHtml(userEmail) {
     function removeTag(tag) {
       currentTags = currentTags.filter(t => t !== tag);
       renderCurrentTags();
+    }
+
+    async function deleteTag(tagName) {
+      const usage = allTags.find(t => t.name === tagName)?.usage_count || 0;
+      const message = usage > 0
+        ? \`Delete tag "\${tagName}"? It will be removed from \${usage} artifact\${usage !== 1 ? 's' : ''}.\`
+        : \`Delete tag "\${tagName}"?\`;
+
+      if (!confirm(message)) return;
+
+      const res = await fetch(\`/api/tags/\${encodeURIComponent(tagName)}\`, { method: 'DELETE' });
+      if (res.ok) {
+        showToast(\`Tag "\${tagName}" deleted\`, 'success');
+        await Promise.all([loadTags(), loadArtifacts()]);
+      } else {
+        showToast('Failed to delete tag', 'error');
+      }
+    }
+
+    // Tag autocomplete functions
+    let focusedSuggestionIndex = -1;
+
+    function showTagSuggestions(query) {
+      const suggestions = document.getElementById('tag-suggestions');
+      const lowerQuery = query.toLowerCase();
+
+      // Filter tags that match and aren't already selected (uses global allTags from loadTags)
+      const matches = (allTags || [])
+        .filter(t => t.name.toLowerCase().includes(lowerQuery) && !currentTags.includes(t.name))
+        .slice(0, 8);
+
+      if (matches.length === 0) {
+        hideTagSuggestions();
+        return;
+      }
+
+      focusedSuggestionIndex = -1;
+      const count = t => t.usage_count || t.count || 0;
+      suggestions.innerHTML = matches.map((t, i) => \`
+        <div class="tag-suggestion" data-tag="\${escapeAttr(t.name)}" onclick="selectTagSuggestion('\${escapeAttr(t.name)}')">
+          <span class="tag-name">\${escapeHtml(t.name)}</span>
+          <span class="tag-count">\${count(t)} artifact\${count(t) !== 1 ? 's' : ''}</span>
+        </div>
+      \`).join('');
+
+      suggestions.classList.add('visible');
+    }
+
+    function hideTagSuggestions() {
+      const suggestions = document.getElementById('tag-suggestions');
+      suggestions.classList.remove('visible');
+      focusedSuggestionIndex = -1;
+    }
+
+    function selectTagSuggestion(tag) {
+      if (tag && !currentTags.includes(tag)) {
+        currentTags.push(tag);
+        renderCurrentTags();
+      }
+      document.getElementById('tags-input').value = '';
+      hideTagSuggestions();
+    }
+
+    function focusNextSuggestion() {
+      const suggestions = document.querySelectorAll('.tag-suggestion');
+      if (suggestions.length === 0) return;
+
+      if (focusedSuggestionIndex >= 0) {
+        suggestions[focusedSuggestionIndex].classList.remove('focused');
+      }
+
+      focusedSuggestionIndex = (focusedSuggestionIndex + 1) % suggestions.length;
+      suggestions[focusedSuggestionIndex].classList.add('focused');
+
+      // If Enter is pressed while focused, select the suggestion
+      const input = document.getElementById('tags-input');
+      input.dataset.focusedTag = suggestions[focusedSuggestionIndex].dataset.tag;
+    }
+
+    function focusPrevSuggestion() {
+      const suggestions = document.querySelectorAll('.tag-suggestion');
+      if (suggestions.length === 0) return;
+
+      if (focusedSuggestionIndex >= 0) {
+        suggestions[focusedSuggestionIndex].classList.remove('focused');
+      }
+
+      focusedSuggestionIndex = focusedSuggestionIndex <= 0 ? suggestions.length - 1 : focusedSuggestionIndex - 1;
+      suggestions[focusedSuggestionIndex].classList.add('focused');
+
+      const input = document.getElementById('tags-input');
+      input.dataset.focusedTag = suggestions[focusedSuggestionIndex].dataset.tag;
     }
 
     // Modal Functions
