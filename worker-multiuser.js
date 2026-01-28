@@ -43,10 +43,45 @@ function escapeJs(str) {
     .replace(/>/g, '\\x3e');
 }
 
+// CORS headers for mobile app
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*', // Allow mobile app from any origin
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Cf-Access-Jwt-Assertion, Authorization',
+  'Access-Control-Max-Age': '86400',
+};
+
+// JSON response with CORS headers (for API endpoints)
+function jsonResponse(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+      ...CORS_HEADERS
+    }
+  });
+}
+
+// Error response with CORS headers
+function errorResponse(message, status = 400) {
+  return new Response(JSON.stringify({ error: message }), {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+      ...CORS_HEADERS
+    }
+  });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const path = url.pathname.slice(1);
+
+    // Handle CORS preflight requests
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { status: 204, headers: CORS_HEADERS });
+    }
 
     // Get user email from Cloudflare Access JWT
     const userEmail = await getUserEmail(request);
@@ -200,7 +235,7 @@ export default {
         tags: link.tags ? link.tags.split(',') : []
       }));
 
-      return Response.json(links);
+      return jsonResponse(links);
     }
 
     // Search links
@@ -211,7 +246,7 @@ export default {
 
       const q = url.searchParams.get('q') || '';
       if (q.length < 2) {
-        return Response.json([]);
+        return jsonResponse([]);
       }
 
       const searchTerm = `%${q}%`;
@@ -224,7 +259,7 @@ export default {
         LIMIT 10
       `).bind(userEmail, searchTerm, searchTerm, searchTerm).all();
 
-      return Response.json(results);
+      return jsonResponse(results);
     }
 
     // Create new link
@@ -235,25 +270,25 @@ export default {
 
       const { code, destination, category_id, tags, expires_at, password, description } = await request.json();
       if (!code || !destination) {
-        return Response.json({ error: 'Missing code or destination' }, { status: 400 });
+        return jsonResponse({ error: 'Missing code or destination' }, { status: 400 });
       }
 
       // Validate short code
       const codeValidation = validateCode(code);
       if (!codeValidation.valid) {
-        return Response.json({ error: codeValidation.error }, { status: 400 });
+        return jsonResponse({ error: codeValidation.error }, { status: 400 });
       }
 
       // Validate destination URL
       const urlValidation = validateUrl(destination);
       if (!urlValidation.valid) {
-        return Response.json({ error: urlValidation.error }, { status: 400 });
+        return jsonResponse({ error: urlValidation.error }, { status: 400 });
       }
 
       // Check if code exists globally
       const existing = await env.DB.prepare('SELECT code FROM links WHERE code = ?').bind(codeValidation.code).first();
       if (existing) {
-        return Response.json({ error: 'Code already taken' }, { status: 409 });
+        return jsonResponse({ error: 'Code already taken' }, { status: 409 });
       }
 
       try {
@@ -281,9 +316,9 @@ export default {
           }
         }
 
-        return Response.json({ success: true, code, destination, id: linkId });
+        return jsonResponse({ success: true, code, destination, id: linkId });
       } catch (e) {
-        return Response.json({ error: 'Failed to create link: ' + e.message }, { status: 500 });
+        return jsonResponse({ error: 'Failed to create link: ' + e.message }, { status: 500 });
       }
     }
 
@@ -295,13 +330,13 @@ export default {
       // Validate destination URL
       const urlValidation = validateUrl(destination);
       if (!urlValidation.valid) {
-        return Response.json({ error: urlValidation.error }, { status: 400 });
+        return jsonResponse({ error: urlValidation.error }, { status: 400 });
       }
 
       // Get link
       const link = await env.DB.prepare('SELECT id FROM links WHERE code = ? AND user_email = ?').bind(code, userEmail).first();
       if (!link) {
-        return Response.json({ error: 'Link not found' }, { status: 404 });
+        return jsonResponse({ error: 'Link not found' }, { status: 404 });
       }
 
       // Hash password if provided, or set to null if removing
@@ -339,7 +374,7 @@ export default {
         }
       }
 
-      return Response.json({ success: true });
+      return jsonResponse({ success: true });
     }
 
     // Delete link
@@ -350,7 +385,7 @@ export default {
 
       const code = path.replace('api/links/', '');
       await env.DB.prepare('DELETE FROM links WHERE code = ? AND user_email = ?').bind(code, userEmail).run();
-      return Response.json({ success: true });
+      return jsonResponse({ success: true });
     }
 
     // Bulk delete links
@@ -361,12 +396,12 @@ export default {
 
       const { codes } = await request.json();
       if (!codes || !Array.isArray(codes) || codes.length === 0) {
-        return Response.json({ error: 'No links specified' }, { status: 400 });
+        return jsonResponse({ error: 'No links specified' }, { status: 400 });
       }
 
       // Limit bulk operations to 100 items
       if (codes.length > 100) {
-        return Response.json({ error: 'Maximum 100 links per bulk operation' }, { status: 400 });
+        return jsonResponse({ error: 'Maximum 100 links per bulk operation' }, { status: 400 });
       }
 
       let deleted = 0;
@@ -376,14 +411,14 @@ export default {
         if (result.meta.changes > 0) deleted++;
       }
 
-      return Response.json({ success: true, deleted });
+      return jsonResponse({ success: true, deleted });
     }
 
     // Bulk move links to category
     if (path === 'api/links/bulk-move' && request.method === 'POST') {
       const { codes, category_id } = await request.json();
       if (!codes || !Array.isArray(codes) || codes.length === 0) {
-        return Response.json({ error: 'No links specified' }, { status: 400 });
+        return jsonResponse({ error: 'No links specified' }, { status: 400 });
       }
 
       // Verify category exists and belongs to user (or null to remove category)
@@ -391,7 +426,7 @@ export default {
         const cat = await env.DB.prepare('SELECT id FROM categories WHERE id = ? AND user_email = ?')
           .bind(category_id, userEmail).first();
         if (!cat) {
-          return Response.json({ error: 'Category not found' }, { status: 404 });
+          return jsonResponse({ error: 'Category not found' }, { status: 404 });
         }
       }
 
@@ -402,7 +437,7 @@ export default {
         if (result.meta.changes > 0) updated++;
       }
 
-      return Response.json({ success: true, updated });
+      return jsonResponse({ success: true, updated });
     }
 
     // === CATEGORIES API ===
@@ -417,14 +452,14 @@ export default {
         GROUP BY c.id
         ORDER BY c.name ASC
       `).bind(userEmail).all();
-      return Response.json(results);
+      return jsonResponse(results);
     }
 
     // Create category
     if (path === 'api/categories' && request.method === 'POST') {
       const { name, color } = await request.json();
       if (!name) {
-        return Response.json({ error: 'Missing name' }, { status: 400 });
+        return jsonResponse({ error: 'Missing name' }, { status: 400 });
       }
 
       const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
@@ -432,9 +467,9 @@ export default {
       try {
         await env.DB.prepare('INSERT INTO categories (name, slug, color, user_email) VALUES (?, ?, ?, ?)')
           .bind(name, slug, color || 'gray', userEmail).run();
-        return Response.json({ success: true, name, slug });
+        return jsonResponse({ success: true, name, slug });
       } catch (e) {
-        return Response.json({ error: 'Category already exists' }, { status: 409 });
+        return jsonResponse({ error: 'Category already exists' }, { status: 409 });
       }
     }
 
@@ -442,7 +477,7 @@ export default {
     if (path.startsWith('api/categories/') && request.method === 'DELETE') {
       const slug = path.replace('api/categories/', '');
       await env.DB.prepare('DELETE FROM categories WHERE slug = ? AND user_email = ?').bind(slug, userEmail).run();
-      return Response.json({ success: true });
+      return jsonResponse({ success: true });
     }
 
     // === TAGS API ===
@@ -457,7 +492,7 @@ export default {
         GROUP BY t.id
         ORDER BY link_count DESC
       `).bind(userEmail).all();
-      return Response.json(results);
+      return jsonResponse(results);
     }
 
     // === STATS API ===
@@ -467,7 +502,7 @@ export default {
       const categoriesResult = await env.DB.prepare('SELECT COUNT(*) as count FROM categories WHERE user_email = ?').bind(userEmail).first();
       const tagsResult = await env.DB.prepare('SELECT COUNT(DISTINCT t.id) as count FROM tags t JOIN link_tags lt ON t.id = lt.tag_id JOIN links l ON lt.link_id = l.id WHERE l.user_email = ?').bind(userEmail).first();
 
-      return Response.json({
+      return jsonResponse({
         links: linksResult?.count || 0,
         clicks: linksResult?.clicks || 0,
         categories: categoriesResult?.count || 0,
@@ -487,7 +522,7 @@ export default {
         .bind(code, userEmail).first();
 
       if (!link) {
-        return Response.json({ error: 'Link not found' }, { status: 404 });
+        return jsonResponse({ error: 'Link not found' }, { status: 404 });
       }
 
       // Get click events for this link
@@ -548,7 +583,7 @@ export default {
         LIMIT 10
       `).bind(link.id, days).all();
 
-      return Response.json({
+      return jsonResponse({
         link: { code: link.code, destination: link.destination, totalClicks: link.clicks },
         period: { days, from: new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0] },
         clicksByDay,
@@ -613,7 +648,7 @@ export default {
         GROUP BY ce.device_type
       `).bind(userEmail, days).all();
 
-      return Response.json({
+      return jsonResponse({
         period: { days },
         totalClicks: totalInPeriod?.clicks || 0,
         clicksByDay,
@@ -709,9 +744,9 @@ export default {
           imported++;
         }
 
-        return Response.json({ success: true, imported, skipped });
+        return jsonResponse({ success: true, imported, skipped });
       } catch (e) {
-        return Response.json({ error: 'Invalid JSON format' }, { status: 400 });
+        return jsonResponse({ error: 'Invalid JSON format' }, { status: 400 });
       }
     }
 
@@ -732,7 +767,7 @@ export default {
         } catch (e) { /* ignore */ }
       }
 
-      return Response.json({ success: true });
+      return jsonResponse({ success: true });
     }
 
     return new Response('Not found', { status: 404 });

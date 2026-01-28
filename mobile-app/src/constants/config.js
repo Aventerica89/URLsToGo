@@ -1,10 +1,14 @@
 // API Configuration
-// Update this to your Cloudflare Worker URL
-export const API_BASE_URL = 'https://your-url-shortener.your-subdomain.workers.dev';
+export const API_BASE_URL = 'https://links.jbcloud.app';
 
-// For development, you might use:
-// export const API_BASE_URL = 'http://localhost:8787';
+// Auth callback URL for mobile app
+export const AUTH_CALLBACK_URL = 'linkshort://auth/callback';
+
+// Cloudflare Access login URL
+export const AUTH_LOGIN_URL = `${API_BASE_URL}/cdn-cgi/access/login`;
 
 export default {
   API_BASE_URL,
+  AUTH_CALLBACK_URL,
+  AUTH_LOGIN_URL,
 };
