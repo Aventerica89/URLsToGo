@@ -6,6 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
+    "scheme": "linkshort",
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
@@ -15,14 +16,29 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.aventerica89.linkshort",
-      "buildNumber": "1"
+      "buildNumber": "1",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0a0a0a"
       },
-      "package": "com.yourname.linkshort"
+      "package": "com.jbcloudapps.linkshort",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "linkshort"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "extra": {
       "eas": {

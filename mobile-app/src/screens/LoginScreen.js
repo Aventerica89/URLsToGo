@@ -1,42 +1,157 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
+  TextInput,
+  Alert,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import { colors, spacing, borderRadius, typography, shadows } from '../constants/theme';
 import { API_BASE_URL } from '../constants/config';
+import { setAuthToken } from '../services/api';
+
+// Ensure web browser redirects are handled
+WebBrowser.maybeCompleteAuthSession();
 
 export default function LoginScreen({ onLogin }) {
   const [loading, setLoading] = useState(false);
+  const [showTokenInput, setShowTokenInput] = useState(false);
+  const [manualToken, setManualToken] = useState('');
 
   const handleLogin = async () => {
     setLoading(true);
     try {
       // Open Cloudflare Access login in browser
-      // After authentication, the user will be redirected back to the app
-      // with the JWT token
+      // User will authenticate and then return to the app
       const result = await WebBrowser.openAuthSessionAsync(
         `${API_BASE_URL}/admin`,
-        'linkshort://'
+        'linkshort://auth'
       );
 
-      if (result.type === 'success' && result.url) {
-        // Extract token from URL if available
-        // For now, we'll use a simple approach
-        onLogin();
+      if (result.type === 'success') {
+        // Try to verify we're authenticated by making an API call
+        try {
+          const response = await fetch(`${API_BASE_URL}/api/stats`, {
+            credentials: 'include',
+          });
+
+          if (response.ok) {
+            // We're authenticated via cookies
+            await setAuthToken('cookie-auth');
+            onLogin();
+            return;
+          }
+        } catch (e) {
+          // API call failed, show manual token option
+        }
+
+        // Show option to enter token manually
+        Alert.alert(
+          'Authentication',
+          'If you completed login, tap "I\'m logged in". Otherwise, you can enter your access token manually.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Enter Token', onPress: () => setShowTokenInput(true) },
+            { text: "I'm logged in", onPress: () => onLogin() },
+          ]
+        );
       }
     } catch (error) {
       console.error('Login error:', error);
+      Alert.alert('Error', 'Failed to open login page. Please try again.');
     } finally {
       setLoading(false);
     }
   };
+
+  const handleManualToken = async () => {
+    if (!manualToken.trim()) {
+      Alert.alert('Error', 'Please enter your access token');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Verify the token works
+      const response = await fetch(`${API_BASE_URL}/api/stats`, {
+        headers: {
+          'Cf-Access-Jwt-Assertion': manualToken.trim(),
+        },
+      });
+
+      if (response.ok) {
+        await setAuthToken(manualToken.trim());
+        onLogin();
+      } else {
+        Alert.alert('Invalid Token', 'The token could not be verified. Please check and try again.');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to verify token. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openWebDashboard = () => {
+    Linking.openURL(`${API_BASE_URL}/admin`);
+  };
+
+  if (showTokenInput) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.content}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => setShowTokenInput(false)}
+          >
+            <Feather name="arrow-left" size={24} color={colors.foreground} />
+          </TouchableOpacity>
+
+          <Text style={styles.title}>Enter Token</Text>
+          <Text style={styles.subtitle}>
+            Get your access token from the web dashboard
+          </Text>
+
+          <TextInput
+            style={styles.tokenInput}
+            placeholder="Paste your access token here..."
+            placeholderTextColor={colors.mutedForeground}
+            value={manualToken}
+            onChangeText={setManualToken}
+            multiline
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+
+          <TouchableOpacity
+            style={styles.loginButton}
+            onPress={handleManualToken}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.loginButtonText}>Verify Token</Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.secondaryButton}
+            onPress={openWebDashboard}
+          >
+            <Feather name="external-link" size={16} color={colors.indigo} />
+            <Text style={styles.secondaryButtonText}>Open Web Dashboard</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -112,6 +227,15 @@ export default function LoginScreen({ onLogin }) {
           )}
         </TouchableOpacity>
 
+        {/* Manual Token Option */}
+        <TouchableOpacity
+          style={styles.secondaryButton}
+          onPress={() => setShowTokenInput(true)}
+        >
+          <Feather name="key" size={16} color={colors.indigo} />
+          <Text style={styles.secondaryButtonText}>Enter token manually</Text>
+        </TouchableOpacity>
+
         {/* Info */}
         <Text style={styles.infoText}>
           You'll be redirected to Cloudflare Access to authenticate
@@ -130,6 +254,12 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: spacing.xl,
     justifyContent: 'center',
+  },
+  backButton: {
+    position: 'absolute',
+    top: spacing.xl,
+    left: 0,
+    padding: spacing.sm,
   },
   logoContainer: {
     alignItems: 'center',
@@ -187,6 +317,18 @@ const styles = StyleSheet.create({
     color: colors.mutedForeground,
     marginTop: 2,
   },
+  tokenInput: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    color: colors.foreground,
+    fontSize: typography.base,
+    minHeight: 100,
+    textAlignVertical: 'top',
+    marginBottom: spacing.lg,
+  },
   loginButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -201,6 +343,18 @@ const styles = StyleSheet.create({
     fontSize: typography.lg,
     fontWeight: typography.semibold,
     color: '#fff',
+  },
+  secondaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.lg,
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  secondaryButtonText: {
+    fontSize: typography.base,
+    color: colors.indigo,
   },
   infoText: {
     fontSize: typography.sm,
