@@ -227,16 +227,19 @@ async function handleApiRequest(path, request, env, userEmail, url) {
       // POST /api/artifacts - Create new artifact
       if (path === 'api/artifacts' && request.method === 'POST') {
         const body = await request.json();
-        const {
+        let {
           name, description, artifact_type, source_type,
           published_url, artifact_id, file_name, file_size, file_content,
           language, framework, claude_model, conversation_url, notes,
           collection_id, tags, is_favorite, artifact_created_at
         } = body;
 
-        if (!name) {
+        if (!name || !name.trim()) {
           return Response.json({ error: 'Name is required' }, { status: 400 });
         }
+
+        // Sanitize name to prevent placeholders (server-side validation as backup)
+        name = sanitizeName(name.trim());
 
         const result = await env.DB.prepare(`
           INSERT INTO artifacts (
@@ -283,12 +286,15 @@ async function handleApiRequest(path, request, env, userEmail, url) {
       if (path.match(/^api\/artifacts\/\d+$/) && request.method === 'PUT') {
         const id = path.split('/')[2];
         const body = await request.json();
-        const {
+        let {
           name, description, artifact_type, source_type,
           published_url, artifact_id, file_name, file_size, file_content,
           language, framework, claude_model, conversation_url, notes,
           collection_id, tags, is_favorite
         } = body;
+
+        // Sanitize name to prevent placeholders
+        name = sanitizeName((name || '').trim());
 
         await env.DB.prepare(`
           UPDATE artifacts SET
@@ -439,6 +445,77 @@ async function handleApiRequest(path, request, env, userEmail, url) {
             (SELECT COUNT(DISTINCT t.id) FROM tags t JOIN artifact_tags at ON t.id = at.tag_id JOIN artifacts a ON at.artifact_id = a.id WHERE a.user_email = ?) as total_tags
         `).bind(userEmail, userEmail, userEmail, userEmail, userEmail, userEmail).first();
         return Response.json(stats);
+      }
+
+      // ============ CLEANUP API ============
+
+      // GET /api/cleanup/scan - Find artifacts with placeholder names
+      if (path === 'api/cleanup/scan' && request.method === 'GET') {
+        const { results } = await env.DB.prepare(`
+          SELECT id, name, artifact_type
+          FROM artifacts
+          WHERE user_email = ?
+        `).bind(userEmail).all();
+
+        const placeholders = results.filter(artifact => {
+          const trimmed = (artifact.name || '').trim();
+          return !trimmed ||
+                 trimmed === "Saving..." ||
+                 trimmed === "Loading..." ||
+                 trimmed === "Downloading..." ||
+                 trimmed === "Untitled" ||
+                 trimmed === "New Artifact" ||
+                 trimmed.startsWith("Untitled ");
+        });
+
+        return Response.json(placeholders);
+      }
+
+      // POST /api/cleanup/fix - Fix all placeholder names
+      if (path === 'api/cleanup/fix' && request.method === 'POST') {
+        const { results: allArtifacts } = await env.DB.prepare(`
+          SELECT id, name, artifact_type
+          FROM artifacts
+          WHERE user_email = ?
+        `).bind(userEmail).all();
+
+        const placeholders = allArtifacts.filter(artifact => {
+          const trimmed = (artifact.name || '').trim();
+          return !trimmed ||
+                 trimmed === "Saving..." ||
+                 trimmed === "Loading..." ||
+                 trimmed === "Downloading..." ||
+                 trimmed === "Untitled" ||
+                 trimmed === "New Artifact" ||
+                 trimmed.startsWith("Untitled ");
+        });
+
+        const existingNames = allArtifacts.map(a => a.name);
+        let fixedCount = 0;
+
+        for (const artifact of placeholders) {
+          // Generate unique name based on artifact type
+          const baseName = artifact.artifact_type || 'Artifact';
+          let newName = baseName;
+          let counter = 1;
+
+          while (existingNames.includes(newName)) {
+            counter++;
+            newName = `${baseName} ${counter}`;
+          }
+
+          // Update the artifact
+          await env.DB.prepare(`
+            UPDATE artifacts
+            SET name = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND user_email = ?
+          `).bind(newName, artifact.id, userEmail).run();
+
+          existingNames.push(newName);
+          fixedCount++;
+        }
+
+        return Response.json({ success: true, fixed: fixedCount });
       }
 
       // ============ EXPORT/IMPORT API ============
@@ -612,6 +689,37 @@ function escapeHtmlServer(text) {
     .replace(/'/g, '&#39;');
 }
 
+// Name validation - prevents placeholder names
+function sanitizeName(name) {
+  const placeholderPatterns = [
+    "Saving...",
+    "Loading...",
+    "Untitled",
+    "New Artifact",
+    "Downloading...",
+    ""
+  ];
+
+  const trimmed = (name || '').trim();
+
+  // Check exact matches
+  if (placeholderPatterns.includes(trimmed)) {
+    return "Artifact";
+  }
+
+  // Check for pattern matches (e.g., "Untitled 1", "Untitled 2")
+  if (trimmed.startsWith("Untitled")) {
+    return "Artifact";
+  }
+
+  // Check if name is empty
+  if (!trimmed) {
+    return "Artifact";
+  }
+
+  return trimmed;
+}
+
 // ============ APP HTML ============
 
 function getAppHtml(userEmail) {
@@ -669,6 +777,13 @@ function getAppHtml(userEmail) {
       --violet: #8b5cf6;
       --pink: #ec4899;
       --cyan: #06b6d4;
+
+      --success: #10b981;
+      --warning: #f59e0b;
+      --warning-bg: rgba(245, 158, 11, 0.1);
+      --warning-border: rgba(245, 158, 11, 0.2);
+      --bg-secondary: #27272a;
+      --text-secondary: #a1a1aa;
     }
 
     body {
@@ -1470,6 +1585,21 @@ function getAppHtml(userEmail) {
     .toast.success { border-left: 3px solid var(--emerald); }
     .toast.error { border-left: 3px solid var(--rose); }
 
+    /* Spinner */
+    .spinner {
+      width: 24px;
+      height: 24px;
+      border: 3px solid rgba(255, 255, 255, 0.1);
+      border-top-color: var(--indigo);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      display: inline-block;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
     /* Empty State */
     .empty-state {
       text-align: center;
@@ -1931,6 +2061,12 @@ function getAppHtml(userEmail) {
         </button>
       </div>
       <div class="header-actions">
+        <button class="btn btn-secondary" id="cleanupBtn" title="Cleanup placeholder names">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
+          </svg>
+          <span>Cleanup</span>
+        </button>
         <button class="btn btn-secondary" id="exportBtn">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -2148,6 +2284,36 @@ function getAppHtml(userEmail) {
     </div>
   </div>
 
+  <!-- Cleanup Utility Modal -->
+  <div class="modal-overlay" id="cleanup-modal">
+    <div class="modal" style="max-width: 600px;">
+      <div class="modal-header">
+        <h3>Cleanup Placeholder Names</h3>
+        <button class="btn btn-ghost btn-icon" onclick="closeCleanupModal()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body" id="cleanup-body">
+        <div style="text-align: center; padding: 2rem;">
+          <div class="spinner"></div>
+          <p style="margin-top: 1rem; color: var(--text-secondary);">Scanning for placeholder names...</p>
+        </div>
+      </div>
+      <div class="modal-footer" id="cleanup-footer" style="display: none;">
+        <button class="btn btn-secondary" onclick="closeCleanupModal()">Close</button>
+        <button class="btn btn-primary" onclick="fixPlaceholders()" id="fix-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.5rem;">
+            <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
+          </svg>
+          Fix All Names
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Content Viewer Modal -->
   <div class="modal-overlay" id="content-modal">
     <div class="modal" style="max-width: 900px; max-height: 90vh;">
@@ -2202,6 +2368,61 @@ function getAppHtml(userEmail) {
   <div class="toast-container" id="toast-container"></div>
 
   <script>
+    // Name Validator - prevents placeholder names like "Saving...", "Loading...", etc.
+    const NameValidator = {
+      placeholderPatterns: [
+        "Saving...",
+        "Loading...",
+        "Untitled",
+        "New Artifact",
+        "Downloading...",
+        ""
+      ],
+
+      isPlaceholder(name) {
+        const trimmed = (name || '').trim();
+
+        // Check exact matches
+        if (this.placeholderPatterns.includes(trimmed)) {
+          return true;
+        }
+
+        // Check for pattern matches (e.g., "Untitled 1", "Untitled 2")
+        if (trimmed.startsWith("Untitled")) {
+          return true;
+        }
+
+        // Check if name is only whitespace or empty
+        if (!trimmed) {
+          return true;
+        }
+
+        return false;
+      },
+
+      sanitize(name, fallback = "Artifact") {
+        const trimmed = (name || '').trim();
+
+        if (this.isPlaceholder(trimmed)) {
+          return fallback;
+        }
+
+        return trimmed;
+      },
+
+      generateUniqueName(baseName = "Artifact", existingNames = []) {
+        let name = baseName;
+        let counter = 1;
+
+        while (existingNames.includes(name)) {
+          counter++;
+          name = baseName + " " + counter;
+        }
+
+        return name;
+      }
+    };
+
     // State
     let allArtifacts = [];
     let allCollections = [];
@@ -2325,6 +2546,7 @@ function getAppHtml(userEmail) {
       });
 
       // Header action buttons
+      document.getElementById('cleanupBtn').addEventListener('click', openCleanupModal);
       document.getElementById('exportBtn').addEventListener('click', exportData);
       document.getElementById('importBtn').addEventListener('click', function() {
         document.getElementById('import-input').click();
@@ -2923,8 +3145,17 @@ function getAppHtml(userEmail) {
 
     async function saveArtifact() {
       const id = document.getElementById('edit-id').value;
+      const rawName = document.getElementById('artifact-name').value;
+
+      // Validate and sanitize the name
+      const sanitizedName = NameValidator.sanitize(rawName);
+      const existingNames = allArtifacts
+        .filter(a => a.id !== parseInt(id))  // Exclude current artifact if editing
+        .map(a => a.name);
+      const uniqueName = NameValidator.generateUniqueName(sanitizedName, existingNames);
+
       const data = {
-        name: document.getElementById('artifact-name').value,
+        name: uniqueName,
         source_type: document.getElementById('artifact-source').value,
         artifact_type: document.getElementById('artifact-type').value,
         published_url: document.getElementById('artifact-url').value || null,
@@ -3107,6 +3338,59 @@ function getAppHtml(userEmail) {
         const err = await res.json();
         showToast(err.error || 'Failed to create collection', 'error');
       }
+    }
+
+    // Cleanup Utility
+    let placeholderArtifacts = [];
+
+    async function openCleanupModal() {
+      document.getElementById('cleanup-modal').classList.add('active');
+      document.getElementById('cleanup-body').innerHTML = '<div style="text-align: center; padding: 2rem;"><div class="spinner"></div><p style="margin-top: 1rem; color: var(--text-secondary);">Scanning for placeholder names...</p></div>';
+      document.getElementById('cleanup-footer').style.display = 'none';
+
+      // Scan for placeholders
+      const res = await fetch('/api/cleanup/scan');
+      placeholderArtifacts = await res.json();
+
+      if (placeholderArtifacts.length === 0) {
+        document.getElementById('cleanup-body').innerHTML = '<div style="text-align: center; padding: 2rem;"><svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2" style="margin: 0 auto;"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><h4 style="margin-top: 1rem;">No Issues Found</h4><p style="color: var(--text-secondary); margin-top: 0.5rem;">All artifacts have valid names.</p></div>';
+      } else {
+        const listHtml = placeholderArtifacts.map(a =>
+          '<div style="display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem; background: var(--bg-secondary); border-radius: 6px; margin-bottom: 0.5rem;">' +
+            '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>' +
+            '<div style="flex: 1;"><div style="font-weight: 500;">' + escapeHtml(a.name || '(empty)') + '</div><div style="font-size: 0.75rem; color: var(--text-secondary);">' + escapeHtml(a.artifact_type || 'code') + '</div></div>' +
+            '<div style="display: flex; align-items: center; gap: 0.5rem; color: var(--text-secondary);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg><span style="font-size: 0.75rem; color: var(--success);">' + escapeHtml(a.artifact_type || 'Artifact') + '</span></div>' +
+          '</div>'
+        ).join('');
+
+        document.getElementById('cleanup-body').innerHTML =
+          '<div style="background: var(--warning-bg); border: 1px solid var(--warning-border); border-radius: 8px; padding: 1rem; margin-bottom: 1rem;"><div style="display: flex; align-items: center; gap: 0.75rem;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><div><strong>Found ' + placeholderArtifacts.length + ' placeholder name' + (placeholderArtifacts.length === 1 ? '' : 's') + '</strong><p style="font-size: 0.875rem; color: var(--text-secondary); margin-top: 0.25rem;">These artifacts have temporary or invalid names</p></div></div></div><div style="max-height: 300px; overflow-y: auto;">' + listHtml + '</div>';
+        document.getElementById('cleanup-footer').style.display = 'flex';
+      }
+    }
+
+    function closeCleanupModal() {
+      document.getElementById('cleanup-modal').classList.remove('active');
+    }
+
+    async function fixPlaceholders() {
+      const fixBtn = document.getElementById('fix-btn');
+      fixBtn.disabled = true;
+      fixBtn.innerHTML = '<div class="spinner" style="width: 14px; height: 14px; margin-right: 0.5rem;"></div>Fixing...';
+
+      const res = await fetch('/api/cleanup/fix', { method: 'POST' });
+      const result = await res.json();
+
+      if (result.success) {
+        showToast(\`Fixed \${result.fixed} artifact\${result.fixed === 1 ? '' : 's'}\`, 'success');
+        closeCleanupModal();
+        await Promise.all([loadStats(), loadArtifacts()]);
+      } else {
+        showToast('Failed to fix artifacts', 'error');
+      }
+
+      fixBtn.disabled = false;
+      fixBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.5rem;"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>Fix All Names';
     }
 
     // Export/Import
