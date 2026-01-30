@@ -811,12 +811,21 @@ let jwksCache = null;
 let jwksCacheTime = 0;
 const JWKS_CACHE_TTL = 3600000; // 1 hour
 
+// Allowed Clerk domain patterns (SSRF protection)
+const CLERK_DOMAIN_PATTERN = /^([a-z0-9-]+\.)*clerk\.accounts\.dev$|^([a-z0-9-]+\.)*clerk\.com$/;
+
 // Base64URL decode helper
 function base64UrlDecode(str) {
   str = str.replace(/-/g, '+').replace(/_/g, '/');
   const pad = str.length % 4;
   if (pad) str += '='.repeat(4 - pad);
   return atob(str);
+}
+
+// Validate Clerk domain to prevent SSRF attacks
+function isValidClerkDomain(domain) {
+  if (!domain || typeof domain !== 'string') return false;
+  return CLERK_DOMAIN_PATTERN.test(domain.toLowerCase());
 }
 
 // Fetch JWKS from Clerk
@@ -845,6 +854,12 @@ async function getClerkJWKS(env) {
     return null;
   }
 
+  // SECURITY: Validate domain to prevent SSRF attacks
+  if (!isValidClerkDomain(clerkDomain)) {
+    console.error('Invalid Clerk domain detected');
+    return null;
+  }
+
   try {
     const response = await fetch(`https://${clerkDomain}/.well-known/jwks.json`);
     if (!response.ok) return null;
@@ -852,6 +867,7 @@ async function getClerkJWKS(env) {
     jwksCacheTime = now;
     return jwksCache;
   } catch (e) {
+    console.error('JWKS fetch error:', e.message);
     return null;
   }
 }
@@ -921,7 +937,7 @@ async function verifyClerkJWT(token, env) {
 
     return payload;
   } catch (e) {
-    console.error('JWT verification error:', e);
+    console.error('JWT verification error:', e.message);
     return null;
   }
 }
@@ -1694,6 +1710,19 @@ function getAuthPageHTML(env, mode = 'login') {
     // Configuration
     const CLERK_PUBLISHABLE_KEY = '${publishableKey}';
 
+    // Shared appearance config for Clerk components
+    const CLERK_APPEARANCE = {
+      variables: {
+        colorPrimary: '#8b5cf6',
+        colorBackground: '#18181b',
+        colorText: '#fafafa',
+        colorTextSecondary: '#a1a1aa',
+        colorInputBackground: '#27272a',
+        colorInputText: '#fafafa',
+        borderRadius: '0.75rem'
+      }
+    };
+
     if (!CLERK_PUBLISHABLE_KEY) {
       document.getElementById('auth-error').textContent = 'Authentication not configured. Please set CLERK_PUBLISHABLE_KEY.';
       document.getElementById('auth-error').classList.add('visible');
@@ -1701,7 +1730,7 @@ function getAuthPageHTML(env, mode = 'login') {
     } else {
       // Load Clerk SDK
       const script = document.createElement('script');
-      script.src = 'https://cdn.jsdelivr.net/npm/@clerk/clerk-js@latest/dist/clerk.browser.js';
+      script.src = 'https://cdn.jsdelivr.net/npm/@clerk/clerk-js@5/dist/clerk.browser.js';
       script.async = true;
       script.onload = initClerk;
       script.onerror = () => {
@@ -1731,37 +1760,17 @@ function getAuthPageHTML(env, mode = 'login') {
         clerk.mountSignUp(container, {
           afterSignUpUrl: '/admin',
           signInUrl: '/login',
-          appearance: {
-            variables: {
-              colorPrimary: '#8b5cf6',
-              colorBackground: '#18181b',
-              colorText: '#fafafa',
-              colorTextSecondary: '#a1a1aa',
-              colorInputBackground: '#27272a',
-              colorInputText: '#fafafa',
-              borderRadius: '0.75rem'
-            }
-          }
+          appearance: CLERK_APPEARANCE
         });
         ` : `
         clerk.mountSignIn(container, {
           afterSignInUrl: '/admin',
           signUpUrl: '/signup',
-          appearance: {
-            variables: {
-              colorPrimary: '#8b5cf6',
-              colorBackground: '#18181b',
-              colorText: '#fafafa',
-              colorTextSecondary: '#a1a1aa',
-              colorInputBackground: '#27272a',
-              colorInputText: '#fafafa',
-              borderRadius: '0.75rem'
-            }
-          }
+          appearance: CLERK_APPEARANCE
         });
         `}
       } catch (error) {
-        console.error('Clerk initialization error:', error);
+        console.error('Clerk initialization error:', error.message);
         document.getElementById('auth-error').textContent = 'Authentication error: ' + error.message;
         document.getElementById('auth-error').classList.add('visible');
         document.getElementById('clerk-auth').innerHTML = '';
@@ -3211,7 +3220,7 @@ function getAdminHTML(userEmail, env) {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  ${clerkPublishableKey ? `<script src="https://cdn.jsdelivr.net/npm/@clerk/clerk-js@latest/dist/clerk.browser.js"></script>` : ''}
+  ${clerkPublishableKey ? `<script src="https://cdn.jsdelivr.net/npm/@clerk/clerk-js@5/dist/clerk.browser.js"></script>` : ''}
   <style>
     :root {
       --background: 0 0% 3.9%;
@@ -4474,11 +4483,23 @@ function getAdminHTML(userEmail, env) {
     const perPage = 10;
     let currentCategory = null;
 
+    // Global Clerk instance for session management
+    let clerkInstance = null;
+
     // Initialize Clerk for session management
-    if (CLERK_PUBLISHABLE_KEY && typeof Clerk !== 'undefined') {
-      const clerk = new Clerk(CLERK_PUBLISHABLE_KEY);
-      clerk.load().catch(e => console.error('Clerk load error:', e));
+    async function initClerk() {
+      if (CLERK_PUBLISHABLE_KEY && typeof Clerk !== 'undefined') {
+        try {
+          clerkInstance = new Clerk(CLERK_PUBLISHABLE_KEY);
+          await clerkInstance.load();
+        } catch (e) {
+          console.error('Clerk load error:', e.message);
+        }
+      }
     }
+
+    // Initialize Clerk on page load
+    initClerk();
 
     // Initialize
     async function init() {
@@ -4864,14 +4885,14 @@ function getAdminHTML(userEmail, env) {
     }
 
     async function logout() {
-      // Try Clerk signOut first
-      if (typeof Clerk !== 'undefined' && Clerk.signOut) {
+      // Try Clerk signOut first using the global instance
+      if (clerkInstance && typeof clerkInstance.signOut === 'function') {
         try {
-          await Clerk.signOut();
+          await clerkInstance.signOut();
           window.location.href = '/login';
           return;
         } catch (e) {
-          console.error('Clerk signOut error:', e);
+          console.error('Clerk signOut error:', e.message);
         }
       }
       // Fallback to Cloudflare Access logout
