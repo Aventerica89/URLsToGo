@@ -1802,7 +1802,6 @@ function getAuthPageHTML(env, mode = 'login') {
         document.getElementById('auth-error').classList.add('visible');
         document.getElementById('clerk-auth').innerHTML = '';
       }
-      }
     }
   </script>
 </body>
