@@ -34,11 +34,64 @@ User only needs to set these GitHub secrets once:
 
 | File | Purpose |
 |------|---------|
-| `worker-multiuser.js` | Main worker (Shadcn UI, categories, tags, search) |
+| `src/index.js` | Main worker (npm-based, uses @clerk/backend) |
+| `worker-multiuser.js` | Legacy file (kept for reference, not deployed) |
+| `package.json` | npm dependencies (@clerk/backend, wrangler) |
 | `migrations.sql` | Auto-runs on every deploy |
 | `schema-multiuser.sql` | Full schema reference |
 | `design-system.html` | UI playground for testing changes |
-| `.github/workflows/deploy.yml` | CI/CD pipeline |
+| `.github/workflows/deploy.yml` | CI/CD pipeline (includes npm ci) |
+
+---
+
+## CLERK AUTHENTICATION (January 2026)
+
+### Overview
+
+Replaced Cloudflare Access with Clerk for authentication. Provides custom-branded login UI with Google OAuth.
+
+### Architecture
+
+- **Frontend:** Clerk JS SDK via CDN (`@clerk/clerk-js@5`)
+- **Backend:** Official `@clerk/backend` SDK for JWT verification
+- **OAuth:** Google sign-in configured in Clerk dashboard
+
+### Environment Variables (Cloudflare Dashboard)
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `CLERK_PUBLISHABLE_KEY` | Text | `pk_test_...` or `pk_live_...` |
+| `CLERK_SECRET_KEY` | Secret | `sk_test_...` or `sk_live_...` |
+
+**Important:** `keep_vars = true` in wrangler.toml preserves these during deploy.
+
+### Clerk Dashboard Settings
+
+- **App URL:** urlstogo.cloud
+- **Clerk Domain:** fit-ocelot-92.clerk.accounts.dev
+- **SSO:** Google OAuth enabled with shared credentials
+
+### Key Code Locations
+
+| Location | Purpose |
+|----------|---------|
+| `src/index.js:1-3` | @clerk/backend import |
+| `src/index.js:~815-890` | JWT verification with verifyToken |
+| `src/index.js:~1400-1700` | Login/signup page HTML (getAuthPageHTML) |
+| `src/index.js:~4400-4430` | Admin page Clerk initialization |
+
+### Pending Migration
+
+User switched from Cloudflare Access to Clerk. Links are associated with old email. To transfer:
+
+```sql
+-- Run in Cloudflare D1 Console (Storage & Databases → D1 → url-shortener → Console)
+UPDATE links SET user_email = 'NEW_EMAIL' WHERE user_email = 'admin@jbmdcreations.com';
+UPDATE categories SET user_email = 'NEW_EMAIL' WHERE user_email = 'admin@jbmdcreations.com';
+UPDATE tags SET user_email = 'NEW_EMAIL' WHERE user_email = 'admin@jbmdcreations.com';
+```
+
+Replace `NEW_EMAIL` with the user's Clerk/Google email.
 
 ### Design System
 
