@@ -1877,6 +1877,218 @@ function getLandingPageHTML() {
       line-height: 1.6;
     }
 
+    /* How It Works section */
+    .how-it-works {
+      position: relative;
+      z-index: 10;
+      padding: 100px 24px;
+      background: var(--bg-primary);
+      border-top: 1px solid var(--border-color);
+      overflow: hidden;
+    }
+
+    .how-it-works::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 800px;
+      height: 800px;
+      background: radial-gradient(ellipse at center, rgba(139, 92, 246, 0.08) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .how-it-works-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      position: relative;
+    }
+
+    .how-it-works-header {
+      text-align: center;
+      margin-bottom: 80px;
+    }
+
+    .how-it-works-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+      background: rgba(99, 102, 241, 0.1);
+      border: 1px solid rgba(99, 102, 241, 0.2);
+      border-radius: 100px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--accent-indigo);
+      margin-bottom: 20px;
+    }
+
+    .how-it-works-title {
+      font-size: 40px;
+      font-weight: 700;
+      margin-bottom: 16px;
+      letter-spacing: -0.02em;
+    }
+
+    .how-it-works-subtitle {
+      font-size: 18px;
+      color: var(--text-secondary);
+      max-width: 500px;
+      margin: 0 auto;
+    }
+
+    .steps-container {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+      position: relative;
+    }
+
+    @media (max-width: 868px) {
+      .steps-container {
+        grid-template-columns: 1fr;
+        max-width: 400px;
+        margin: 0 auto;
+      }
+    }
+
+    /* Connecting line between steps */
+    .steps-line {
+      position: absolute;
+      top: 60px;
+      left: calc(16.67% + 40px);
+      right: calc(16.67% + 40px);
+      height: 2px;
+      background: linear-gradient(90deg, var(--accent-indigo), var(--accent-purple), var(--accent-violet));
+      opacity: 0.3;
+    }
+
+    @media (max-width: 868px) {
+      .steps-line {
+        display: none;
+      }
+    }
+
+    .step-card {
+      position: relative;
+      text-align: center;
+      padding: 32px 24px;
+    }
+
+    .step-number-wrapper {
+      position: relative;
+      width: 80px;
+      height: 80px;
+      margin: 0 auto 28px;
+    }
+
+    .step-number-bg {
+      position: absolute;
+      inset: 0;
+      background: var(--gradient-primary);
+      border-radius: 20px;
+      opacity: 0.1;
+      transform: rotate(6deg);
+      transition: all 0.3s;
+    }
+
+    .step-card:hover .step-number-bg {
+      transform: rotate(0deg);
+      opacity: 0.2;
+    }
+
+    .step-number {
+      position: relative;
+      width: 80px;
+      height: 80px;
+      background: var(--bg-secondary);
+      border: 2px solid var(--border-color);
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+      font-weight: 700;
+      background: var(--gradient-primary);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      transition: all 0.3s;
+    }
+
+    .step-card:hover .step-number {
+      border-color: var(--accent-violet);
+      box-shadow: 0 0 30px rgba(139, 92, 246, 0.2);
+    }
+
+    .step-icon {
+      position: absolute;
+      bottom: -8px;
+      right: -8px;
+      width: 36px;
+      height: 36px;
+      background: var(--gradient-primary);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+    }
+
+    .step-icon svg {
+      width: 18px;
+      height: 18px;
+      color: white;
+    }
+
+    .step-title {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      color: var(--text-primary);
+    }
+
+    .step-description {
+      font-size: 15px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+      max-width: 280px;
+      margin: 0 auto;
+    }
+
+    /* Animated arrow between steps on desktop */
+    .step-arrow {
+      display: none;
+    }
+
+    @media (min-width: 869px) {
+      .step-arrow {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: absolute;
+        top: 52px;
+        width: 32px;
+        height: 32px;
+        color: var(--accent-violet);
+        animation: arrowPulse 2s ease-in-out infinite;
+      }
+
+      .step-arrow-1 {
+        left: calc(33.33% - 16px);
+      }
+
+      .step-arrow-2 {
+        left: calc(66.67% - 16px);
+      }
+
+      @keyframes arrowPulse {
+        0%, 100% { opacity: 0.5; transform: translateX(0); }
+        50% { opacity: 1; transform: translateX(4px); }
+      }
+    }
+
     /* Footer */
     .footer {
       position: relative;
@@ -1946,6 +2158,7 @@ function getLandingPageHTML() {
       </a>
       <div class="nav-links">
         <a href="#features" class="nav-link">Features</a>
+        <a href="#how-it-works" class="nav-link">How It Works</a>
         <a href="/admin" class="nav-cta">Dashboard</a>
       </div>
     </nav>
@@ -2157,6 +2370,95 @@ function getLandingPageHTML() {
           <h3 class="feature-name">Categories & Tags</h3>
           <p class="feature-desc">
             Organize your links with custom categories and tags. Find any link instantly with powerful search.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How It Works Section -->
+  <section id="how-it-works" class="how-it-works">
+    <div class="how-it-works-container">
+      <div class="how-it-works-header">
+        <div class="how-it-works-badge">Simple & Fast</div>
+        <h2 class="how-it-works-title">How It Works</h2>
+        <p class="how-it-works-subtitle">
+          Get started in seconds. No signup required, just paste and go.
+        </p>
+      </div>
+
+      <div class="steps-container">
+        <!-- Connecting line -->
+        <div class="steps-line"></div>
+
+        <!-- Animated arrows -->
+        <div class="step-arrow step-arrow-1">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12h14"/>
+            <path d="m12 5 7 7-7 7"/>
+          </svg>
+        </div>
+        <div class="step-arrow step-arrow-2">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12h14"/>
+            <path d="m12 5 7 7-7 7"/>
+          </svg>
+        </div>
+
+        <!-- Step 1 -->
+        <div class="step-card">
+          <div class="step-number-wrapper">
+            <div class="step-number-bg"></div>
+            <div class="step-number">1</div>
+            <div class="step-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+              </svg>
+            </div>
+          </div>
+          <h3 class="step-title">Paste Your URL</h3>
+          <p class="step-description">
+            Enter any long URL into the dashboard. Customize your short code or let us generate one automatically.
+          </p>
+        </div>
+
+        <!-- Step 2 -->
+        <div class="step-card">
+          <div class="step-number-wrapper">
+            <div class="step-number-bg"></div>
+            <div class="step-number">2</div>
+            <div class="step-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="18" cy="5" r="3"/>
+                <circle cx="6" cy="12" r="3"/>
+                <circle cx="18" cy="19" r="3"/>
+                <line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/>
+                <line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/>
+              </svg>
+            </div>
+          </div>
+          <h3 class="step-title">Share Anywhere</h3>
+          <p class="step-description">
+            Copy your short link and share it on social media, emails, messages, or anywhere you need.
+          </p>
+        </div>
+
+        <!-- Step 3 -->
+        <div class="step-card">
+          <div class="step-number-wrapper">
+            <div class="step-number-bg"></div>
+            <div class="step-number">3</div>
+            <div class="step-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 3v18h18"/>
+                <path d="m19 9-5 5-4-4-3 3"/>
+              </svg>
+            </div>
+          </div>
+          <h3 class="step-title">Track Performance</h3>
+          <p class="step-description">
+            Monitor clicks, analyze traffic sources, and optimize your campaigns with real-time analytics.
           </p>
         </div>
       </div>
