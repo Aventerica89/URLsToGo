@@ -2,6 +2,7 @@ name = "url-shortener"
 main = "src/index.js"
 compatibility_date = "2024-01-01"
 compatibility_flags = ["nodejs_compat"]
+keep_vars = true  # Preserve dashboard-set environment variables during deploy
 
 [vars]
 # Clerk environment variables - set actual values in Cloudflare dashboard or use wrangler secret
