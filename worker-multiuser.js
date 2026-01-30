@@ -1739,15 +1739,17 @@ function getAuthPageHTML(env, mode = 'login') {
 
       script.onload = function() {
         // Wait for Clerk to be available on window
+        let timeoutId;
         const checkClerk = setInterval(() => {
           if (window.Clerk) {
             clearInterval(checkClerk);
+            clearTimeout(timeoutId);
             initClerk();
           }
         }, 50);
 
         // Timeout after 5 seconds
-        setTimeout(() => {
+        timeoutId = setTimeout(() => {
           clearInterval(checkClerk);
           if (!window.Clerk) {
             document.getElementById('auth-error').textContent = 'Authentication timed out. Please refresh the page.';
