@@ -3249,7 +3249,7 @@ function getAdminHTML(userEmail, env) {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  ${clerkPublishableKey ? `<script src="https://cdn.jsdelivr.net/npm/@clerk/clerk-js@5/dist/clerk.browser.js"></script>` : ''}
+  ${clerkPublishableKey ? `<script data-clerk-publishable-key="${clerkPublishableKey}" src="https://cdn.jsdelivr.net/npm/@clerk/clerk-js@5/dist/clerk.browser.js" crossorigin="anonymous"></script>` : ''}
   <style>
     :root {
       --background: 0 0% 3.9%;
@@ -4517,9 +4517,9 @@ function getAdminHTML(userEmail, env) {
 
     // Initialize Clerk for session management
     async function initClerk() {
-      if (CLERK_PUBLISHABLE_KEY && typeof Clerk !== 'undefined') {
+      if (CLERK_PUBLISHABLE_KEY && window.Clerk) {
         try {
-          clerkInstance = new Clerk(CLERK_PUBLISHABLE_KEY);
+          clerkInstance = window.Clerk;
           await clerkInstance.load();
         } catch (e) {
           console.error('Clerk load error:', e.message);
@@ -4527,8 +4527,13 @@ function getAdminHTML(userEmail, env) {
       }
     }
 
-    // Initialize Clerk on page load
-    initClerk();
+    // Initialize Clerk on page load (wait for script to be ready)
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initClerk);
+    } else {
+      // Script loaded in head, Clerk may not be ready yet
+      setTimeout(initClerk, 100);
+    }
 
     // Initialize
     async function init() {
