@@ -1674,13 +1674,13 @@ function getAuthPageHTML(env, mode = 'login') {
 
         ${isSignup ? `
         clerk.mountSignUp(container, {
-          afterSignUpUrl: '/admin',
+          fallbackRedirectUrl: '/admin',
           signInUrl: '/login',
           appearance: CLERK_APPEARANCE
         });
         ` : `
         clerk.mountSignIn(container, {
-          afterSignInUrl: '/admin',
+          fallbackRedirectUrl: '/admin',
           signUpUrl: '/signup',
           appearance: CLERK_APPEARANCE
         });
