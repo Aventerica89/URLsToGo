@@ -83,12 +83,19 @@ export default {
       return new Response(null, { status: 204, headers: CORS_HEADERS });
     }
 
-    // Get user email from Cloudflare Access JWT
-    const userEmail = await getUserEmail(request);
+    // Get user email from Clerk JWT (with Cloudflare Access fallback)
+    const userEmail = await getUserEmailWithFallback(request, env);
 
     // Public landing page at root
     if (path === '') {
       return new Response(getLandingPageHTML(), {
+        headers: { 'Content-Type': 'text/html' }
+      });
+    }
+
+    // Clerk login/signup pages
+    if (path === 'login' || path === 'signup') {
+      return new Response(getAuthPageHTML(env, path), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -183,14 +190,20 @@ export default {
       });
     }
 
-    // Protected routes require auth
-    if (!userEmail) {
-      return new Response('Unauthorized - Cloudflare Access required', { status: 401 });
+    // Admin page - redirect to login if not authenticated
+    if (path === 'admin') {
+      if (!userEmail) {
+        return Response.redirect(new URL('/login', url.origin).toString(), 302);
+      }
+      return new Response(getAdminHTML(userEmail, env), { headers: { 'Content-Type': 'text/html' } });
     }
 
-    // Admin page
-    if (path === 'admin') {
-      return new Response(getAdminHTML(userEmail), { headers: { 'Content-Type': 'text/html' } });
+    // Protected API routes require auth
+    if (!userEmail) {
+      return new Response(JSON.stringify({ error: 'Unauthorized - Please login' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json', ...CORS_HEADERS }
+      });
     }
 
     // === LINKS API ===
@@ -782,33 +795,201 @@ export default {
 };
 
 // =============================================================================
-// JWT AUTHENTICATION - Cloudflare Access Integration
 // =============================================================================
-// SECURITY NOTE: JWT signature verification is handled by Cloudflare Access
-// at the edge BEFORE the request reaches this Worker. Cloudflare Access:
-// 1. Validates the JWT signature against Cloudflare's public keys
-// 2. Verifies token expiration and audience claims
-// 3. Only forwards requests with valid tokens to the Worker
-// 4. Sets the Cf-Access-Jwt-Assertion header with the verified token
+// JWT AUTHENTICATION - Clerk Integration
+// =============================================================================
+// Clerk provides authentication with customizable login UI.
+// JWT verification is done manually using Web Crypto API.
 //
-// This function extracts the email from the pre-verified JWT payload.
-// The JWT is trusted because Cloudflare Access has already verified it.
-// See: https://developers.cloudflare.com/cloudflare-one/identity/authorization-cookie/validating-json/
+// Required environment variables (set in Cloudflare dashboard):
+// - CLERK_PUBLISHABLE_KEY: pk_test_... or pk_live_...
+// - CLERK_SECRET_KEY: sk_test_... or sk_live_... (as secret)
 // =============================================================================
-async function getUserEmail(request) {
-  // JWT is pre-verified by Cloudflare Access at the edge
-  const jwt = request.headers.get('Cf-Access-Jwt-Assertion');
-  if (!jwt) return null;
 
+// JWKS cache to avoid fetching on every request
+let jwksCache = null;
+let jwksCacheTime = 0;
+const JWKS_CACHE_TTL = 3600000; // 1 hour
+
+// Base64URL decode helper
+function base64UrlDecode(str) {
+  str = str.replace(/-/g, '+').replace(/_/g, '/');
+  const pad = str.length % 4;
+  if (pad) str += '='.repeat(4 - pad);
+  return atob(str);
+}
+
+// Fetch JWKS from Clerk
+async function getClerkJWKS(env) {
+  const now = Date.now();
+  if (jwksCache && (now - jwksCacheTime) < JWKS_CACHE_TTL) {
+    return jwksCache;
+  }
+
+  // Extract Clerk frontend API from publishable key
+  // pk_test_xxx or pk_live_xxx -> the domain is encoded in the key
+  const publishableKey = env.CLERK_PUBLISHABLE_KEY;
+  if (!publishableKey) return null;
+
+  // Decode the Clerk instance domain from the publishable key
+  const keyParts = publishableKey.split('_');
+  if (keyParts.length < 3) return null;
+
+  // The third part is base64 encoded domain
+  let clerkDomain;
   try {
-    const parts = jwt.split('.');
-    if (parts.length !== 3) return null;
-    // Decode the payload (signature already verified by Cloudflare Access)
-    const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
-    return payload.email || null;
+    clerkDomain = base64UrlDecode(keyParts[2]);
+    // Remove any trailing $ or padding
+    clerkDomain = clerkDomain.replace(/\$+$/, '');
   } catch (e) {
     return null;
   }
+
+  try {
+    const response = await fetch(`https://${clerkDomain}/.well-known/jwks.json`);
+    if (!response.ok) return null;
+    jwksCache = await response.json();
+    jwksCacheTime = now;
+    return jwksCache;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Import RSA public key from JWK
+async function importPublicKey(jwk) {
+  return await crypto.subtle.importKey(
+    'jwk',
+    {
+      kty: jwk.kty,
+      n: jwk.n,
+      e: jwk.e,
+      alg: jwk.alg || 'RS256',
+      use: 'sig'
+    },
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false,
+    ['verify']
+  );
+}
+
+// Verify Clerk JWT token
+async function verifyClerkJWT(token, env) {
+  if (!token) return null;
+
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+
+    const [headerB64, payloadB64, signatureB64] = parts;
+
+    // Decode header to get key ID
+    const header = JSON.parse(base64UrlDecode(headerB64));
+    const kid = header.kid;
+
+    // Get JWKS and find matching key
+    const jwks = await getClerkJWKS(env);
+    if (!jwks || !jwks.keys) return null;
+
+    const jwk = jwks.keys.find(k => k.kid === kid);
+    if (!jwk) return null;
+
+    // Import public key
+    const publicKey = await importPublicKey(jwk);
+
+    // Prepare signature verification
+    const signedData = new TextEncoder().encode(`${headerB64}.${payloadB64}`);
+    const signature = Uint8Array.from(base64UrlDecode(signatureB64), c => c.charCodeAt(0));
+
+    // Verify signature
+    const isValid = await crypto.subtle.verify(
+      'RSASSA-PKCS1-v1_5',
+      publicKey,
+      signature,
+      signedData
+    );
+
+    if (!isValid) return null;
+
+    // Decode and validate payload
+    const payload = JSON.parse(base64UrlDecode(payloadB64));
+
+    // Check expiration
+    const now = Math.floor(Date.now() / 1000);
+    if (payload.exp && payload.exp < now) return null;
+    if (payload.nbf && payload.nbf > now) return null;
+
+    return payload;
+  } catch (e) {
+    console.error('JWT verification error:', e);
+    return null;
+  }
+}
+
+// Get user info from Clerk session
+async function getUserEmail(request, env) {
+  // Check for Clerk session token in cookie or Authorization header
+  const cookies = request.headers.get('Cookie') || '';
+  const authHeader = request.headers.get('Authorization') || '';
+
+  let token = null;
+
+  // Try Authorization header first (Bearer token)
+  if (authHeader.startsWith('Bearer ')) {
+    token = authHeader.slice(7);
+  }
+
+  // Try __session cookie (Clerk's default session cookie)
+  if (!token) {
+    const sessionMatch = cookies.match(/__session=([^;]+)/);
+    if (sessionMatch) {
+      token = sessionMatch[1];
+    }
+  }
+
+  // Also check __clerk_db_jwt for development
+  if (!token) {
+    const devMatch = cookies.match(/__clerk_db_jwt=([^;]+)/);
+    if (devMatch) {
+      token = devMatch[1];
+    }
+  }
+
+  if (!token) return null;
+
+  // Verify the JWT
+  const payload = await verifyClerkJWT(token, env);
+  if (!payload) return null;
+
+  // Return email from claims (Clerk uses different claim names)
+  // Primary email is in the 'email' claim or can be extracted from metadata
+  return payload.email ||
+         payload.primary_email ||
+         (payload.unsafe_metadata && payload.unsafe_metadata.email) ||
+         payload.sub; // Fall back to user ID if no email
+}
+
+// Legacy support: Also check Cloudflare Access JWT
+async function getUserEmailWithFallback(request, env) {
+  // First try Clerk
+  const clerkEmail = await getUserEmail(request, env);
+  if (clerkEmail) return clerkEmail;
+
+  // Fallback to Cloudflare Access for backwards compatibility
+  const cfJwt = request.headers.get('Cf-Access-Jwt-Assertion');
+  if (cfJwt) {
+    try {
+      const parts = cfJwt.split('.');
+      if (parts.length === 3) {
+        const payload = JSON.parse(base64UrlDecode(parts[1]));
+        return payload.email || null;
+      }
+    } catch (e) {
+      // Ignore errors
+    }
+  }
+
+  return null;
 }
 
 // Parse click data from request headers
@@ -1198,6 +1379,395 @@ function getPasswordHTML(code, error = false) {
       <button type="submit">Unlock Link</button>
     </form>
   </div>
+</body>
+</html>`;
+}
+
+// Generate HTML for login/signup pages with Clerk
+function getAuthPageHTML(env, mode = 'login') {
+  const publishableKey = env.CLERK_PUBLISHABLE_KEY || '';
+  const isSignup = mode === 'signup';
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${isSignup ? 'Sign Up' : 'Login'} - URLsToGo</title>
+  <meta name="description" content="${isSignup ? 'Create your URLsToGo account' : 'Login to URLsToGo'}">
+  <link rel="icon" href="${ADMIN_FAVICON}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-primary: #09090b;
+      --bg-secondary: #18181b;
+      --bg-tertiary: #27272a;
+      --text-primary: #fafafa;
+      --text-secondary: #a1a1aa;
+      --text-muted: #71717a;
+      --accent-indigo: #6366f1;
+      --accent-purple: #a855f7;
+      --accent-violet: #8b5cf6;
+      --border-color: #27272a;
+      --gradient-primary: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      line-height: 1.6;
+    }
+
+    /* Animated gradient background */
+    .auth-page {
+      position: relative;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 24px;
+      overflow: hidden;
+    }
+
+    .auth-page::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background:
+        radial-gradient(ellipse at 30% 20%, rgba(99, 102, 241, 0.15) 0%, transparent 50%),
+        radial-gradient(ellipse at 70% 80%, rgba(168, 85, 247, 0.15) 0%, transparent 50%);
+      animation: gradientShift 15s ease-in-out infinite;
+      pointer-events: none;
+    }
+
+    @keyframes gradientShift {
+      0%, 100% { transform: translate(0, 0) rotate(0deg); }
+      33% { transform: translate(2%, 2%) rotate(1deg); }
+      66% { transform: translate(-2%, -1%) rotate(-1deg); }
+    }
+
+    /* Grid pattern overlay */
+    .auth-page::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+    }
+
+    /* Navigation */
+    .nav {
+      position: relative;
+      z-index: 10;
+      padding: 20px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      max-width: 1200px;
+      margin: 0 auto;
+      width: 100%;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--text-primary);
+    }
+
+    .nav-logo {
+      width: 40px;
+      height: 40px;
+      background: var(--gradient-primary);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .nav-logo svg { width: 22px; height: 22px; color: white; }
+
+    .nav-title {
+      font-size: 20px;
+      font-weight: 700;
+      background: var(--gradient-primary);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    /* Auth container */
+    .auth-container {
+      position: relative;
+      z-index: 10;
+      width: 100%;
+      max-width: 440px;
+    }
+
+    .auth-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 20px;
+      padding: 40px;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+    }
+
+    .auth-header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+
+    .auth-logo {
+      width: 64px;
+      height: 64px;
+      background: var(--gradient-primary);
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 20px;
+    }
+
+    .auth-logo svg { width: 32px; height: 32px; color: white; }
+
+    .auth-title {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .auth-subtitle {
+      color: var(--text-secondary);
+      font-size: 15px;
+    }
+
+    /* Clerk container styling */
+    #clerk-auth {
+      min-height: 300px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .auth-loading {
+      text-align: center;
+      padding: 40px;
+      color: var(--text-muted);
+    }
+
+    .auth-loading-spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid var(--border-color);
+      border-top-color: var(--accent-violet);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 16px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Auth toggle */
+    .auth-toggle {
+      text-align: center;
+      margin-top: 24px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      font-size: 14px;
+    }
+
+    .auth-toggle a {
+      color: var(--accent-violet);
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    .auth-toggle a:hover {
+      text-decoration: underline;
+    }
+
+    /* Error state */
+    .auth-error {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 24px;
+      color: #fca5a5;
+      font-size: 14px;
+      display: none;
+    }
+
+    .auth-error.visible {
+      display: block;
+    }
+
+    /* Clerk component overrides */
+    .cl-rootBox {
+      width: 100%;
+    }
+
+    .cl-card {
+      background: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+    }
+
+    .cl-socialButtonsBlockButton {
+      background: var(--bg-tertiary) !important;
+      border: 1px solid var(--border-color) !important;
+    }
+
+    .cl-formButtonPrimary {
+      background: var(--gradient-primary) !important;
+    }
+  </style>
+</head>
+<body>
+  <!-- Navigation -->
+  <nav class="nav">
+    <a href="/" class="nav-brand">
+      <div class="nav-logo">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+        </svg>
+      </div>
+      <span class="nav-title">URLsToGo</span>
+    </a>
+  </nav>
+
+  <!-- Auth Page -->
+  <div class="auth-page">
+    <div class="auth-container">
+      <div class="auth-card">
+        <div class="auth-header">
+          <div class="auth-logo">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+            </svg>
+          </div>
+          <h1 class="auth-title">${isSignup ? 'Create Account' : 'Welcome Back'}</h1>
+          <p class="auth-subtitle">${isSignup ? 'Start shortening URLs in seconds' : 'Sign in to manage your links'}</p>
+        </div>
+
+        <div id="auth-error" class="auth-error"></div>
+
+        <div id="clerk-auth">
+          <div class="auth-loading">
+            <div class="auth-loading-spinner"></div>
+            <p>Loading...</p>
+          </div>
+        </div>
+
+        <div class="auth-toggle">
+          ${isSignup
+            ? 'Already have an account? <a href="/login">Sign in</a>'
+            : "Don't have an account? <a href=\"/signup\">Sign up</a>"}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Clerk JS SDK -->
+  <script>
+    // Configuration
+    const CLERK_PUBLISHABLE_KEY = '${publishableKey}';
+
+    if (!CLERK_PUBLISHABLE_KEY) {
+      document.getElementById('auth-error').textContent = 'Authentication not configured. Please set CLERK_PUBLISHABLE_KEY.';
+      document.getElementById('auth-error').classList.add('visible');
+      document.getElementById('clerk-auth').innerHTML = '';
+    } else {
+      // Load Clerk SDK
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/@clerk/clerk-js@latest/dist/clerk.browser.js';
+      script.async = true;
+      script.onload = initClerk;
+      script.onerror = () => {
+        document.getElementById('auth-error').textContent = 'Failed to load authentication. Please refresh the page.';
+        document.getElementById('auth-error').classList.add('visible');
+        document.getElementById('clerk-auth').innerHTML = '';
+      };
+      document.head.appendChild(script);
+    }
+
+    async function initClerk() {
+      try {
+        const clerk = new Clerk(CLERK_PUBLISHABLE_KEY);
+        await clerk.load();
+
+        // Check if already signed in
+        if (clerk.user) {
+          window.location.href = '/admin';
+          return;
+        }
+
+        // Mount the appropriate component
+        const container = document.getElementById('clerk-auth');
+        container.innerHTML = '';
+
+        ${isSignup ? `
+        clerk.mountSignUp(container, {
+          afterSignUpUrl: '/admin',
+          signInUrl: '/login',
+          appearance: {
+            variables: {
+              colorPrimary: '#8b5cf6',
+              colorBackground: '#18181b',
+              colorText: '#fafafa',
+              colorTextSecondary: '#a1a1aa',
+              colorInputBackground: '#27272a',
+              colorInputText: '#fafafa',
+              borderRadius: '0.75rem'
+            }
+          }
+        });
+        ` : `
+        clerk.mountSignIn(container, {
+          afterSignInUrl: '/admin',
+          signUpUrl: '/signup',
+          appearance: {
+            variables: {
+              colorPrimary: '#8b5cf6',
+              colorBackground: '#18181b',
+              colorText: '#fafafa',
+              colorTextSecondary: '#a1a1aa',
+              colorInputBackground: '#27272a',
+              colorInputText: '#fafafa',
+              borderRadius: '0.75rem'
+            }
+          }
+        });
+        `}
+      } catch (error) {
+        console.error('Clerk initialization error:', error);
+        document.getElementById('auth-error').textContent = 'Authentication error: ' + error.message;
+        document.getElementById('auth-error').classList.add('visible');
+        document.getElementById('clerk-auth').innerHTML = '';
+      }
+    }
+  </script>
 </body>
 </html>`;
 }
@@ -2628,17 +3198,20 @@ function getExpiredHTML() {
 </html>`;
 }
 
-function getAdminHTML(userEmail) {
+function getAdminHTML(userEmail, env) {
+  const clerkPublishableKey = env?.CLERK_PUBLISHABLE_KEY || '';
+
   return `<!DOCTYPE html>
 <html lang="en" class="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LinkShort - Admin</title>
+  <title>URLsToGo - Admin</title>
   <link rel="icon" type="image/svg+xml" href="${ADMIN_FAVICON}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  ${clerkPublishableKey ? `<script src="https://cdn.jsdelivr.net/npm/@clerk/clerk-js@latest/dist/clerk.browser.js"></script>` : ''}
   <style>
     :root {
       --background: 0 0% 3.9%;
@@ -3892,6 +4465,7 @@ function getAdminHTML(userEmail) {
     }
 
     const baseUrl = window.location.origin;
+    const CLERK_PUBLISHABLE_KEY = '${clerkPublishableKey}';
     let allLinks = [];
     let allCategories = [];
     let allTags = [];
@@ -3899,6 +4473,12 @@ function getAdminHTML(userEmail) {
     let currentPage = 1;
     const perPage = 10;
     let currentCategory = null;
+
+    // Initialize Clerk for session management
+    if (CLERK_PUBLISHABLE_KEY && typeof Clerk !== 'undefined') {
+      const clerk = new Clerk(CLERK_PUBLISHABLE_KEY);
+      clerk.load().catch(e => console.error('Clerk load error:', e));
+    }
 
     // Initialize
     async function init() {
@@ -4283,7 +4863,18 @@ function getAdminHTML(userEmail) {
       showToast('Exporting', 'Your links are being downloaded');
     }
 
-    function logout() {
+    async function logout() {
+      // Try Clerk signOut first
+      if (typeof Clerk !== 'undefined' && Clerk.signOut) {
+        try {
+          await Clerk.signOut();
+          window.location.href = '/login';
+          return;
+        } catch (e) {
+          console.error('Clerk signOut error:', e);
+        }
+      }
+      // Fallback to Cloudflare Access logout
       window.location.href = '/cdn-cgi/access/logout';
     }
 
