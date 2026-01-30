@@ -1211,133 +1211,975 @@ function getLandingPageHTML() {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>URLsToGo - Fast, Free URL Shortener</title>
+  <meta name="description" content="Shorten URLs instantly with URLsToGo. Lightning-fast, secure, and powered by Cloudflare's global edge network.">
   <link rel="icon" href="${ADMIN_FAVICON}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-primary: #09090b;
+      --bg-secondary: #18181b;
+      --bg-tertiary: #27272a;
+      --text-primary: #fafafa;
+      --text-secondary: #a1a1aa;
+      --text-muted: #71717a;
+      --accent-indigo: #6366f1;
+      --accent-purple: #a855f7;
+      --accent-violet: #8b5cf6;
+      --border-color: #27272a;
+      --gradient-primary: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+    }
+
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #09090b;
-      color: #fafafa;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      overflow-x: hidden;
+      line-height: 1.6;
+    }
+
+    /* Animated gradient background */
+    .hero {
+      position: relative;
       min-height: 100vh;
       display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background:
+        radial-gradient(ellipse at 20% 30%, rgba(99, 102, 241, 0.15) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 70%, rgba(168, 85, 247, 0.15) 0%, transparent 50%),
+        radial-gradient(ellipse at 50% 50%, rgba(139, 92, 246, 0.1) 0%, transparent 60%);
+      animation: gradientShift 15s ease-in-out infinite;
+      pointer-events: none;
+    }
+
+    @keyframes gradientShift {
+      0%, 100% { transform: translate(0, 0) rotate(0deg); }
+      33% { transform: translate(2%, 2%) rotate(1deg); }
+      66% { transform: translate(-2%, -1%) rotate(-1deg); }
+    }
+
+    /* Grid pattern overlay */
+    .hero::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+    }
+
+    /* Navigation */
+    .nav {
+      position: relative;
+      z-index: 10;
+      padding: 20px 24px;
+      display: flex;
       align-items: center;
-      justify-content: center;
-      padding: 20px;
+      justify-content: space-between;
+      max-width: 1200px;
+      margin: 0 auto;
+      width: 100%;
     }
-    .container {
-      max-width: 600px;
-      text-align: center;
+
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--text-primary);
     }
-    .logo {
-      width: 80px;
-      height: 80px;
-      margin: 0 auto 24px;
-      background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
-      border-radius: 16px;
+
+    .nav-logo {
+      width: 40px;
+      height: 40px;
+      background: var(--gradient-primary);
+      border-radius: 10px;
       display: flex;
       align-items: center;
       justify-content: center;
     }
-    .logo svg { width: 40px; height: 40px; color: white; }
-    h1 {
-      font-size: 48px;
+
+    .nav-logo svg { width: 22px; height: 22px; color: white; }
+
+    .nav-title {
+      font-size: 20px;
       font-weight: 700;
-      background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+      background: var(--gradient-primary);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
-      margin-bottom: 16px;
+      background-clip: text;
     }
-    .tagline {
-      font-size: 20px;
-      color: #a1a1aa;
-      margin-bottom: 40px;
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
-    .features {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-      gap: 16px;
-      margin-bottom: 40px;
+
+    .nav-link {
+      padding: 10px 18px;
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+      border-radius: 8px;
+      transition: all 0.2s;
     }
-    .feature {
-      background: #18181b;
-      border: 1px solid #27272a;
-      border-radius: 12px;
-      padding: 20px;
+
+    .nav-link:hover {
+      color: var(--text-primary);
+      background: var(--bg-secondary);
     }
-    .feature-icon {
-      font-size: 32px;
-      margin-bottom: 8px;
-    }
-    .feature-title {
+
+    .nav-cta {
+      padding: 10px 20px;
+      background: var(--gradient-primary);
+      color: white;
+      text-decoration: none;
       font-size: 14px;
       font-weight: 600;
-      color: #fafafa;
+      border-radius: 8px;
+      transition: all 0.2s;
     }
-    .cta {
+
+    .nav-cta:hover {
+      opacity: 0.9;
+      transform: translateY(-1px);
+    }
+
+    /* Hero content */
+    .hero-content {
+      position: relative;
+      z-index: 10;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      padding: 40px 24px 80px;
+      max-width: 1200px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 60px;
+      align-items: center;
+      width: 100%;
+    }
+
+    @media (max-width: 968px) {
+      .hero-grid {
+        grid-template-columns: 1fr;
+        text-align: center;
+        gap: 48px;
+      }
+    }
+
+    .hero-text {
+      max-width: 560px;
+    }
+
+    @media (max-width: 968px) {
+      .hero-text {
+        max-width: 100%;
+        margin: 0 auto;
+      }
+    }
+
+    .hero-badge {
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      padding: 14px 28px;
-      background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
-      border-radius: 8px;
-      color: white;
-      text-decoration: none;
-      font-weight: 600;
-      font-size: 16px;
-      transition: opacity 0.2s;
+      padding: 6px 14px;
+      background: rgba(139, 92, 246, 0.1);
+      border: 1px solid rgba(139, 92, 246, 0.2);
+      border-radius: 100px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--accent-violet);
+      margin-bottom: 24px;
     }
-    .cta:hover { opacity: 0.9; }
-    .footer {
-      margin-top: 40px;
-      padding-top: 24px;
-      border-top: 1px solid #27272a;
-      color: #71717a;
+
+    .hero-badge-dot {
+      width: 6px;
+      height: 6px;
+      background: var(--accent-violet);
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .hero-title {
+      font-size: clamp(40px, 5vw, 60px);
+      font-weight: 700;
+      line-height: 1.1;
+      margin-bottom: 24px;
+      letter-spacing: -0.02em;
+    }
+
+    .hero-title-gradient {
+      background: var(--gradient-primary);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero-description {
+      font-size: 18px;
+      color: var(--text-secondary);
+      margin-bottom: 36px;
+      line-height: 1.7;
+    }
+
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 48px;
+    }
+
+    @media (max-width: 968px) {
+      .hero-actions {
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 28px;
+      font-size: 15px;
+      font-weight: 600;
+      text-decoration: none;
+      border-radius: 10px;
+      transition: all 0.2s;
+      cursor: pointer;
+      border: none;
+    }
+
+    .btn-primary {
+      background: var(--gradient-primary);
+      color: white;
+      box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 30px rgba(99, 102, 241, 0.4);
+    }
+
+    .btn-secondary {
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+      border: 1px solid var(--border-color);
+    }
+
+    .btn-secondary:hover {
+      background: var(--bg-tertiary);
+      border-color: var(--text-muted);
+    }
+
+    /* Stats */
+    .hero-stats {
+      display: flex;
+      gap: 40px;
+    }
+
+    @media (max-width: 968px) {
+      .hero-stats {
+        justify-content: center;
+      }
+    }
+
+    .stat {
+      text-align: left;
+    }
+
+    @media (max-width: 968px) {
+      .stat {
+        text-align: center;
+      }
+    }
+
+    .stat-value {
+      font-size: 28px;
+      font-weight: 700;
+      background: var(--gradient-primary);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .stat-label {
+      font-size: 13px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    /* Dashboard mockup */
+    .hero-visual {
+      position: relative;
+    }
+
+    .dashboard-mockup {
+      position: relative;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow:
+        0 0 0 1px rgba(255,255,255,0.05),
+        0 20px 50px rgba(0,0,0,0.5),
+        0 0 100px rgba(99, 102, 241, 0.1);
+      transform: perspective(1000px) rotateY(-5deg) rotateX(2deg);
+      transition: transform 0.5s ease;
+    }
+
+    .dashboard-mockup:hover {
+      transform: perspective(1000px) rotateY(-2deg) rotateX(1deg);
+    }
+
+    @media (max-width: 968px) {
+      .dashboard-mockup {
+        transform: none;
+        max-width: 500px;
+        margin: 0 auto;
+      }
+      .dashboard-mockup:hover {
+        transform: none;
+      }
+    }
+
+    .mockup-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      background: var(--bg-primary);
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .mockup-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .mockup-dot.red { background: #ff5f57; }
+    .mockup-dot.yellow { background: #febc2e; }
+    .mockup-dot.green { background: #28c840; }
+
+    .mockup-url {
+      flex: 1;
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-muted);
+      background: var(--bg-secondary);
+      padding: 6px 12px;
+      border-radius: 6px;
+      margin-left: 16px;
+    }
+
+    .mockup-content {
+      padding: 20px;
+    }
+
+    .mockup-sidebar {
+      display: flex;
+      gap: 20px;
+    }
+
+    .mockup-nav {
+      width: 180px;
+      padding-right: 20px;
+      border-right: 1px solid var(--border-color);
+    }
+
+    .mockup-nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 4px;
+    }
+
+    .mockup-nav-item.active {
+      background: rgba(139, 92, 246, 0.1);
+      color: var(--accent-violet);
+    }
+
+    .mockup-nav-icon {
+      width: 18px;
+      height: 18px;
+      border-radius: 4px;
+      background: var(--bg-tertiary);
+    }
+
+    .mockup-nav-item.active .mockup-nav-icon {
+      background: var(--accent-violet);
+    }
+
+    .mockup-main {
+      flex: 1;
+    }
+
+    .mockup-card {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+
+    .mockup-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .mockup-card-title {
       font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .mockup-badge {
+      font-size: 11px;
+      padding: 4px 10px;
+      background: rgba(40, 200, 64, 0.1);
+      color: #28c840;
+      border-radius: 100px;
+      font-weight: 500;
+    }
+
+    .mockup-links {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .mockup-link {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px;
+      background: var(--bg-secondary);
+      border-radius: 8px;
+    }
+
+    .mockup-link-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .mockup-link-icon {
+      width: 32px;
+      height: 32px;
+      background: var(--gradient-primary);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .mockup-link-icon svg {
+      width: 16px;
+      height: 16px;
+      color: white;
+    }
+
+    .mockup-link-text {
+      font-size: 13px;
+      color: var(--text-primary);
+      font-weight: 500;
+    }
+
+    .mockup-link-url {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .mockup-link-clicks {
+      font-size: 12px;
+      color: var(--accent-violet);
+      font-weight: 600;
+    }
+
+    /* Floating elements */
+    .floating-card {
+      position: absolute;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 14px 18px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+      animation: float 6s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+
+    .floating-card-1 {
+      top: -20px;
+      right: -30px;
+      animation-delay: -2s;
+    }
+
+    .floating-card-2 {
+      bottom: 40px;
+      left: -40px;
+      animation-delay: -4s;
+    }
+
+    @media (max-width: 968px) {
+      .floating-card {
+        display: none;
+      }
+    }
+
+    .floating-stat {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .floating-stat-icon {
+      width: 36px;
+      height: 36px;
+      background: rgba(40, 200, 64, 0.1);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #28c840;
+    }
+
+    .floating-stat-value {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .floating-stat-label {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    /* Features section */
+    .features-section {
+      position: relative;
+      z-index: 10;
+      padding: 80px 24px;
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border-color);
+    }
+
+    .features-container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .features-header {
+      text-align: center;
+      margin-bottom: 60px;
+    }
+
+    .features-title {
+      font-size: 36px;
+      font-weight: 700;
+      margin-bottom: 16px;
+    }
+
+    .features-subtitle {
+      font-size: 18px;
+      color: var(--text-secondary);
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 24px;
+    }
+
+    .feature-card {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 28px;
+      transition: all 0.3s;
+    }
+
+    .feature-card:hover {
+      border-color: var(--accent-violet);
+      transform: translateY(-4px);
+      box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+    }
+
+    .feature-icon {
+      width: 48px;
+      height: 48px;
+      background: var(--gradient-primary);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 20px;
+    }
+
+    .feature-icon svg {
+      width: 24px;
+      height: 24px;
+      color: white;
+    }
+
+    .feature-name {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 10px;
+      color: var(--text-primary);
+    }
+
+    .feature-desc {
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+
+    /* Footer */
+    .footer {
+      position: relative;
+      z-index: 10;
+      padding: 40px 24px;
+      border-top: 1px solid var(--border-color);
+      text-align: center;
+    }
+
+    .footer-content {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    @media (max-width: 640px) {
+      .footer-content {
+        flex-direction: column;
+        gap: 16px;
+      }
+    }
+
+    .footer-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text-secondary);
+      font-size: 14px;
+    }
+
+    .footer-logo {
+      width: 24px;
+      height: 24px;
+      background: var(--gradient-primary);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .footer-logo svg {
+      width: 14px;
+      height: 14px;
+      color: white;
+    }
+
+    .footer-text {
+      color: var(--text-muted);
+      font-size: 13px;
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="logo">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-      </svg>
-    </div>
-    <h1>URLsToGo</h1>
-    <p class="tagline">Fast, free URL shortener on Cloudflare's edge network</p>
+  <div class="hero">
+    <!-- Navigation -->
+    <nav class="nav">
+      <a href="/" class="nav-brand">
+        <div class="nav-logo">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+          </svg>
+        </div>
+        <span class="nav-title">URLsToGo</span>
+      </a>
+      <div class="nav-links">
+        <a href="#features" class="nav-link">Features</a>
+        <a href="/admin" class="nav-cta">Dashboard</a>
+      </div>
+    </nav>
 
-    <div class="features">
-      <div class="feature">
-        <div class="feature-icon">⚡</div>
-        <div class="feature-title">Lightning Fast</div>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">🔒</div>
-        <div class="feature-title">Secure</div>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">📊</div>
-        <div class="feature-title">Analytics</div>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">🏷️</div>
-        <div class="feature-title">Categories & Tags</div>
-      </div>
-    </div>
+    <!-- Hero Content -->
+    <div class="hero-content">
+      <div class="hero-grid">
+        <div class="hero-text">
+          <div class="hero-badge">
+            <span class="hero-badge-dot"></span>
+            Powered by Cloudflare Edge
+          </div>
+          <h1 class="hero-title">
+            Shorten URLs<br>
+            <span class="hero-title-gradient">at the speed of light</span>
+          </h1>
+          <p class="hero-description">
+            Create, manage, and track your shortened URLs with our lightning-fast platform.
+            Organize with categories and tags, get real-time analytics, and deploy globally on Cloudflare's edge network.
+          </p>
+          <div class="hero-actions">
+            <a href="/admin" class="btn btn-primary">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M5 12h14"/>
+                <path d="m12 5 7 7-7 7"/>
+              </svg>
+              Get Started Free
+            </a>
+            <a href="#features" class="btn btn-secondary">
+              Learn More
+            </a>
+          </div>
+          <div class="hero-stats">
+            <div class="stat">
+              <div class="stat-value">&lt;50ms</div>
+              <div class="stat-label">Global Latency</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value">300+</div>
+              <div class="stat-label">Edge Locations</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value">99.9%</div>
+              <div class="stat-label">Uptime SLA</div>
+            </div>
+          </div>
+        </div>
 
-    <a href="/admin" class="cta">
-      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-        <polyline points="9 22 9 12 15 12 15 22"/>
-      </svg>
-      Go to Dashboard
-    </a>
+        <div class="hero-visual">
+          <!-- Floating stats -->
+          <div class="floating-card floating-card-1">
+            <div class="floating-stat">
+              <div class="floating-stat-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
+                  <polyline points="16 7 22 7 22 13"/>
+                </svg>
+              </div>
+              <div>
+                <div class="floating-stat-value">+127%</div>
+                <div class="floating-stat-label">Click growth</div>
+              </div>
+            </div>
+          </div>
 
-    <div class="footer">
-      Powered by Cloudflare Workers
+          <div class="floating-card floating-card-2">
+            <div class="floating-stat">
+              <div class="floating-stat-icon" style="background: rgba(99, 102, 241, 0.1); color: #6366f1;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"/>
+                  <polyline points="12 6 12 12 16 14"/>
+                </svg>
+              </div>
+              <div>
+                <div class="floating-stat-value">12ms</div>
+                <div class="floating-stat-label">Avg response</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Dashboard mockup -->
+          <div class="dashboard-mockup">
+            <div class="mockup-header">
+              <div class="mockup-dot red"></div>
+              <div class="mockup-dot yellow"></div>
+              <div class="mockup-dot green"></div>
+              <div class="mockup-url">urlstogo.cloud/admin</div>
+            </div>
+            <div class="mockup-content">
+              <div class="mockup-sidebar">
+                <div class="mockup-nav">
+                  <div class="mockup-nav-item active">
+                    <div class="mockup-nav-icon"></div>
+                    <span>All Links</span>
+                  </div>
+                  <div class="mockup-nav-item">
+                    <div class="mockup-nav-icon"></div>
+                    <span>Categories</span>
+                  </div>
+                  <div class="mockup-nav-item">
+                    <div class="mockup-nav-icon"></div>
+                    <span>Analytics</span>
+                  </div>
+                  <div class="mockup-nav-item">
+                    <div class="mockup-nav-icon"></div>
+                    <span>Settings</span>
+                  </div>
+                </div>
+                <div class="mockup-main">
+                  <div class="mockup-card">
+                    <div class="mockup-card-header">
+                      <div class="mockup-card-title">Recent Links</div>
+                      <div class="mockup-badge">Live</div>
+                    </div>
+                    <div class="mockup-links">
+                      <div class="mockup-link">
+                        <div class="mockup-link-left">
+                          <div class="mockup-link-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                            </svg>
+                          </div>
+                          <div>
+                            <div class="mockup-link-text">urlstogo.cloud/abc123</div>
+                            <div class="mockup-link-url">github.com/project</div>
+                          </div>
+                        </div>
+                        <div class="mockup-link-clicks">2,847 clicks</div>
+                      </div>
+                      <div class="mockup-link">
+                        <div class="mockup-link-left">
+                          <div class="mockup-link-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                            </svg>
+                          </div>
+                          <div>
+                            <div class="mockup-link-text">urlstogo.cloud/docs</div>
+                            <div class="mockup-link-url">documentation.site</div>
+                          </div>
+                        </div>
+                        <div class="mockup-link-clicks">1,234 clicks</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
+
+  <!-- Features Section -->
+  <section id="features" class="features-section">
+    <div class="features-container">
+      <div class="features-header">
+        <h2 class="features-title">Everything you need</h2>
+        <p class="features-subtitle">
+          A complete URL management solution with powerful features built for speed and simplicity.
+        </p>
+      </div>
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+            </svg>
+          </div>
+          <h3 class="feature-name">Lightning Fast</h3>
+          <p class="feature-desc">
+            Redirects in under 50ms globally. Powered by Cloudflare's edge network spanning 300+ cities worldwide.
+          </p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+          </div>
+          <h3 class="feature-name">Enterprise Security</h3>
+          <p class="feature-desc">
+            Protected by Cloudflare Access with SSO integration. Your links and data are always secure.
+          </p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 3v18h18"/>
+              <path d="m19 9-5 5-4-4-3 3"/>
+            </svg>
+          </div>
+          <h3 class="feature-name">Real-time Analytics</h3>
+          <p class="feature-desc">
+            Track clicks, referrers, and geographic data in real-time. Understand how your links perform.
+          </p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/>
+              <path d="M7 7h.01"/>
+            </svg>
+          </div>
+          <h3 class="feature-name">Categories & Tags</h3>
+          <p class="feature-desc">
+            Organize your links with custom categories and tags. Find any link instantly with powerful search.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-content">
+      <div class="footer-brand">
+        <div class="footer-logo">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+          </svg>
+        </div>
+        URLsToGo
+      </div>
+      <div class="footer-text">
+        Powered by Cloudflare Workers
+      </div>
+    </div>
+  </footer>
 </body>
 </html>`;
 }
