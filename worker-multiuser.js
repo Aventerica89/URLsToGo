@@ -1728,22 +1728,49 @@ function getAuthPageHTML(env, mode = 'login') {
       document.getElementById('auth-error').classList.add('visible');
       document.getElementById('clerk-auth').innerHTML = '';
     } else {
-      // Load Clerk SDK
+      // Load Clerk SDK using their official pattern
+      window.__clerk_publishable_key = CLERK_PUBLISHABLE_KEY;
+
       const script = document.createElement('script');
+      script.setAttribute('data-clerk-publishable-key', CLERK_PUBLISHABLE_KEY);
       script.src = 'https://cdn.jsdelivr.net/npm/@clerk/clerk-js@5/dist/clerk.browser.js';
       script.async = true;
-      script.onload = initClerk;
+      script.crossOrigin = 'anonymous';
+
+      script.onload = function() {
+        // Wait for Clerk to be available on window
+        const checkClerk = setInterval(() => {
+          if (window.Clerk) {
+            clearInterval(checkClerk);
+            initClerk();
+          }
+        }, 50);
+
+        // Timeout after 5 seconds
+        setTimeout(() => {
+          clearInterval(checkClerk);
+          if (!window.Clerk) {
+            document.getElementById('auth-error').textContent = 'Authentication timed out. Please refresh the page.';
+            document.getElementById('auth-error').classList.add('visible');
+            document.getElementById('clerk-auth').innerHTML = '';
+          }
+        }, 5000);
+      };
+
       script.onerror = () => {
         document.getElementById('auth-error').textContent = 'Failed to load authentication. Please refresh the page.';
         document.getElementById('auth-error').classList.add('visible');
         document.getElementById('clerk-auth').innerHTML = '';
       };
+
       document.head.appendChild(script);
     }
 
     async function initClerk() {
       try {
-        const clerk = new Clerk(CLERK_PUBLISHABLE_KEY);
+        const clerk = window.Clerk;
+        if (!clerk) throw new Error('Clerk not available');
+
         await clerk.load();
 
         // Check if already signed in
@@ -1774,6 +1801,7 @@ function getAuthPageHTML(env, mode = 'login') {
         document.getElementById('auth-error').textContent = 'Authentication error: ' + error.message;
         document.getElementById('auth-error').classList.add('visible');
         document.getElementById('clerk-auth').innerHTML = '';
+      }
       }
     }
   </script>
