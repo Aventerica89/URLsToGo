@@ -86,6 +86,13 @@ export default {
     // Get user email from Cloudflare Access JWT
     const userEmail = await getUserEmail(request);
 
+    // Public landing page at root
+    if (path === '') {
+      return new Response(getLandingPageHTML(), {
+        headers: { 'Content-Type': 'text/html' }
+      });
+    }
+
     // Serve design resource pages (no auth required)
     if (path === 'design-system') {
       return new Response(getDesignSystemHTML(), {
@@ -1196,6 +1203,145 @@ function getPasswordHTML(code, error = false) {
 }
 
 // Generate HTML for 404 page
+// Generate HTML for public landing page
+function getLandingPageHTML() {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>URLsToGo - Fast, Free URL Shortener</title>
+  <link rel="icon" href="${ADMIN_FAVICON}">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #09090b;
+      color: #fafafa;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .container {
+      max-width: 600px;
+      text-align: center;
+    }
+    .logo {
+      width: 80px;
+      height: 80px;
+      margin: 0 auto 24px;
+      background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .logo svg { width: 40px; height: 40px; color: white; }
+    h1 {
+      font-size: 48px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 16px;
+    }
+    .tagline {
+      font-size: 20px;
+      color: #a1a1aa;
+      margin-bottom: 40px;
+    }
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 16px;
+      margin-bottom: 40px;
+    }
+    .feature {
+      background: #18181b;
+      border: 1px solid #27272a;
+      border-radius: 12px;
+      padding: 20px;
+    }
+    .feature-icon {
+      font-size: 32px;
+      margin-bottom: 8px;
+    }
+    .feature-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #fafafa;
+    }
+    .cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 28px;
+      background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+      border-radius: 8px;
+      color: white;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 16px;
+      transition: opacity 0.2s;
+    }
+    .cta:hover { opacity: 0.9; }
+    .footer {
+      margin-top: 40px;
+      padding-top: 24px;
+      border-top: 1px solid #27272a;
+      color: #71717a;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+      </svg>
+    </div>
+    <h1>URLsToGo</h1>
+    <p class="tagline">Fast, free URL shortener on Cloudflare's edge network</p>
+
+    <div class="features">
+      <div class="feature">
+        <div class="feature-icon">⚡</div>
+        <div class="feature-title">Lightning Fast</div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">🔒</div>
+        <div class="feature-title">Secure</div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">📊</div>
+        <div class="feature-title">Analytics</div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">🏷️</div>
+        <div class="feature-title">Categories & Tags</div>
+      </div>
+    </div>
+
+    <a href="/admin" class="cta">
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+        <polyline points="9 22 9 12 15 12 15 22"/>
+      </svg>
+      Go to Dashboard
+    </a>
+
+    <div class="footer">
+      Powered by Cloudflare Workers
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
 function get404HTML(code) {
   return `<!DOCTYPE html>
 <html lang="en">
