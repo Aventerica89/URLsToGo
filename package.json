@@ -1,0 +1,25 @@
+{
+  "name": "urlstogo",
+  "version": "1.0.0",
+  "description": "A fast, free URL shortener that runs on Cloudflare's edge network. Multi-user support, categories, tags, search, and a clean dark UI.",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Aventerica89/URLsToGo"
+  },
+  "keywords": ["url-shortener", "cloudflare-workers", "clerk"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@clerk/backend": "^2.29.7"
+  },
+  "devDependencies": {
+    "wrangler": "^4.61.1"
+  }
+}
