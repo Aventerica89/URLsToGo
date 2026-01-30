@@ -11,10 +11,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/Aventerica89/URLsToGo"
+    "url": "git+https://github.com/Aventerica89/URLsToGo.git"
   },
   "keywords": ["url-shortener", "cloudflare-workers", "clerk"],
-  "author": "",
+  "author": "Aventerica89",
   "license": "ISC",
   "dependencies": {
     "@clerk/backend": "^2.29.7"

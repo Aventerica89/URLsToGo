@@ -4414,12 +4414,27 @@ function getAdminHTML(userEmail, env) {
       }
     }
 
-    // Initialize Clerk on page load (wait for script to be ready)
+    // Initialize Clerk on page load (wait for script to be ready with polling)
+    function waitForClerk() {
+      let attempts = 0;
+      const maxAttempts = 100; // 5 seconds total (50ms * 100)
+
+      const checkClerk = setInterval(() => {
+        attempts++;
+        if (window.Clerk) {
+          clearInterval(checkClerk);
+          initClerk();
+        } else if (attempts >= maxAttempts) {
+          clearInterval(checkClerk);
+          console.error('Clerk SDK failed to load within timeout');
+        }
+      }, 50);
+    }
+
     if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', initClerk);
+      document.addEventListener('DOMContentLoaded', waitForClerk);
     } else {
-      // Script loaded in head, Clerk may not be ready yet
-      setTimeout(initClerk, 100);
+      waitForClerk();
     }
 
     // Initialize
