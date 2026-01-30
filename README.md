@@ -1,4 +1,4 @@
-# Cloudflare URL Shortener
+# URLsToGo
 
 A fast, free URL shortener that runs on Cloudflare's edge network. Multi-user support, categories, tags, search, and a clean dark UI.
 
@@ -10,7 +10,7 @@ The fastest way to deploy your own instance:
 
 2. **Open Claude Code** and run:
    ```
-   claude "Help me deploy cf-url-shortener to my Cloudflare account"
+   claude "Help me deploy URLsToGo to my Cloudflare account"
    ```
 
 3. **Follow Claude's prompts** - it will:

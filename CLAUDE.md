@@ -1,4 +1,4 @@
-# Claude Instructions for cf-url-shortener
+# Claude Instructions for URLsToGo
 
 ## CRITICAL: Deployment is Fully Automatic
 

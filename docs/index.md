@@ -1,4 +1,4 @@
-# CF URL Shortener Documentation
+# URLsToGo Documentation
 
 A comprehensive URL shortener platform built on Cloudflare's edge network, featuring multi-user support, analytics, and a companion artifact manager for Claude.ai integration.
 
@@ -97,7 +97,7 @@ See [Deployment Guide](deployment.md) for detailed instructions.
 ## Project Structure
 
 ```
-cf-url-shortener/
+URLsToGo/
 ├── worker-multiuser.js       # URL Shortener worker (3,900+ lines)
 ├── migrations.sql            # D1 schema migrations
 ├── wrangler.toml             # Cloudflare config

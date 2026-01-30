@@ -239,7 +239,7 @@ The new user can now log in immediately - no app restart or deployment needed.
 ### Project Structure
 
 ```
-cf-url-shortener/
+URLsToGo/
 ├── .github/workflows/
 │   └── deploy.yml           # GitHub Actions workflow
 ├── worker-multiuser.js      # Main worker code

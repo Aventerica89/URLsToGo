@@ -274,8 +274,8 @@ Common deployment errors:
 
 ```bash
 # Clone repo
-git clone https://github.com/your-username/cf-url-shortener
-cd cf-url-shortener
+git clone https://github.com/your-username/URLsToGo
+cd URLsToGo
 
 # Install wrangler
 npm install -g wrangler
