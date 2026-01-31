@@ -3161,11 +3161,11 @@ function getAdminHTML(userEmail, env) {
       --radius: 0.75rem;
       --indigo: 0.6056 0.2189 292.7172;
       --purple: 0.6368 0.2078 307.3313;
-      --cat-work: 271 91% 65%;
-      --cat-personal: 330 81% 60%;
-      --cat-social: 189 94% 43%;
-      --cat-marketing: 25 95% 53%;
-      --cat-docs: 160 84% 39%;
+      --cat-work: 0.6850 0.2190 307.0000;
+      --cat-personal: 0.6520 0.2450 340.0000;
+      --cat-social: 0.6000 0.1700 210.0000;
+      --cat-marketing: 0.6800 0.2000 50.0000;
+      --cat-docs: 0.5800 0.1500 165.0000;
     }
     /* Light mode variables */
     .light {
