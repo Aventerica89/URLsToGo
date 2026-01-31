@@ -5777,7 +5777,7 @@ function getDesignSystemHTML() {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    :root { --background: 0 0% 3.9%; --foreground: 0 0% 98%; --card: 0 0% 7%; --muted: 0 0% 14.9%; --muted-foreground: 0 0% 63.9%; --border: 0 0% 14.9%; --primary: 0 0% 98%; --primary-foreground: 0 0% 9%; --indigo: 239 84% 67%; --radius: 0.5rem; --cat-work: 271 91% 65%; --cat-personal: 330 81% 60%; --cat-social: 189 94% 43%; --cat-marketing: 25 95% 53%; }
+    :root { --background: 0.1430 0.0219 293.0857; --foreground: 0.9842 0.0034 247.8575; --card: 0.1831 0.0284 289.8409; --muted: 0.2352 0.0362 290.5754; --muted-foreground: 0.7000 0.0100 285.0000; --border: 0.2352 0.0362 290.5754; --primary: 0.6056 0.2189 292.7172; --primary-foreground: 1.0000 0 0; --indigo: 0.6056 0.2189 292.7172; --purple: 0.6368 0.2078 307.3313; --radius: 0.75rem; --cat-work: 0.6850 0.2190 307.0000; --cat-personal: 0.6520 0.2450 340.0000; --cat-social: 0.6000 0.1700 210.0000; --cat-marketing: 0.6800 0.2000 50.0000; --cat-docs: 0.5800 0.1500 165.0000; }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Inter', -apple-system, sans-serif; background: oklch(var(--background)); color: oklch(var(--foreground)); min-height: 100vh; padding: 48px 24px; max-width: 1200px; margin: 0 auto; }
     h1 { font-size: 32px; font-weight: 700; margin-bottom: 8px; }
