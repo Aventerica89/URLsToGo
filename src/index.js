@@ -4397,6 +4397,7 @@ function getAdminHTML(userEmail, env) {
     }
 
     const baseUrl = window.location.origin;
+    const shortlinkBase = 'https://go.urlstogo.cloud';
     const CLERK_PUBLISHABLE_KEY = '${clerkPublishableKey}';
     let allLinks = [];
     let allCategories = [];
@@ -4818,7 +4819,7 @@ function getAdminHTML(userEmail, env) {
     }
 
     function copyLink(code) {
-      navigator.clipboard.writeText(baseUrl + '/' + code);
+      navigator.clipboard.writeText(shortlinkBase + '/' + code);
       showToast('Copied!', 'Link copied to clipboard');
     }
 
@@ -5315,7 +5316,7 @@ function getAdminHTML(userEmail, env) {
     let currentQRCode = null;
 
     function showQRCode(code) {
-      const url = baseUrl + '/' + code;
+      const url = shortlinkBase + '/' + code;
       document.getElementById('qrLinkUrl').textContent = url;
       document.getElementById('qrModal').classList.add('open');
 
