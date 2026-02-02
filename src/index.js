@@ -3277,7 +3277,7 @@ function getAdminHTML(userEmail, env) {
     }
     /* Light mode variables */
     .light {
-      --background: 0 0% 100%;
+      --background: 0 0% 98%;
       --foreground: 0 0% 3.9%;
       --card: 0 0% 100%;
       --card-foreground: 0 0% 3.9%;
@@ -3288,14 +3288,15 @@ function getAdminHTML(userEmail, env) {
       --secondary: 0 0% 96.1%;
       --secondary-foreground: 0 0% 9%;
       --muted: 0 0% 96.1%;
-      --muted-foreground: 0 0% 45.1%;
+      --muted-foreground: 0 0% 35%;
       --accent: 0 0% 96.1%;
       --accent-foreground: 0 0% 9%;
       --destructive: 0 84.2% 60.2%;
       --destructive-foreground: 0 0% 98%;
-      --border: 0 0% 89.8%;
+      --border: 0 0% 85%;
       --input: 0 0% 89.8%;
       --ring: 0 0% 3.9%;
+      --indigo: 239 84% 50%;
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -3977,6 +3978,10 @@ function getAdminHTML(userEmail, env) {
       z-index: 100;
     }
 
+    .light .tab-bar {
+      box-shadow: 0 -1px 10px rgba(0, 0, 0, 0.05);
+    }
+
     .tab-item {
       flex: 1;
       display: flex;
@@ -4033,7 +4038,11 @@ function getAdminHTML(userEmail, env) {
       border-radius: 16px;
       padding: 16px;
       margin-bottom: 12px;
-      transition: transform 150ms ease;
+      transition: transform 150ms ease, box-shadow 150ms ease;
+    }
+
+    .light .link-card {
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
     }
 
     .link-card:active { transform: scale(0.98); }
@@ -4202,6 +4211,10 @@ function getAdminHTML(userEmail, env) {
       padding: 16px;
     }
 
+    .light .mobile-stat-card {
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
+    }
+
     .mobile-stat-value {
       font-size: 28px;
       font-weight: 700;
@@ -4241,6 +4254,7 @@ function getAdminHTML(userEmail, env) {
       transform: translateY(100%);
       transition: transform 300ms cubic-bezier(0.32, 0.72, 0, 1);
       z-index: 201;
+      box-shadow: 0 -4px 30px rgba(0, 0, 0, 0.15);
       display: flex;
       flex-direction: column;
       padding-bottom: env(safe-area-inset-bottom, 0);
