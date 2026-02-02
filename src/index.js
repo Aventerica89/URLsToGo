@@ -172,6 +172,90 @@ function generatePWAIcon(size) {
   return iconSvg;
 }
 
+// Admin path constant - used for redirects and PWA start URL
+const ADMIN_PATH = '/admin';
+
+// =============================================================================
+// PWA - Progressive Web App Assets
+// =============================================================================
+
+// PWA Manifest
+const PWA_MANIFEST = {
+  name: 'URLsToGo',
+  short_name: 'URLsToGo',
+  description: 'Fast, free URL shortener powered by Cloudflare',
+  start_url: ADMIN_PATH,
+  display: 'standalone',
+  background_color: '#09090b',
+  theme_color: '#8b5cf6',
+  orientation: 'any',
+  icons: [
+    { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+    { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+  ]
+};
+
+// Service Worker JavaScript
+const SERVICE_WORKER_JS = `
+const CACHE_NAME = 'urlstogo-v1';
+const STATIC_ASSETS = [
+  '${ADMIN_PATH}',
+  '/login',
+  '/manifest.json'
+];
+
+// Install - cache static assets
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
+  );
+  self.skipWaiting();
+});
+
+// Activate - clean old caches
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+    )
+  );
+  self.clients.claim();
+});
+
+// Fetch - network first, fallback to cache
+self.addEventListener('fetch', (event) => {
+  // Skip non-GET requests and API calls
+  if (event.request.method !== 'GET' || event.request.url.includes('/api/')) {
+    return;
+  }
+
+  event.respondWith(
+    fetch(event.request)
+      .then((response) => {
+        // Clone and cache successful responses
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        }
+        return response;
+      })
+      .catch(() => caches.match(event.request))
+  );
+});
+`;
+
+// Generate SVG icon as PNG-like data (actually SVG but works for PWA)
+function generatePWAIcon(size) {
+  const iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}">
+    <rect width="${size}" height="${size}" rx="${size * 0.1875}" fill="#09090b"/>
+    <g stroke="#8b5cf6" stroke-width="${size * 0.08}" stroke-linecap="round" fill="none" transform="translate(${size * 0.25}, ${size * 0.25}) scale(${size / 32 * 0.5})">
+      <path d="M18.5 10.5a4 4 0 0 1 5.66 5.66l-2.83 2.83a4 4 0 0 1-5.66 0"/>
+      <path d="M13.5 21.5a4 4 0 0 1-5.66-5.66l2.83-2.83a4 4 0 0 1 5.66 0"/>
+    </g>
+  </svg>`;
+  return iconSvg;
+}
+
 // =============================================================================
 // SECURITY HELPER FUNCTIONS - XSS Prevention
 // =============================================================================
