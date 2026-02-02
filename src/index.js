@@ -5,6 +5,87 @@ import { verifyToken, createClerkClient } from '@clerk/backend';
 const ADMIN_FAVICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctitle%3ELinkShort Admin Icon%3C/title%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Cg stroke='%238b5cf6' stroke-width='2.5' stroke-linecap='round' fill='none'%3E%3Cpath d='M18.5 10.5a4 4 0 0 1 5.66 5.66l-2.83 2.83a4 4 0 0 1-5.66 0'/%3E%3Cpath d='M13.5 21.5a4 4 0 0 1-5.66-5.66l2.83-2.83a4 4 0 0 1 5.66 0'/%3E%3C/g%3E%3C/svg%3E";
 
 // =============================================================================
+// PWA - Progressive Web App Assets
+// =============================================================================
+
+// PWA Manifest
+const PWA_MANIFEST = {
+  name: 'URLsToGo',
+  short_name: 'URLsToGo',
+  description: 'Fast, free URL shortener powered by Cloudflare',
+  start_url: '/admin',
+  display: 'standalone',
+  background_color: '#09090b',
+  theme_color: '#8b5cf6',
+  orientation: 'any',
+  icons: [
+    { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+    { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+  ]
+};
+
+// Service Worker JavaScript
+const SERVICE_WORKER_JS = `
+const CACHE_NAME = 'urlstogo-v1';
+const STATIC_ASSETS = [
+  '/admin',
+  '/login',
+  '/manifest.json'
+];
+
+// Install - cache static assets
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
+  );
+  self.skipWaiting();
+});
+
+// Activate - clean old caches
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+    )
+  );
+  self.clients.claim();
+});
+
+// Fetch - network first, fallback to cache
+self.addEventListener('fetch', (event) => {
+  // Skip non-GET requests and API calls
+  if (event.request.method !== 'GET' || event.request.url.includes('/api/')) {
+    return;
+  }
+
+  event.respondWith(
+    fetch(event.request)
+      .then((response) => {
+        // Clone and cache successful responses
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        }
+        return response;
+      })
+      .catch(() => caches.match(event.request))
+  );
+});
+`;
+
+// Generate SVG icon as PNG-like data (actually SVG but works for PWA)
+function generatePWAIcon(size) {
+  const iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}">
+    <rect width="${size}" height="${size}" rx="${size * 0.1875}" fill="#09090b"/>
+    <g stroke="#8b5cf6" stroke-width="${size * 0.08}" stroke-linecap="round" fill="none" transform="translate(${size * 0.25}, ${size * 0.25}) scale(${size / 32 * 0.5})">
+      <path d="M18.5 10.5a4 4 0 0 1 5.66 5.66l-2.83 2.83a4 4 0 0 1-5.66 0"/>
+      <path d="M13.5 21.5a4 4 0 0 1-5.66-5.66l2.83-2.83a4 4 0 0 1 5.66 0"/>
+    </g>
+  </svg>`;
+  return iconSvg;
+}
+
+// =============================================================================
 // SECURITY HELPER FUNCTIONS - XSS Prevention
 // =============================================================================
 
@@ -112,6 +193,24 @@ export default {
     if (path === 'mobile-mockup') {
       return new Response(getMobileMockupHTML(), {
         headers: { 'Content-Type': 'text/html' }
+      });
+    }
+
+    // PWA Assets
+    if (path === 'manifest.json') {
+      return new Response(JSON.stringify(PWA_MANIFEST), {
+        headers: { 'Content-Type': 'application/manifest+json' }
+      });
+    }
+    if (path === 'sw.js') {
+      return new Response(SERVICE_WORKER_JS, {
+        headers: { 'Content-Type': 'application/javascript' }
+      });
+    }
+    if (path === 'icon-192.png' || path === 'icon-512.png') {
+      const size = path === 'icon-192.png' ? 192 : 512;
+      return new Response(generatePWAIcon(size), {
+        headers: { 'Content-Type': 'image/svg+xml' }
       });
     }
 
@@ -3132,7 +3231,14 @@ function getAdminHTML(userEmail, env) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>URLsToGo - Admin</title>
+  <meta name="description" content="Manage your shortened URLs">
+  <meta name="theme-color" content="#8b5cf6">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="URLsToGo">
   <link rel="icon" type="image/svg+xml" href="${ADMIN_FAVICON}">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="apple-touch-icon" href="/icon-192.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -5760,6 +5866,11 @@ function getAdminHTML(userEmail, env) {
 
     // Init
     init();
+
+    // Register Service Worker for PWA
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
   </script>
 </body>
 </html>`;
