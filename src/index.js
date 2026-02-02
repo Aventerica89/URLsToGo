@@ -4,6 +4,9 @@ import { verifyToken, createClerkClient } from '@clerk/backend';
 // Favicon SVG with accessibility title and optimized grouped paths
 const ADMIN_FAVICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctitle%3ELinkShort Admin Icon%3C/title%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Cg stroke='%238b5cf6' stroke-width='2.5' stroke-linecap='round' fill='none'%3E%3Cpath d='M18.5 10.5a4 4 0 0 1 5.66 5.66l-2.83 2.83a4 4 0 0 1-5.66 0'/%3E%3Cpath d='M13.5 21.5a4 4 0 0 1-5.66-5.66l2.83-2.83a4 4 0 0 1 5.66 0'/%3E%3C/g%3E%3C/svg%3E";
 
+// Admin path constant - used for redirects and PWA start URL
+const ADMIN_PATH = '/admin';
+
 // =============================================================================
 // PWA - Progressive Web App Assets
 // =============================================================================
@@ -13,7 +16,7 @@ const PWA_MANIFEST = {
   name: 'URLsToGo',
   short_name: 'URLsToGo',
   description: 'Fast, free URL shortener powered by Cloudflare',
-  start_url: '/admin',
+  start_url: ADMIN_PATH,
   display: 'standalone',
   background_color: '#09090b',
   theme_color: '#8b5cf6',
@@ -28,7 +31,7 @@ const PWA_MANIFEST = {
 const SERVICE_WORKER_JS = `
 const CACHE_NAME = 'urlstogo-v1';
 const STATIC_ASSETS = [
-  '/admin',
+  '${ADMIN_PATH}',
   '/login',
   '/manifest.json'
 ];
@@ -1763,7 +1766,7 @@ function getAuthPageHTML(env, mode = 'login') {
 
         // Check if already signed in
         if (clerk.user) {
-          window.location.href = '/admin';
+          window.location.href = '${ADMIN_PATH}';
           return;
         }
 
@@ -1773,13 +1776,13 @@ function getAuthPageHTML(env, mode = 'login') {
 
         ${isSignup ? `
         clerk.mountSignUp(container, {
-          fallbackRedirectUrl: '/admin',
+          fallbackRedirectUrl: '${ADMIN_PATH}',
           signInUrl: '/login',
           appearance: CLERK_APPEARANCE
         });
         ` : `
         clerk.mountSignIn(container, {
-          fallbackRedirectUrl: '/admin',
+          fallbackRedirectUrl: '${ADMIN_PATH}',
           signUpUrl: '/signup',
           appearance: CLERK_APPEARANCE
         });
