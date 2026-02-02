@@ -41,6 +41,22 @@ export default {
       });
     }
 
+    // Wrap all API responses with CORS headers
+    const handleRequest = async () => {
+
+    // ============ PUBLIC SHARE PAGE (NO AUTH REQUIRED) ============
+    if (path.match(/^share\/[a-f0-9-]{36}$/)) {
+      const token = path.split('/')[1];
+      return await renderSharePage(env, token, request.url);
+    }
+
+    // ============ PUBLIC ARTIFACT RENDER (NO AUTH REQUIRED) ============
+    // Renders HTML artifacts in a sandboxed iframe for sharing
+    if (path.match(/^render\/[A-Za-z0-9]{12}$/)) {
+      const token = path.split('/')[1];
+      return await renderArtifactPage(env, token, request.url);
+    }
+
     // Get authenticated user
     const userEmail = await getUserEmail(request);
 
@@ -110,7 +126,10 @@ export default {
     // Serve main app for root path, empty path, or /admin
     if (path === '' || path === 'admin') {
       if (!userEmail) {
-        return new Response('Unauthorized', { status: 401 });
+        // Show landing page for non-authenticated users
+        return new Response(getLandingPageHtml(), {
+          headers: { 'Content-Type': 'text/html' }
+        });
       }
       return new Response(getAppHtml(userEmail), {
         headers: { 'Content-Type': 'text/html' }
@@ -118,6 +137,14 @@ export default {
     }
 
     return new Response('Not found', { status: 404 });
+    };
+
+    // Execute and wrap with CORS headers for API routes
+    const response = await handleRequest();
+    if (path.startsWith('api/')) {
+      return corsResponse(response);
+    }
+    return response;
   }
 };
 
@@ -352,6 +379,63 @@ async function handleApiRequest(path, request, env, userEmail, url) {
         return Response.json({ success: true });
       }
 
+      // POST /api/artifacts/:id/share - Generate share token for HTML rendering
+      if (path.match(/^api\/artifacts\/\d+\/share$/) && request.method === 'POST') {
+        const id = path.split('/')[2];
+
+        // Generate 12-char alphanumeric token (like YouTube video IDs)
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+        let shareToken = '';
+        for (let i = 0; i < 12; i++) {
+          shareToken += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+
+        await env.DB.prepare(`
+          UPDATE artifacts SET share_token = ?, shared_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ? AND user_email = ?
+        `).bind(shareToken, id, userEmail).run();
+
+        const baseUrl = new URL(request.url).origin;
+        return Response.json({
+          success: true,
+          shareToken,
+          renderUrl: `${baseUrl}/render/${shareToken}`
+        });
+      }
+
+      // DELETE /api/artifacts/:id/share - Revoke share token
+      if (path.match(/^api\/artifacts\/\d+\/share$/) && request.method === 'DELETE') {
+        const id = path.split('/')[2];
+
+        await env.DB.prepare(`
+          UPDATE artifacts SET share_token = NULL, shared_at = NULL, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ? AND user_email = ?
+        `).bind(id, userEmail).run();
+
+        return Response.json({ success: true });
+      }
+
+      // GET /api/artifacts/:id/share - Get share status
+      if (path.match(/^api\/artifacts\/\d+\/share$/) && request.method === 'GET') {
+        const id = path.split('/')[2];
+
+        const artifact = await env.DB.prepare(`
+          SELECT share_token, shared_at FROM artifacts WHERE id = ? AND user_email = ?
+        `).bind(id, userEmail).first();
+
+        if (!artifact) {
+          return Response.json({ error: 'Artifact not found' }, { status: 404 });
+        }
+
+        const baseUrl = new URL(request.url).origin;
+        return Response.json({
+          isShared: !!artifact.share_token,
+          shareToken: artifact.share_token,
+          sharedAt: artifact.shared_at,
+          renderUrl: artifact.share_token ? `${baseUrl}/render/${artifact.share_token}` : null
+        });
+      }
+
       // ============ COLLECTIONS API ============
 
       // GET /api/collections
@@ -400,6 +484,40 @@ async function handleApiRequest(path, request, env, userEmail, url) {
       if (path.match(/^api\/collections\/[a-z0-9-]+$/) && request.method === 'DELETE') {
         const slug = path.split('/')[2];
         await env.DB.prepare('DELETE FROM collections WHERE slug = ? AND user_email = ?').bind(slug, userEmail).run();
+        return Response.json({ success: true });
+      }
+
+      // POST /api/collections/:slug/share - Enable sharing for collection
+      if (path.match(/^api\/collections\/[a-z0-9-]+\/share$/) && request.method === 'POST') {
+        const slug = path.split('/')[2];
+        const { settings } = await request.json();
+
+        // Generate secure share token
+        const shareToken = crypto.randomUUID();
+
+        await env.DB.prepare(`
+          UPDATE collections
+          SET is_public = 1, share_token = ?, share_settings = ?, shared_at = CURRENT_TIMESTAMP
+          WHERE slug = ? AND user_email = ?
+        `).bind(shareToken, JSON.stringify(settings || {}), slug, userEmail).run();
+
+        const baseUrl = new URL(request.url).origin;
+        return Response.json({
+          success: true,
+          shareUrl: `${baseUrl}/share/${shareToken}`
+        });
+      }
+
+      // DELETE /api/collections/:slug/share - Disable sharing
+      if (path.match(/^api\/collections\/[a-z0-9-]+\/share$/) && request.method === 'DELETE') {
+        const slug = path.split('/')[2];
+
+        await env.DB.prepare(`
+          UPDATE collections
+          SET is_public = 0, share_token = NULL, share_settings = NULL, shared_at = NULL
+          WHERE slug = ? AND user_email = ?
+        `).bind(slug, userEmail).run();
+
         return Response.json({ success: true });
       }
 
@@ -678,6 +796,327 @@ async function getUserEmail(request) {
   }
 }
 
+// ============ PUBLIC SHARE PAGE RENDERING ============
+
+async function renderSharePage(env, token, requestUrl) {
+  // Get collection by share token
+  const collection = await env.DB.prepare(`
+    SELECT * FROM collections
+    WHERE share_token = ? AND is_public = 1
+  `).bind(token).first();
+
+  if (!collection) {
+    return new Response(`
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Collection Not Found</title>
+        <style>
+          body { font-family: system-ui, -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f9fafb; }
+          .error { text-align: center; padding: 2rem; }
+          h1 { color: #374151; }
+        </style>
+      </head>
+      <body>
+        <div class="error">
+          <h1>404 - Collection Not Found</h1>
+          <p>This collection doesn't exist or is no longer shared.</p>
+        </div>
+      </body>
+      </html>
+    `, { status: 404, headers: { 'Content-Type': 'text/html' } });
+  }
+
+  // Get artifacts in collection (grouped by tags)
+  const { results: artifacts } = await env.DB.prepare(`
+    SELECT a.*, GROUP_CONCAT(t.name) as tags
+    FROM artifacts a
+    LEFT JOIN artifact_tags at ON a.id = at.artifact_id
+    LEFT JOIN tags t ON at.tag_id = t.id
+    WHERE a.collection_id = ? AND a.user_email = ?
+    GROUP BY a.id
+    ORDER BY a.created_at DESC
+  `).bind(collection.id, collection.user_email).all();
+
+  const settings = JSON.parse(collection.share_settings || '{}');
+
+  // Group artifacts by tags
+  const grouped = {};
+  artifacts.forEach(artifact => {
+    const tagList = artifact.tags ? artifact.tags.split(',') : ['Uncategorized'];
+    tagList.forEach(tag => {
+      if (!grouped[tag]) grouped[tag] = [];
+      grouped[tag].push(artifact);
+    });
+  });
+
+  // Render public share page
+  return new Response(renderSharePageHTML(collection, grouped, settings), {
+    headers: { 'Content-Type': 'text/html' }
+  });
+}
+
+function renderSharePageHTML(collection, groupedArtifacts, settings) {
+  const name = escapeHtmlServer(collection.name);
+  const desc = collection.description ? escapeHtmlServer(collection.description) : '';
+  const count = Object.values(groupedArtifacts).reduce((sum, arr) => sum + arr.length, 0);
+
+  let artifactsHTML = '';
+  for (const [tag, artifacts] of Object.entries(groupedArtifacts)) {
+    artifactsHTML += `
+      <details class="tag-group" open>
+        <summary class="tag-header">
+          <h2>${escapeHtmlServer(tag)}</h2>
+          <span class="count">${artifacts.length} item${artifacts.length !== 1 ? 's' : ''}</span>
+        </summary>
+        <div class="artifacts-grid">
+          ${artifacts.map(a => renderPublicCard(a, settings)).join('')}
+        </div>
+      </details>
+    `;
+  }
+
+  return `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>${name} - Shared Collection</title>
+      <style>
+        /* Reset and base styles */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.5; color: #1f2937; background: #f9fafb; }
+
+        /* Header */
+        .share-header { background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); color: white; padding: 3rem 2rem; text-align: center; }
+        .share-header h1 { font-size: 2.5rem; margin-bottom: 0.5rem; font-weight: 700; }
+        .share-header p { font-size: 1.125rem; opacity: 0.95; margin-top: 0.5rem; }
+        .artifact-count { display: inline-block; margin-top: 1rem; padding: 0.5rem 1rem; background: rgba(255,255,255,0.2); border-radius: 2rem; font-size: 0.875rem; }
+
+        /* Content area */
+        .share-content { max-width: 1200px; margin: 2rem auto; padding: 0 1rem; }
+
+        /* Tag groups */
+        .tag-group { background: white; border-radius: 0.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 1.5rem; overflow: hidden; }
+        .tag-group summary { cursor: pointer; padding: 1rem 1.5rem; background: #f9fafb; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center; user-select: none; list-style: none; }
+        .tag-group summary::-webkit-details-marker { display: none; }
+        .tag-group summary:hover { background: #f3f4f6; }
+        .tag-group summary h2 { font-size: 1.25rem; font-weight: 600; color: #111827; }
+        .tag-group summary .count { color: #6b7280; font-size: 0.875rem; }
+        .tag-group[open] summary { border-bottom: 2px solid #6366f1; }
+
+        /* Artifacts grid */
+        .artifacts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1.5rem; padding: 1.5rem; }
+
+        /* Artifact cards */
+        .artifact-card { background: white; border: 1px solid #e5e7eb; border-radius: 0.5rem; overflow: hidden; transition: transform 0.2s, box-shadow 0.2s; }
+        .artifact-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .artifact-card .card-body { padding: 1rem; }
+        .artifact-card h3 { font-size: 1.125rem; font-weight: 600; margin-bottom: 0.5rem; color: #111827; }
+        .artifact-card p { color: #6b7280; font-size: 0.875rem; margin-bottom: 0.75rem; }
+
+        /* Card meta */
+        .card-meta { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
+        .card-meta span { padding: 0.25rem 0.5rem; font-size: 0.75rem; border-radius: 0.25rem; background: #f3f4f6; color: #374151; font-weight: 500; }
+
+        /* Card actions */
+        .card-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+        .btn-primary, .btn-secondary { flex: 1; min-width: 120px; padding: 0.5rem 1rem; border-radius: 0.375rem; font-size: 0.875rem; font-weight: 500; text-align: center; text-decoration: none; transition: all 0.2s; border: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 0.25rem; }
+        .btn-primary { background: #6366f1; color: white; }
+        .btn-primary:hover { background: #4f46e5; }
+        .btn-secondary { background: white; border: 1px solid #6366f1; color: #6366f1; }
+        .btn-secondary:hover { background: #f9fafb; }
+
+        /* Footer */
+        .share-footer { text-align: center; padding: 2rem; color: #6b7280; font-size: 0.875rem; }
+        .share-footer a { color: #6366f1; text-decoration: none; }
+        .share-footer a:hover { text-decoration: underline; }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+          .artifacts-grid { grid-template-columns: 1fr; }
+          .share-header h1 { font-size: 1.75rem; }
+          .share-header p { font-size: 1rem; }
+        }
+      </style>
+    </head>
+    <body>
+      <header class="share-header">
+        <h1>${name}</h1>
+        ${desc ? `<p>${desc}</p>` : ''}
+        <span class="artifact-count">${count} artifact${count !== 1 ? 's' : ''}</span>
+      </header>
+
+      <main class="share-content">
+        ${artifactsHTML || '<p style="text-align: center; color: #6b7280;">No artifacts in this collection yet.</p>'}
+      </main>
+
+      <footer class="share-footer">
+        <p>Powered by <a href="https://artifact-manager.jbmd-creations.workers.dev">Artifact Manager</a></p>
+      </footer>
+    </body>
+    </html>
+  `;
+}
+
+function renderPublicCard(artifact, settings) {
+  const name = escapeHtmlServer(artifact.name);
+  const desc = artifact.description ? escapeHtmlServer(artifact.description) : '';
+  const type = escapeHtmlServer(artifact.artifact_type);
+  const lang = artifact.language ? escapeHtmlServer(artifact.language) : '';
+
+  return `
+    <div class="artifact-card">
+      <div class="card-body">
+        <h3>${name}</h3>
+        ${desc ? `<p>${desc}</p>` : ''}
+
+        <div class="card-meta">
+          <span>${type}</span>
+          ${lang ? `<span>${lang}</span>` : ''}
+        </div>
+
+        <div class="card-actions">
+          ${artifact.published_url ? `
+            <a href="${escapeHtmlServer(artifact.published_url)}" target="_blank" rel="noopener noreferrer" class="btn-primary">
+              View Artifact
+            </a>
+          ` : ''}
+          ${artifact.conversation_url ? `
+            <a href="${escapeHtmlServer(artifact.conversation_url)}" target="_blank" rel="noopener noreferrer" class="btn-secondary">
+              See Conversation
+            </a>
+          ` : ''}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ============ PUBLIC ARTIFACT RENDER PAGE ============
+
+async function renderArtifactPage(env, token, requestUrl) {
+  // Get artifact by share token
+  const artifact = await env.DB.prepare(`
+    SELECT id, name, description, artifact_type, file_content, language, published_url
+    FROM artifacts
+    WHERE share_token = ?
+  `).bind(token).first();
+
+  if (!artifact) {
+    return new Response(`
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Artifact Not Found</title>
+        <style>
+          body { font-family: system-ui, -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #09090b; color: #fafafa; }
+          .error { text-align: center; padding: 2rem; }
+          h1 { color: #fafafa; margin-bottom: 1rem; }
+          p { color: #a1a1aa; }
+        </style>
+      </head>
+      <body>
+        <div class="error">
+          <h1>404 - Artifact Not Found</h1>
+          <p>This artifact doesn't exist or is no longer shared.</p>
+        </div>
+      </body>
+      </html>
+    `, { status: 404, headers: { 'Content-Type': 'text/html' } });
+  }
+
+  const name = escapeHtmlServer(artifact.name);
+  const content = artifact.file_content || '';
+  const isHtml = artifact.artifact_type === 'html' || (artifact.language && artifact.language.toLowerCase() === 'html');
+
+  // If it's HTML content, render it in a sandboxed iframe
+  if (isHtml && content) {
+    return new Response(`
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>${name} - Artifact Manager</title>
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body { font-family: system-ui, -apple-system, sans-serif; background: #09090b; height: 100vh; display: flex; flex-direction: column; }
+          .toolbar { background: #18181b; border-bottom: 1px solid #27272a; padding: 0.75rem 1rem; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+          .toolbar-left { display: flex; align-items: center; gap: 1rem; }
+          .toolbar h1 { font-size: 1rem; font-weight: 600; color: #fafafa; }
+          .badge { font-size: 0.75rem; padding: 0.25rem 0.5rem; background: #27272a; color: #a1a1aa; border-radius: 0.25rem; }
+          .toolbar-right { display: flex; gap: 0.5rem; }
+          .btn { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.5rem 0.75rem; border-radius: 0.375rem; font-size: 0.875rem; font-weight: 500; cursor: pointer; border: none; transition: all 0.15s; }
+          .btn-secondary { background: #27272a; color: #fafafa; }
+          .btn-secondary:hover { background: #3f3f46; }
+          .btn-primary { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; }
+          .btn-primary:hover { opacity: 0.9; }
+          .render-frame { flex: 1; border: none; width: 100%; background: white; }
+          .powered-by { font-size: 0.75rem; color: #71717a; }
+          .powered-by a { color: #6366f1; text-decoration: none; }
+          .powered-by a:hover { text-decoration: underline; }
+        </style>
+      </head>
+      <body>
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <h1>${name}</h1>
+            <span class="badge">HTML</span>
+          </div>
+          <div class="toolbar-right">
+            <span class="powered-by">Powered by <a href="https://artifacts.jbcloud.app" target="_blank">Artifact Manager</a></span>
+          </div>
+        </div>
+        <iframe class="render-frame" sandbox="allow-scripts allow-same-origin" srcdoc="${escapeHtmlServer(content).replace(/"/g, '&quot;')}"></iframe>
+      </body>
+      </html>
+    `, { headers: { 'Content-Type': 'text/html' } });
+  }
+
+  // For non-HTML content, show it as formatted code
+  return new Response(`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>${name} - Artifact Manager</title>
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: #09090b; min-height: 100vh; }
+        .toolbar { background: #18181b; border-bottom: 1px solid #27272a; padding: 0.75rem 1rem; display: flex; align-items: center; justify-content: space-between; }
+        .toolbar-left { display: flex; align-items: center; gap: 1rem; }
+        .toolbar h1 { font-size: 1rem; font-weight: 600; color: #fafafa; }
+        .badge { font-size: 0.75rem; padding: 0.25rem 0.5rem; background: #27272a; color: #a1a1aa; border-radius: 0.25rem; }
+        .powered-by { font-size: 0.75rem; color: #71717a; }
+        .powered-by a { color: #6366f1; text-decoration: none; }
+        .content { padding: 1.5rem; }
+        pre { background: #18181b; border: 1px solid #27272a; border-radius: 0.5rem; padding: 1rem; overflow-x: auto; }
+        code { font-family: 'SF Mono', Consolas, monospace; font-size: 0.875rem; color: #fafafa; white-space: pre-wrap; word-break: break-all; }
+      </style>
+    </head>
+    <body>
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <h1>${name}</h1>
+          <span class="badge">${escapeHtmlServer(artifact.language || artifact.artifact_type || 'Code')}</span>
+        </div>
+        <span class="powered-by">Powered by <a href="https://artifacts.jbcloud.app" target="_blank">Artifact Manager</a></span>
+      </div>
+      <div class="content">
+        <pre><code>${escapeHtmlServer(content)}</code></pre>
+      </div>
+    </body>
+    </html>
+  `, { headers: { 'Content-Type': 'text/html' } });
+}
+
 // Server-side HTML escaping
 function escapeHtmlServer(text) {
   if (!text) return '';
@@ -718,6 +1157,178 @@ function sanitizeName(name) {
   }
 
   return trimmed;
+}
+
+// ============ LANDING PAGE HTML ============
+
+function getLandingPageHtml() {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Artifact Manager - Save & Organize Claude.ai Artifacts</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #09090b;
+      --bg-secondary: #18181b;
+      --border: #27272a;
+      --text: #fafafa;
+      --text-muted: #a1a1aa;
+      --indigo: #6366f1;
+      --violet: #8b5cf6;
+      --emerald: #10b981;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+
+    /* Hero */
+    .hero { min-height: 80vh; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 4rem 2rem; background: linear-gradient(180deg, var(--bg) 0%, #0f0f14 100%); position: relative; overflow: hidden; }
+    .hero::before { content: ''; position: absolute; top: 50%; left: 50%; width: 600px; height: 600px; background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 70%); transform: translate(-50%, -50%); }
+    .hero-content { position: relative; z-index: 1; max-width: 800px; }
+    .badge { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 2rem; font-size: 0.875rem; color: var(--text-muted); margin-bottom: 1.5rem; }
+    .badge-dot { width: 8px; height: 8px; background: var(--emerald); border-radius: 50%; }
+    h1 { font-size: clamp(2.5rem, 6vw, 4rem); font-weight: 700; margin-bottom: 1.5rem; background: linear-gradient(135deg, var(--text) 0%, var(--text-muted) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .hero p { font-size: 1.25rem; color: var(--text-muted); margin-bottom: 2rem; max-width: 600px; margin-left: auto; margin-right: auto; }
+    .cta-buttons { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+    .btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.875rem 1.5rem; border-radius: 0.5rem; font-size: 1rem; font-weight: 600; text-decoration: none; transition: all 0.2s; border: none; cursor: pointer; }
+    .btn-primary { background: linear-gradient(135deg, var(--indigo), var(--violet)); color: white; }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 30px rgba(99, 102, 241, 0.3); }
+    .btn-secondary { background: var(--bg-secondary); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: var(--border); }
+
+    /* Features */
+    .features { padding: 6rem 2rem; max-width: 1200px; margin: 0 auto; }
+    .features h2 { text-align: center; font-size: 2rem; margin-bottom: 3rem; }
+    .features-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; }
+    .feature-card { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 1rem; padding: 2rem; }
+    .feature-icon { width: 48px; height: 48px; background: linear-gradient(135deg, var(--indigo), var(--violet)); border-radius: 0.75rem; display: flex; align-items: center; justify-content: center; margin-bottom: 1rem; }
+    .feature-card h3 { font-size: 1.25rem; margin-bottom: 0.5rem; }
+    .feature-card p { color: var(--text-muted); }
+
+    /* How it works */
+    .how-it-works { padding: 6rem 2rem; background: var(--bg-secondary); }
+    .how-it-works h2 { text-align: center; font-size: 2rem; margin-bottom: 3rem; }
+    .steps { max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; gap: 2rem; }
+    .step { display: flex; gap: 1.5rem; align-items: flex-start; }
+    .step-number { width: 40px; height: 40px; background: linear-gradient(135deg, var(--indigo), var(--violet)); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0; }
+    .step-content h3 { font-size: 1.125rem; margin-bottom: 0.25rem; }
+    .step-content p { color: var(--text-muted); }
+
+    /* Footer */
+    .footer { padding: 3rem 2rem; text-align: center; border-top: 1px solid var(--border); }
+    .footer p { color: var(--text-muted); font-size: 0.875rem; }
+    .footer a { color: var(--indigo); text-decoration: none; }
+    .footer a:hover { text-decoration: underline; }
+    .version { margin-top: 1rem; font-size: 0.75rem; color: var(--text-muted); }
+  </style>
+</head>
+<body>
+  <section class="hero">
+    <div class="hero-content">
+      <div class="badge">
+        <span class="badge-dot"></span>
+        <span>v1.1.0 - Now with shareable HTML rendering</span>
+      </div>
+      <h1>Save & Organize Your Claude Artifacts</h1>
+      <p>One-click saving from Claude.ai. Organize with collections and tags. Share rendered HTML with anyone.</p>
+      <div class="cta-buttons">
+        <a href="https://github.com/Aventerica89/cf-url-shortener/tree/main/chrome-extension" class="btn btn-primary" target="_blank">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.4 0 0 5.4 0 12c0 5.3 3.4 9.8 8.2 11.4.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.5-1.4-1.3-1.8-1.3-1.8-1-.7.1-.7.1-.7 1.1.1 1.7 1.2 1.7 1.2 1 1.7 2.6 1.2 3.3.9.1-.7.4-1.2.7-1.5-2.7-.3-5.5-1.3-5.5-6 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2 1-.3 2-.4 3-.4s2 .1 3 .4c2.3-1.5 3.3-1.2 3.3-1.2.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.7-2.8 5.7-5.5 6 .4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6C20.6 21.8 24 17.3 24 12c0-6.6-5.4-12-12-12z"/></svg>
+          Get Chrome Extension
+        </a>
+        <a href="#" class="btn btn-secondary" onclick="alert('Safari extension coming soon!')">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m16.24 7.76-2.12 6.36-6.36 2.12 2.12-6.36 6.36-2.12z"/></svg>
+          Safari Extension
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section class="features">
+    <h2>Everything you need to manage artifacts</h2>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        </div>
+        <h3>One-Click Save</h3>
+        <p>Save any Claude artifact directly from claude.ai with a single click. The browser extension handles everything.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        </div>
+        <h3>Collections & Tags</h3>
+        <p>Organize artifacts into collections. Add tags for flexible categorization. Find anything instantly.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+        </div>
+        <h3>Share Rendered HTML</h3>
+        <p>Generate shareable links for HTML artifacts. Anyone can view the rendered result - no login required.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        </div>
+        <h3>Live Preview</h3>
+        <p>Preview HTML artifacts directly in the app. Toggle between code view and rendered preview instantly.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        </div>
+        <h3>Full Content Storage</h3>
+        <p>Store complete artifact content, not just URLs. View, copy, and export your code anytime.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </div>
+        <h3>Export & Backup</h3>
+        <p>Export your entire library as JSON. Import into other instances. Your data, your control.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="how-it-works">
+    <h2>Get started in 3 steps</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <h3>Install the Extension</h3>
+          <p>Download and install the Chrome or Safari extension from GitHub.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <h3>Configure the URL</h3>
+          <p>Set your Artifact Manager URL in the extension popup (it's this site!).</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <h3>Start Saving</h3>
+          <p>Visit claude.ai and click "Save" on any artifact. It appears here automatically.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <p>Built with Cloudflare Workers. <a href="https://github.com/Aventerica89/cf-url-shortener" target="_blank">View on GitHub</a></p>
+    <p class="version">Extension v1.1.0 &middot; <a href="https://github.com/Aventerica89/cf-url-shortener/blob/main/chrome-extension/CHANGELOG.md" target="_blank">Changelog</a></p>
+  </footer>
+</body>
+</html>`;
 }
 
 // ============ APP HTML ============
@@ -876,6 +1487,35 @@ function getAppHtml(userEmail) {
       background: var(--muted);
       padding: 0.125rem 0.5rem;
       border-radius: 9999px;
+    }
+
+    /* Collection share button */
+    .collection-nav-item {
+      padding: 0.625rem 0.5rem 0.625rem 1.5rem;
+      justify-content: space-between;
+    }
+
+    .collection-share-btn {
+      opacity: 0;
+      background: none;
+      border: none;
+      color: var(--muted-foreground);
+      cursor: pointer;
+      padding: 0.25rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 0.25rem;
+      transition: all 0.15s;
+    }
+
+    .collection-nav-item:hover .collection-share-btn {
+      opacity: 1;
+    }
+
+    .collection-share-btn:hover {
+      background: var(--accent);
+      color: var(--indigo);
     }
 
     .nav-item.has-actions {
@@ -2314,6 +2954,56 @@ function getAppHtml(userEmail) {
     </div>
   </div>
 
+  <!-- Share Collection Modal -->
+  <div class="modal-overlay" id="share-modal">
+    <div class="modal" style="max-width: 500px;">
+      <div class="modal-header">
+        <h3>Share Collection</h3>
+        <button class="btn btn-ghost btn-icon" onclick="closeShareModal()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p style="margin-bottom: 1.5rem;">Share "<strong id="share-collection-name"></strong>" publicly. Anyone with the link will be able to view this collection.</p>
+
+        <div id="share-url-container" style="display: none; margin-bottom: 1.5rem;">
+          <label style="display: block; font-weight: 500; margin-bottom: 0.5rem; color: var(--text-primary);">Public URL</label>
+          <div style="display: flex; gap: 0.5rem;">
+            <input type="text" id="share-url" readonly style="flex: 1; background: var(--secondary); font-family: monospace; font-size: 0.875rem;" />
+            <button class="btn btn-secondary" onclick="copyShareUrl()">Copy</button>
+          </div>
+          <p style="margin-top: 0.5rem; font-size: 0.875rem; color: var(--text-secondary);">This link allows anyone to view your collection without signing in.</p>
+        </div>
+
+        <div id="share-settings" style="display: none;">
+          <div class="form-group">
+            <label>
+              <input type="checkbox" id="share-show-thumbnails" checked />
+              <span style="margin-left: 0.5rem;">Show artifact previews</span>
+            </label>
+          </div>
+
+          <div class="form-group">
+            <label style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Layout Style</label>
+            <select id="share-layout" style="width: 100%;">
+              <option value="grouped">Grouped by Tags (Recommended)</option>
+              <option value="grid">Grid View</option>
+              <option value="list">List View</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeShareModal()">Close</button>
+        <button class="btn btn-primary" id="enable-sharing-btn" onclick="enableSharing()">Enable Sharing</button>
+        <button class="btn btn-danger" id="disable-sharing-btn" onclick="disableSharing()" style="display: none;">Stop Sharing</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Content Viewer Modal -->
   <div class="modal-overlay" id="content-modal">
     <div class="modal" style="max-width: 900px; max-height: 90vh;">
@@ -2357,6 +3047,24 @@ function getAppHtml(userEmail) {
               <circle cx="12" cy="12" r="3"/>
             </svg>
             Toggle Preview
+          </button>
+          <button class="btn btn-secondary" id="open-new-tab-btn" onclick="openInNewTab()" style="display: none;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+              <polyline points="15 3 21 3 21 9"/>
+              <line x1="10" y1="14" x2="21" y2="3"/>
+            </svg>
+            Open in New Tab
+          </button>
+          <button class="btn btn-secondary" id="share-artifact-btn" onclick="toggleShareArtifact()" style="display: none;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="18" cy="5" r="3"/>
+              <circle cx="6" cy="12" r="3"/>
+              <circle cx="18" cy="19" r="3"/>
+              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+            </svg>
+            <span id="share-btn-text">Share</span>
           </button>
         </div>
         <button class="btn btn-primary" onclick="closeContentModal()">Close</button>
@@ -2579,10 +3287,21 @@ function getAppHtml(userEmail) {
     function renderCollectionsNav() {
       const nav = document.getElementById('collections-nav');
       nav.innerHTML = allCollections.map(c => \`
-        <div class="nav-item" data-filter="collection" data-value="\${escapeAttr(c.slug)}" onclick="setFilter('collection', '\${escapeAttr(c.slug)}')">
-          <div class="collection-dot" style="background: \${safeColor(c.color)}"></div>
-          \${escapeHtml(c.name)}
-          <span class="nav-item-count">\${c.artifact_count || 0}</span>
+        <div class="nav-item collection-nav-item" data-filter="collection" data-value="\${escapeAttr(c.slug)}">
+          <div style="display: flex; align-items: center; flex: 1; cursor: pointer;" onclick="setFilter('collection', '\${escapeAttr(c.slug)}')">
+            <div class="collection-dot" style="background: \${safeColor(c.color)}"></div>
+            \${escapeHtml(c.name)}
+            <span class="nav-item-count">\${c.artifact_count || 0}</span>
+          </div>
+          <button class="collection-share-btn" onclick="event.stopPropagation(); openShareModal('\${escapeAttr(c.slug)}')" title="Share collection">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="18" cy="5" r="3"/>
+              <circle cx="6" cy="12" r="3"/>
+              <circle cx="18" cy="19" r="3"/>
+              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+            </svg>
+          </button>
         </div>
       \`).join('') + \`
         <div class="nav-item" onclick="openCollectionModal()" style="color: var(--indigo);">
@@ -3261,13 +3980,40 @@ function getAppHtml(userEmail) {
 
       // Show/hide preview toggle for HTML
       const previewBtn = document.getElementById('toggle-preview-btn');
+      const openNewTabBtn = document.getElementById('open-new-tab-btn');
+      const shareBtn = document.getElementById('share-artifact-btn');
       const previewContainer = document.getElementById('content-viewer-preview');
       const codeContainer = document.getElementById('content-viewer-code');
 
-      if (artifact.artifact_type === 'html' || (content.includes('<html') || content.includes('<!DOCTYPE'))) {
+      const isHtml = artifact.artifact_type === 'html' || (content.includes('<html') || content.includes('<!DOCTYPE'));
+      const hasContent = content && content !== 'No content available';
+
+      if (isHtml) {
         previewBtn.style.display = 'inline-flex';
       } else {
         previewBtn.style.display = 'none';
+      }
+
+      // Show Open in New Tab and Share buttons for HTML artifacts with content
+      if (isHtml && hasContent) {
+        openNewTabBtn.style.display = 'inline-flex';
+        shareBtn.style.display = 'inline-flex';
+
+        // Load share status
+        try {
+          const shareRes = await fetch('/api/artifacts/' + id + '/share');
+          if (shareRes.ok) {
+            const shareData = await shareRes.json();
+            currentViewingArtifact.share_token = shareData.shareToken;
+            currentViewingArtifact.renderUrl = shareData.renderUrl;
+          }
+        } catch (e) {
+          // Ignore share status errors
+        }
+        updateShareButton();
+      } else {
+        openNewTabBtn.style.display = 'none';
+        shareBtn.style.display = 'none';
       }
 
       previewContainer.style.display = 'none';
@@ -3317,6 +4063,94 @@ function getAppHtml(userEmail) {
       }
     }
 
+    // Open artifact in new tab (requires share token)
+    async function openInNewTab() {
+      if (!currentViewingArtifact) return;
+
+      // Check if already shared
+      let renderUrl = currentViewingArtifact.renderUrl;
+
+      if (!renderUrl) {
+        // Generate share token first
+        try {
+          const res = await fetch('/api/artifacts/' + currentViewingArtifact.id + '/share', {
+            method: 'POST'
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            renderUrl = data.renderUrl;
+            currentViewingArtifact.share_token = data.shareToken;
+            currentViewingArtifact.renderUrl = renderUrl;
+            updateShareButton();
+          } else {
+            showToast('Failed to generate share link', 'error');
+            return;
+          }
+        } catch (error) {
+          showToast('Failed to generate share link', 'error');
+          return;
+        }
+      }
+
+      window.open(renderUrl, '_blank');
+    }
+
+    // Toggle share status for artifact
+    async function toggleShareArtifact() {
+      if (!currentViewingArtifact) return;
+
+      const isShared = !!currentViewingArtifact.share_token;
+
+      try {
+        if (isShared) {
+          // Revoke share
+          const res = await fetch('/api/artifacts/' + currentViewingArtifact.id + '/share', {
+            method: 'DELETE'
+          });
+
+          if (res.ok) {
+            currentViewingArtifact.share_token = null;
+            currentViewingArtifact.renderUrl = null;
+            showToast('Share link revoked', 'success');
+            updateShareButton();
+          } else {
+            showToast('Failed to revoke share link', 'error');
+          }
+        } else {
+          // Create share
+          const res = await fetch('/api/artifacts/' + currentViewingArtifact.id + '/share', {
+            method: 'POST'
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            currentViewingArtifact.share_token = data.shareToken;
+            currentViewingArtifact.renderUrl = data.renderUrl;
+
+            // Copy to clipboard
+            await navigator.clipboard.writeText(data.renderUrl);
+            showToast('Share link copied to clipboard!', 'success');
+            updateShareButton();
+          } else {
+            showToast('Failed to generate share link', 'error');
+          }
+        }
+      } catch (error) {
+        showToast('Error: ' + error.message, 'error');
+      }
+    }
+
+    function updateShareButton() {
+      const btn = document.getElementById('share-artifact-btn');
+      const text = document.getElementById('share-btn-text');
+      if (!btn || !text) return;
+
+      const isShared = !!currentViewingArtifact?.share_token;
+      text.textContent = isShared ? 'Unshare' : 'Share';
+      btn.title = isShared ? 'Revoke public share link' : 'Generate public share link';
+    }
+
     async function createCollection() {
       const name = document.getElementById('collection-name').value;
       const color = document.getElementById('collection-color').value;
@@ -3340,12 +4174,70 @@ function getAppHtml(userEmail) {
       }
     }
 
-    // Cleanup Utility
+    // Cleanup Utility - Template Constants
+    const CLEANUP_LOADING = '<div style="text-align: center; padding: 2rem;">' +
+      '<div class="spinner"></div>' +
+      '<p style="margin-top: 1rem; color: var(--text-secondary);">Scanning for placeholder names...</p>' +
+      '</div>';
+
+    const CLEANUP_SUCCESS_SVG = '<svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2" style="margin: 0 auto;">' +
+      '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>' +
+      '<polyline points="22 4 12 14.01 9 11.01"/>' +
+      '</svg>';
+
+    const CLEANUP_SUCCESS = '<div style="text-align: center; padding: 2rem;">' +
+      CLEANUP_SUCCESS_SVG +
+      '<h4 style="margin-top: 1rem;">No Issues Found</h4>' +
+      '<p style="color: var(--text-secondary); margin-top: 0.5rem;">All artifacts have valid names.</p>' +
+      '</div>';
+
+    const GRID_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
+      '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>' +
+      '<rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>' +
+      '</svg>';
+
+    const ARROW_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
+      '<line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>' +
+      '</svg>';
+
+    const WARNING_ICON = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" stroke-width="2">' +
+      '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>' +
+      '<line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>' +
+      '</svg>';
+
+    function renderCleanupItem(artifact) {
+      return '<div style="display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem; background: var(--bg-secondary); border-radius: 6px; margin-bottom: 0.5rem;">' +
+        GRID_ICON +
+        '<div style="flex: 1;">' +
+          '<div style="font-weight: 500;">' + escapeHtml(artifact.name || '(empty)') + '</div>' +
+          '<div style="font-size: 0.75rem; color: var(--text-secondary);">' + escapeHtml(artifact.artifact_type || 'code') + '</div>' +
+        '</div>' +
+        '<div style="display: flex; align-items: center; gap: 0.5rem; color: var(--text-secondary);">' +
+          ARROW_ICON +
+          '<span style="font-size: 0.75rem; color: var(--success);">' + escapeHtml(artifact.artifact_type || 'Artifact') + '</span>' +
+        '</div>' +
+      '</div>';
+    }
+
+    function renderCleanupWarning(count, listHtml) {
+      const plural = count === 1 ? '' : 's';
+      return '<div style="background: var(--warning-bg); border: 1px solid var(--warning-border); border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">' +
+        '<div style="display: flex; align-items: center; gap: 0.75rem;">' +
+          WARNING_ICON +
+          '<div>' +
+            '<strong>Found ' + count + ' placeholder name' + plural + '</strong>' +
+            '<p style="font-size: 0.875rem; color: var(--text-secondary); margin-top: 0.25rem;">These artifacts have temporary or invalid names</p>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div style="max-height: 300px; overflow-y: auto;">' + listHtml + '</div>';
+    }
+
     let placeholderArtifacts = [];
 
     async function openCleanupModal() {
       document.getElementById('cleanup-modal').classList.add('active');
-      document.getElementById('cleanup-body').innerHTML = '<div style="text-align: center; padding: 2rem;"><div class="spinner"></div><p style="margin-top: 1rem; color: var(--text-secondary);">Scanning for placeholder names...</p></div>';
+      document.getElementById('cleanup-body').innerHTML = CLEANUP_LOADING;
       document.getElementById('cleanup-footer').style.display = 'none';
 
       // Scan for placeholders
@@ -3353,18 +4245,10 @@ function getAppHtml(userEmail) {
       placeholderArtifacts = await res.json();
 
       if (placeholderArtifacts.length === 0) {
-        document.getElementById('cleanup-body').innerHTML = '<div style="text-align: center; padding: 2rem;"><svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2" style="margin: 0 auto;"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><h4 style="margin-top: 1rem;">No Issues Found</h4><p style="color: var(--text-secondary); margin-top: 0.5rem;">All artifacts have valid names.</p></div>';
+        document.getElementById('cleanup-body').innerHTML = CLEANUP_SUCCESS;
       } else {
-        const listHtml = placeholderArtifacts.map(a =>
-          '<div style="display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem; background: var(--bg-secondary); border-radius: 6px; margin-bottom: 0.5rem;">' +
-            '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>' +
-            '<div style="flex: 1;"><div style="font-weight: 500;">' + escapeHtml(a.name || '(empty)') + '</div><div style="font-size: 0.75rem; color: var(--text-secondary);">' + escapeHtml(a.artifact_type || 'code') + '</div></div>' +
-            '<div style="display: flex; align-items: center; gap: 0.5rem; color: var(--text-secondary);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg><span style="font-size: 0.75rem; color: var(--success);">' + escapeHtml(a.artifact_type || 'Artifact') + '</span></div>' +
-          '</div>'
-        ).join('');
-
-        document.getElementById('cleanup-body').innerHTML =
-          '<div style="background: var(--warning-bg); border: 1px solid var(--warning-border); border-radius: 8px; padding: 1rem; margin-bottom: 1rem;"><div style="display: flex; align-items: center; gap: 0.75rem;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><div><strong>Found ' + placeholderArtifacts.length + ' placeholder name' + (placeholderArtifacts.length === 1 ? '' : 's') + '</strong><p style="font-size: 0.875rem; color: var(--text-secondary); margin-top: 0.25rem;">These artifacts have temporary or invalid names</p></div></div></div><div style="max-height: 300px; overflow-y: auto;">' + listHtml + '</div>';
+        const listHtml = placeholderArtifacts.map(renderCleanupItem).join('');
+        document.getElementById('cleanup-body').innerHTML = renderCleanupWarning(placeholderArtifacts.length, listHtml);
         document.getElementById('cleanup-footer').style.display = 'flex';
       }
     }
@@ -3391,6 +4275,131 @@ function getAppHtml(userEmail) {
 
       fixBtn.disabled = false;
       fixBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.5rem;"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>Fix All Names';
+    }
+
+    // ============ SHARE COLLECTION MODAL ============
+
+    let currentShareSlug = null;
+
+    async function openShareModal(slug) {
+      currentShareSlug = slug;
+      const collection = allCollections.find(c => c.slug === slug);
+      if (!collection) return;
+
+      document.getElementById('share-collection-name').textContent = collection.name;
+
+      // Check if already shared
+      if (collection.is_public && collection.share_token) {
+        // Already shared - show URL
+        const shareUrl = window.location.origin + '/share/' + collection.share_token;
+        document.getElementById('share-url').value = shareUrl;
+        document.getElementById('share-url-container').style.display = 'block';
+        document.getElementById('share-settings').style.display = 'none';
+        document.getElementById('enable-sharing-btn').style.display = 'none';
+        document.getElementById('disable-sharing-btn').style.display = 'inline-flex';
+      } else {
+        // Not shared yet - show settings
+        document.getElementById('share-url-container').style.display = 'none';
+        document.getElementById('share-settings').style.display = 'block';
+        document.getElementById('enable-sharing-btn').style.display = 'inline-flex';
+        document.getElementById('disable-sharing-btn').style.display = 'none';
+      }
+
+      document.getElementById('share-modal').classList.add('active');
+    }
+
+    function closeShareModal() {
+      document.getElementById('share-modal').classList.remove('active');
+      currentShareSlug = null;
+    }
+
+    async function enableSharing() {
+      if (!currentShareSlug) return;
+
+      const settings = {
+        showThumbnails: document.getElementById('share-show-thumbnails').checked,
+        layout: document.getElementById('share-layout').value
+      };
+
+      const btn = document.getElementById('enable-sharing-btn');
+      btn.disabled = true;
+      btn.textContent = 'Enabling...';
+
+      try {
+        const res = await fetch(\`/api/collections/\${currentShareSlug}/share\`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ settings })
+        });
+
+        const result = await res.json();
+
+        if (result.success) {
+          showToast('Collection shared successfully!', 'success');
+
+          // Update UI to show share URL
+          document.getElementById('share-url').value = result.shareUrl;
+          document.getElementById('share-url-container').style.display = 'block';
+          document.getElementById('share-settings').style.display = 'none';
+          document.getElementById('enable-sharing-btn').style.display = 'none';
+          document.getElementById('disable-sharing-btn').style.display = 'inline-flex';
+
+          // Reload collections to update state
+          await loadCollections();
+        } else {
+          showToast('Failed to enable sharing', 'error');
+        }
+      } catch (error) {
+        showToast('Failed to enable sharing', 'error');
+      }
+
+      btn.disabled = false;
+      btn.textContent = 'Enable Sharing';
+    }
+
+    async function disableSharing() {
+      if (!currentShareSlug) return;
+
+      if (!confirm('Are you sure you want to stop sharing this collection? The existing share link will no longer work.')) {
+        return;
+      }
+
+      const btn = document.getElementById('disable-sharing-btn');
+      btn.disabled = true;
+      btn.textContent = 'Disabling...';
+
+      try {
+        const res = await fetch(\`/api/collections/\${currentShareSlug}/share\`, {
+          method: 'DELETE'
+        });
+
+        const result = await res.json();
+
+        if (result.success) {
+          showToast('Sharing disabled', 'success');
+          closeShareModal();
+          await loadCollections();
+        } else {
+          showToast('Failed to disable sharing', 'error');
+        }
+      } catch (error) {
+        showToast('Failed to disable sharing', 'error');
+      }
+
+      btn.disabled = false;
+      btn.textContent = 'Stop Sharing';
+    }
+
+    function copyShareUrl() {
+      const input = document.getElementById('share-url');
+      input.select();
+      input.setSelectionRange(0, 99999); // For mobile devices
+
+      navigator.clipboard.writeText(input.value).then(() => {
+        showToast('Share URL copied to clipboard!', 'success');
+      }).catch(() => {
+        showToast('Failed to copy URL', 'error');
+      });
     }
 
     // Export/Import

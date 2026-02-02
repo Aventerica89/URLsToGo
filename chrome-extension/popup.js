@@ -1,10 +1,20 @@
 // Artifact Manager Popup Script
 
+// Cross-browser API compatibility
+const browser = globalThis.browser || globalThis.chrome;
+
 document.addEventListener('DOMContentLoaded', init);
 
 async function init() {
+  // Display version from manifest
+  const manifest = browser.runtime.getManifest();
+  const versionEl = document.getElementById('version-text');
+  if (versionEl && manifest.version) {
+    versionEl.textContent = `v${manifest.version}`;
+  }
+
   // Load settings
-  const settings = await chrome.runtime.sendMessage({ action: 'getSettings' });
+  const settings = await browser.runtime.sendMessage({ action: 'getSettings' });
 
   // Populate form
   document.getElementById('api-url').value = settings.apiUrl || '';
@@ -35,7 +45,7 @@ async function testConnection() {
   stats.style.display = 'none';
 
   try {
-    const result = await chrome.runtime.sendMessage({ action: 'testConnection' });
+    const result = await browser.runtime.sendMessage({ action: 'testConnection' });
 
     if (result.success) {
       statusCard.className = 'status-card connected';
@@ -87,7 +97,7 @@ async function saveSettings() {
   saveBtn.textContent = 'Saving...';
 
   try {
-    await chrome.runtime.sendMessage({ action: 'saveSettings', settings });
+    await browser.runtime.sendMessage({ action: 'saveSettings', settings });
     showMessage('Settings saved successfully!', 'success');
 
     // Test connection with new settings
@@ -101,7 +111,7 @@ async function saveSettings() {
 }
 
 function openArtifactManager() {
-  chrome.runtime.sendMessage({ action: 'openArtifactManager' });
+  browser.runtime.sendMessage({ action: 'openArtifactManager' });
 }
 
 function showMessage(text, type) {

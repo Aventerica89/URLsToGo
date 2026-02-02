@@ -4,6 +4,9 @@
 (function() {
   'use strict';
 
+  // Cross-browser API compatibility
+  const browser = globalThis.browser || globalThis.chrome;
+
   const BUTTON_CLASS = 'artifact-manager-save-btn';
   const PROCESSED_ATTR = 'data-artifact-manager-processed';
 
@@ -32,10 +35,91 @@
     return button;
   }
 
+  // Check if a name is a placeholder (synced with macOS NameValidator.swift and backend)
+  function isPlaceholder(name) {
+    if (!name || typeof name !== 'string') return true;
+
+    const trimmed = name.trim();
+    if (trimmed === '') return true;
+
+    const placeholderPatterns = [
+      /^Saving\.{3}$/i,
+      /^Loading\.{3}$/i,
+      /^Downloading\.{3}$/i,
+      /^Untitled( \d+)?$/i,
+      /^New Artifact$/i,
+      /^\s*$/
+    ];
+
+    return placeholderPatterns.some(pattern => pattern.test(trimmed));
+  }
+
+  // Enhanced artifact name extraction with multiple strategies
+  function extractArtifactName(panel) {
+    // Strategy 1: Look for title text in artifact header with data-testid
+    const titleEl = panel.querySelector('[data-testid="artifact-title"]') ||
+                    panel.querySelector('[data-testid*="title"]');
+    if (titleEl?.textContent?.trim() && !isPlaceholder(titleEl.textContent.trim())) {
+      return titleEl.textContent.trim();
+    }
+
+    // Strategy 2: Find title in parent conversation message
+    const messageContainer = panel.closest('[class*="message"]') ||
+                            panel.closest('[data-testid*="message"]');
+    if (messageContainer) {
+      const artifactName = messageContainer.querySelector('[class*="artifact-name"]') ||
+                          messageContainer.querySelector('[class*="artifact"] [class*="title"]');
+      if (artifactName?.textContent?.trim() && !isPlaceholder(artifactName.textContent.trim())) {
+        return artifactName.textContent.trim();
+      }
+    }
+
+    // Strategy 3: Look for heading elements near the artifact
+    const headings = panel.querySelectorAll('h1, h2, h3, h4, h5, h6');
+    for (const heading of headings) {
+      const text = heading.textContent.trim();
+      if (text && !isPlaceholder(text)) {
+        return text;
+      }
+    }
+
+    // Strategy 4: Find the artifact title from text content in the header area
+    // The title appears as text like "Smith event options" with type "HTML" nearby
+    const headerTexts = panel.querySelectorAll('div, span');
+    for (const el of headerTexts) {
+      const text = el.textContent.trim();
+      // Skip very short or very long text, and skip known labels
+      if (text.length > 2 && text.length < 100 &&
+          !['Copy', 'HTML', 'Code', 'Preview', 'Download', 'Save', 'View', 'Edit', 'Remix'].includes(text) &&
+          !el.querySelector('*') && // Only leaf text nodes
+          !isPlaceholder(text)) {
+        return text;
+      }
+    }
+
+    // Strategy 5: Look for text before the artifact panel
+    const prevSibling = panel.previousElementSibling;
+    if (prevSibling) {
+      const prevText = prevSibling.textContent.trim();
+      if (prevText && !isPlaceholder(prevText) && prevText.length < 100) {
+        return prevText;
+      }
+    }
+
+    // Strategy 6: Extract from iframe title attribute
+    const iframe = panel.querySelector('iframe');
+    if (iframe?.title && !isPlaceholder(iframe.title)) {
+      return iframe.title;
+    }
+
+    // Fallback: Return placeholder that will be caught by validation
+    return 'Untitled Artifact';
+  }
+
   // Extract artifact data from the panel
   function extractArtifactData(panel) {
     const data = {
-      name: 'Untitled Artifact',
+      name: extractArtifactName(panel),
       description: '',
       artifact_type: 'code',
       source_type: 'downloaded',
@@ -51,33 +135,35 @@
       data.artifact_id = url.searchParams.get('artifactId');
     }
 
-    // Look for published claude.site URL in the page
-    // Check links in the panel for claude.site URLs
-    const links = document.querySelectorAll('a[href*="claude.site"]');
-    if (links.length > 0) {
-      data.published_url = links[0].href;
+    // Look for published claude.site URL in the panel first (more accurate)
+    const panelLinks = panel.querySelectorAll('a[href*="claude.site/artifacts"]');
+    if (panelLinks.length > 0) {
+      data.published_url = panelLinks[0].href;
       data.source_type = 'published';
+
+      // Extract artifact ID from URL
+      const match = data.published_url.match(/\/artifacts\/([a-zA-Z0-9-]+)/);
+      if (match) {
+        data.artifact_id = match[1];
+      }
     }
 
-    // Also check if there's a share/publish URL visible
-    const allText = document.body.innerText;
-    const claudeSiteMatch = allText.match(/https:\/\/claude\.site\/artifacts\/[a-zA-Z0-9-]+/);
-    if (claudeSiteMatch) {
-      data.published_url = claudeSiteMatch[0];
-      data.source_type = 'published';
+    // Fallback: Check all page links
+    if (!data.published_url) {
+      const links = document.querySelectorAll('a[href*="claude.site"]');
+      if (links.length > 0) {
+        data.published_url = links[0].href;
+        data.source_type = 'published';
+      }
     }
 
-    // Find the artifact title - look for text content in the header area
-    // The title appears as text like "Smith event options" with type "HTML" nearby
-    const headerTexts = panel.querySelectorAll('div, span');
-    for (const el of headerTexts) {
-      const text = el.textContent.trim();
-      // Skip very short or very long text, and skip known labels
-      if (text.length > 2 && text.length < 100 &&
-          !['Copy', 'HTML', 'Code', 'Preview', 'Download', 'Save'].includes(text) &&
-          !el.querySelector('*')) { // Only leaf text nodes
-        data.name = text;
-        break;
+    // Also check if there's a share/publish URL visible in text
+    if (!data.published_url) {
+      const allText = document.body.innerText;
+      const claudeSiteMatch = allText.match(/https:\/\/claude\.site\/artifacts\/[a-zA-Z0-9-]+/);
+      if (claudeSiteMatch) {
+        data.published_url = claudeSiteMatch[0];
+        data.source_type = 'published';
       }
     }
 
@@ -114,7 +200,116 @@
       data._copyButton = copyBtn;
     }
 
+    // Store panel reference for content extraction
+    data._panel = panel;
+
     return data;
+  }
+
+  // Robust content extraction with multiple fallback methods
+  async function extractContent(panel, publishedUrl) {
+    // Method 1: Try clipboard (existing method - most reliable when it works)
+    try {
+      const copyBtn = panel.querySelector('button[aria-label*="Copy"]') ||
+                      Array.from(panel.querySelectorAll('button')).find(b => b.textContent.includes('Copy'));
+      if (copyBtn) {
+        copyBtn.click();
+        await new Promise(r => setTimeout(r, 150)); // Wait for clipboard
+        const clipboardText = await navigator.clipboard.readText();
+        if (clipboardText && clipboardText.length > 10) {
+          console.log('Artifact Manager: Content extracted via clipboard');
+          return clipboardText;
+        }
+      }
+    } catch (e) {
+      console.log('Artifact Manager: Clipboard method failed:', e.message);
+    }
+
+    // Method 2: Extract from iframe srcdoc or content
+    try {
+      const iframe = panel.querySelector('iframe[src*="claudeusercontent.com"]');
+      if (iframe) {
+        // Try to access iframe content (may fail due to CORS)
+        try {
+          const doc = iframe.contentDocument || iframe.contentWindow?.document;
+          if (doc?.documentElement) {
+            const content = doc.documentElement.outerHTML;
+            if (content && content.length > 50) {
+              console.log('Artifact Manager: Content extracted from iframe document');
+              return content;
+            }
+          }
+        } catch (e) {
+          // Cross-origin restriction - expected
+        }
+
+        // Try srcdoc attribute
+        if (iframe.srcdoc && iframe.srcdoc.length > 50) {
+          console.log('Artifact Manager: Content extracted from iframe srcdoc');
+          return iframe.srcdoc;
+        }
+      }
+    } catch (e) {
+      console.log('Artifact Manager: Iframe method failed:', e.message);
+    }
+
+    // Method 3: Check for code block in panel (for code artifacts)
+    try {
+      const codeBlock = panel.querySelector('pre code') ||
+                       panel.querySelector('code') ||
+                       panel.querySelector('pre');
+      if (codeBlock?.textContent && codeBlock.textContent.length > 10) {
+        console.log('Artifact Manager: Content extracted from code block');
+        return codeBlock.textContent;
+      }
+    } catch (e) {
+      console.log('Artifact Manager: Code block method failed:', e.message);
+    }
+
+    // Method 4: Fetch from published URL if available
+    if (publishedUrl && publishedUrl.includes('claude.site/artifacts')) {
+      try {
+        console.log('Artifact Manager: Attempting to fetch from published URL...');
+        const response = await fetch(publishedUrl);
+        if (response.ok) {
+          const html = await response.text();
+          if (html && html.length > 50) {
+            console.log('Artifact Manager: Content extracted from published URL');
+            return html;
+          }
+        }
+      } catch (e) {
+        console.log('Artifact Manager: Published URL fetch failed:', e.message);
+      }
+    }
+
+    // Method 5: Look for any pre-formatted text in the panel
+    try {
+      const textElements = panel.querySelectorAll('[class*="code"], [class*="content"], [class*="text"]');
+      for (const el of textElements) {
+        if (el.textContent && el.textContent.length > 50 && !el.querySelector('button')) {
+          console.log('Artifact Manager: Content extracted from text element');
+          return el.textContent;
+        }
+      }
+    } catch (e) {
+      console.log('Artifact Manager: Text element method failed:', e.message);
+    }
+
+    console.warn('Artifact Manager: All content extraction methods failed');
+    return null;
+  }
+
+  // Validate artifact name before saving (synced with macOS NameValidator and backend)
+  function validateArtifactName(name) {
+    if (!name || isPlaceholder(name)) {
+      return {
+        valid: false,
+        error: 'Artifact name appears to be a placeholder. Please wait for Claude to finish generating the artifact, or manually edit the name before saving.'
+      };
+    }
+
+    return { valid: true };
   }
 
   // Handle save button click
@@ -137,22 +332,27 @@
     try {
       const artifactData = extractArtifactData(panel);
 
-      // Try to get content from clipboard by clicking Copy
-      if (artifactData._copyButton) {
-        try {
-          artifactData._copyButton.click();
-          await new Promise(r => setTimeout(r, 100));
-          const clipboardText = await navigator.clipboard.readText();
-          if (clipboardText && clipboardText.length > 10) {
-            artifactData.file_content = clipboardText;
-          }
-        } catch (e) {
-          console.log('Could not read clipboard:', e);
-        }
-        delete artifactData._copyButton;
+      // Validate name before proceeding (client-side validation)
+      const validation = validateArtifactName(artifactData.name);
+      if (!validation.valid) {
+        throw new Error(validation.error);
       }
 
-      const response = await chrome.runtime.sendMessage({
+      // Extract content using robust multi-method extraction
+      const publishedUrl = artifactData.published_url;
+
+      const content = await extractContent(panel, publishedUrl);
+      if (content) {
+        artifactData.file_content = content;
+      } else {
+        console.warn('Artifact Manager: No content could be extracted, saving metadata only');
+      }
+
+      // Clean up internal properties
+      delete artifactData._copyButton;
+      delete artifactData._panel;
+
+      const response = await browser.runtime.sendMessage({
         action: 'saveArtifact',
         data: artifactData
       });
@@ -201,7 +401,7 @@
     notification.textContent = message;
     document.body.appendChild(notification);
 
-    setTimeout(() => notification.remove(), 4000);
+    setTimeout(() => notification.remove(), 8000);
   }
 
   // Find and process artifact panels
@@ -249,25 +449,42 @@
 
       card.setAttribute(PROCESSED_ATTR, 'true');
 
-      // Add a subtle save indicator
-      const existingBtn = card.querySelector(`.${BUTTON_CLASS}`);
-      if (!existingBtn) {
-        const saveButton = createSaveButton();
-        saveButton.style.cssText = 'position: absolute; top: 4px; right: 4px; z-index: 100;';
-        saveButton.addEventListener('click', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
+      // Check if we already added our button
+      if (card.querySelector(`.${BUTTON_CLASS}`)) return;
 
-          // Extract basic info from the card
-          const title = card.querySelector('[class*="title"], strong, b')?.textContent || 'Artifact';
-          const type = card.textContent.includes('HTML') ? 'html' : 'code';
+      const saveButton = createSaveButton();
+      saveButton.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        handleSaveClick(e, card);
+      });
 
-          handleSaveClick(e, card);
-        });
+      // Strategy 1: Find existing button container in the card
+      const existingButtonContainer = card.querySelector('div[class*="flex"][class*="gap"]') ||
+                                      card.querySelector('div > button')?.parentElement;
 
-        card.style.position = 'relative';
-        card.appendChild(saveButton);
+      if (existingButtonContainer && existingButtonContainer.querySelector('button')) {
+        // Insert into existing button row
+        const firstButton = existingButtonContainer.querySelector('button');
+        existingButtonContainer.insertBefore(saveButton, firstButton);
+        return;
       }
+
+      // Strategy 2: Find the card's action area (usually at bottom)
+      const actionArea = card.querySelector('[class*="action"]') ||
+                        card.querySelector('[class*="footer"]') ||
+                        card.querySelector('[class*="bottom"]');
+
+      if (actionArea) {
+        actionArea.insertBefore(saveButton, actionArea.firstChild);
+        return;
+      }
+
+      // Strategy 3: Create a button container at the bottom of the card
+      const buttonContainer = document.createElement('div');
+      buttonContainer.className = 'artifact-manager-btn-row';
+      buttonContainer.appendChild(saveButton);
+      card.appendChild(buttonContainer);
     });
   }
 

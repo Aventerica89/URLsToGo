@@ -1,10 +1,17 @@
 {
   "manifest_version": 3,
   "name": "Artifact Manager for Claude",
-  "version": "1.0.0",
+  "version": "1.1.0",
+  "version_name": "1.1.0 - Button Placement Fix",
   "description": "Save Claude.ai artifacts to your Artifact Manager with one click",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "artifact-manager@jbmd-creations.com"
+    }
+  },
   "permissions": [
-    "storage"
+    "storage",
+    "clipboardRead"
   ],
   "host_permissions": [
     "https://claude.ai/*",

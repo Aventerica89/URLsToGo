@@ -80,5 +80,22 @@ CREATE TABLE IF NOT EXISTS artifact_tags (
     FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
 );
 
+-- Add sharing fields to collections for public share pages
+ALTER TABLE collections ADD COLUMN is_public INTEGER DEFAULT 0;
+ALTER TABLE collections ADD COLUMN share_token TEXT UNIQUE;
+ALTER TABLE collections ADD COLUMN share_settings TEXT;  -- JSON: {showThumbnails, layout}
+ALTER TABLE collections ADD COLUMN shared_at DATETIME;
+
+-- Indexes for public lookups
+CREATE INDEX IF NOT EXISTS idx_collections_share_token ON collections(share_token);
+CREATE INDEX IF NOT EXISTS idx_collections_public ON collections(is_public, user_email);
+
+-- Add sharing fields to artifacts for public render links
+ALTER TABLE artifacts ADD COLUMN share_token TEXT UNIQUE;
+ALTER TABLE artifacts ADD COLUMN shared_at DATETIME;
+
+-- Index for public render lookups
+CREATE INDEX IF NOT EXISTS idx_artifacts_share_token ON artifacts(share_token);
+
 -- Default collections (will be created per-user on first access)
 -- These are inserted via the app, not here, to respect user_email isolation
