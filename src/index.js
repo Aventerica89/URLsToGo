@@ -4,6 +4,90 @@ import { verifyToken, createClerkClient } from '@clerk/backend';
 // Favicon SVG with accessibility title and optimized grouped paths
 const ADMIN_FAVICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctitle%3EURLsToGo Admin Icon%3C/title%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Cg stroke='%238b5cf6' stroke-width='2.5' stroke-linecap='round' fill='none'%3E%3Cpath d='M18.5 10.5a4 4 0 0 1 5.66 5.66l-2.83 2.83a4 4 0 0 1-5.66 0'/%3E%3Cpath d='M13.5 21.5a4 4 0 0 1-5.66-5.66l2.83-2.83a4 4 0 0 1 5.66 0'/%3E%3C/g%3E%3C/svg%3E";
 
+// Admin path constant - used for redirects and PWA start URL
+const ADMIN_PATH = '/admin';
+
+// =============================================================================
+// PWA - Progressive Web App Assets
+// =============================================================================
+
+// PWA Manifest
+const PWA_MANIFEST = {
+  name: 'URLsToGo',
+  short_name: 'URLsToGo',
+  description: 'Fast, free URL shortener powered by Cloudflare',
+  start_url: ADMIN_PATH,
+  display: 'standalone',
+  background_color: '#09090b',
+  theme_color: '#8b5cf6',
+  orientation: 'any',
+  icons: [
+    { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+    { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+  ]
+};
+
+// Service Worker JavaScript
+const SERVICE_WORKER_JS = `
+const CACHE_NAME = 'urlstogo-v1';
+const STATIC_ASSETS = [
+  '${ADMIN_PATH}',
+  '/login',
+  '/manifest.json'
+];
+
+// Install - cache static assets
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
+  );
+  self.skipWaiting();
+});
+
+// Activate - clean old caches
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+    )
+  );
+  self.clients.claim();
+});
+
+// Fetch - network first, fallback to cache
+self.addEventListener('fetch', (event) => {
+  // Skip non-GET requests and API calls
+  if (event.request.method !== 'GET' || event.request.url.includes('/api/')) {
+    return;
+  }
+
+  event.respondWith(
+    fetch(event.request)
+      .then((response) => {
+        // Clone and cache successful responses
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        }
+        return response;
+      })
+      .catch(() => caches.match(event.request))
+  );
+});
+`;
+
+// Generate SVG icon as PNG-like data (actually SVG but works for PWA)
+function generatePWAIcon(size) {
+  const iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}">
+    <rect width="${size}" height="${size}" rx="${size * 0.1875}" fill="#09090b"/>
+    <g stroke="#8b5cf6" stroke-width="${size * 0.08}" stroke-linecap="round" fill="none" transform="translate(${size * 0.25}, ${size * 0.25}) scale(${size / 32 * 0.5})">
+      <path d="M18.5 10.5a4 4 0 0 1 5.66 5.66l-2.83 2.83a4 4 0 0 1-5.66 0"/>
+      <path d="M13.5 21.5a4 4 0 0 1-5.66-5.66l2.83-2.83a4 4 0 0 1 5.66 0"/>
+    </g>
+  </svg>`;
+  return iconSvg;
+}
+
 // =============================================================================
 // SECURITY HELPER FUNCTIONS - XSS Prevention
 // =============================================================================
@@ -112,6 +196,24 @@ export default {
     if (path === 'mobile-mockup') {
       return new Response(getMobileMockupHTML(), {
         headers: { 'Content-Type': 'text/html' }
+      });
+    }
+
+    // PWA Assets
+    if (path === 'manifest.json') {
+      return new Response(JSON.stringify(PWA_MANIFEST), {
+        headers: { 'Content-Type': 'application/manifest+json' }
+      });
+    }
+    if (path === 'sw.js') {
+      return new Response(SERVICE_WORKER_JS, {
+        headers: { 'Content-Type': 'application/javascript' }
+      });
+    }
+    if (path === 'icon-192.png' || path === 'icon-512.png') {
+      const size = path === 'icon-192.png' ? 192 : 512;
+      return new Response(generatePWAIcon(size), {
+        headers: { 'Content-Type': 'image/svg+xml' }
       });
     }
 
@@ -1670,7 +1772,7 @@ function getAuthPageHTML(env, mode = 'login') {
 
         // Check if already signed in
         if (clerk.user) {
-          window.location.href = '/admin';
+          window.location.href = '${ADMIN_PATH}';
           return;
         }
 
@@ -1680,13 +1782,13 @@ function getAuthPageHTML(env, mode = 'login') {
 
         ${isSignup ? `
         clerk.mountSignUp(container, {
-          fallbackRedirectUrl: '/admin',
+          fallbackRedirectUrl: '${ADMIN_PATH}',
           signInUrl: '/login',
           appearance: CLERK_APPEARANCE
         });
         ` : `
         clerk.mountSignIn(container, {
-          fallbackRedirectUrl: '/admin',
+          fallbackRedirectUrl: '${ADMIN_PATH}',
           signUpUrl: '/signup',
           appearance: CLERK_APPEARANCE
         });
@@ -3138,7 +3240,14 @@ function getAdminHTML(userEmail, env) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>URLsToGo - Admin</title>
+  <meta name="description" content="Manage your shortened URLs">
+  <meta name="theme-color" content="#8b5cf6">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="URLsToGo">
   <link rel="icon" type="image/svg+xml" href="${ADMIN_FAVICON}">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="apple-touch-icon" href="/icon-192.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -3852,9 +3961,524 @@ function getAdminHTML(userEmail, env) {
     .bulk-actions-buttons { display: flex; gap: 8px; margin-left: auto; }
     .cell-checkbox { width: 40px; text-align: center; }
     .cell-checkbox input { width: 16px; height: 16px; cursor: pointer; }
+
+    /* =================================================================
+       MOBILE-FIRST UI - iOS-Style Components
+       ================================================================= */
+
+    /* Bottom Tab Bar */
+    .tab-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 83px;
+      background: hsl(var(--background) / 0.95);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-top: 1px solid hsl(var(--border));
+      display: none;
+      align-items: flex-start;
+      padding: 8px 0 0;
+      padding-bottom: env(safe-area-inset-bottom, 25px);
+      z-index: 100;
+    }
+
+    .tab-item {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      padding: 8px 4px;
+      color: hsl(var(--muted-foreground));
+      font-size: 10px;
+      font-weight: 500;
+      background: none;
+      border: none;
+      cursor: pointer;
+      min-height: 48px;
+      transition: color 150ms ease;
+    }
+
+    .tab-item.active { color: hsl(var(--indigo)); }
+    .tab-item svg { width: 24px; height: 24px; }
+
+    /* Floating Action Button */
+    .fab-container {
+      position: relative;
+      flex: 1;
+      display: flex;
+      justify-content: center;
+    }
+
+    .fab {
+      position: absolute;
+      bottom: 16px;
+      width: 56px;
+      height: 56px;
+      background: linear-gradient(135deg, hsl(var(--indigo)) 0%, hsl(271 91% 65%) 100%);
+      border-radius: 16px;
+      border: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 20px hsl(var(--indigo) / 0.4);
+      cursor: pointer;
+      transition: transform 150ms ease, box-shadow 150ms ease;
+    }
+
+    .fab:active { transform: scale(0.95); }
+    .fab svg { width: 24px; height: 24px; color: white; stroke-width: 2.5; }
+
+    /* Mobile Link Cards */
+    .mobile-links { display: none; padding: 0 16px 100px; }
+
+    .link-card {
+      background: hsl(var(--card));
+      border: 1px solid hsl(var(--border));
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 12px;
+      transition: transform 150ms ease;
+    }
+
+    .link-card:active { transform: scale(0.98); }
+
+    .link-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 8px;
+    }
+
+    .link-card-code {
+      font-family: 'SF Mono', Monaco, monospace;
+      font-size: 16px;
+      font-weight: 600;
+      color: hsl(var(--indigo));
+      background: hsl(var(--indigo) / 0.1);
+      padding: 6px 12px;
+      border-radius: 8px;
+      text-decoration: none;
+    }
+
+    .link-card-actions { display: flex; gap: 8px; }
+
+    .link-card-action {
+      width: 36px;
+      height: 36px;
+      background: hsl(var(--muted));
+      border: none;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: hsl(var(--foreground));
+    }
+
+    .link-card-action svg { width: 18px; height: 18px; }
+
+    .link-card-url {
+      font-size: 14px;
+      color: hsl(var(--muted-foreground));
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 12px;
+    }
+
+    .link-card-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .link-card-meta {
+      display: flex;
+      gap: 16px;
+      font-size: 13px;
+      color: hsl(var(--muted-foreground));
+    }
+
+    .link-card-clicks {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      color: hsl(142 76% 46%);
+      font-weight: 500;
+    }
+
+    .link-card-category {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      background: hsl(var(--muted));
+    }
+
+    /* Mobile Header */
+    .mobile-header {
+      display: none;
+      padding: 12px 16px;
+      padding-top: calc(12px + env(safe-area-inset-top, 0));
+      background: hsl(var(--background));
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+
+    .mobile-header-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    .mobile-header-title {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+
+    .mobile-header-actions { display: flex; gap: 8px; }
+
+    .header-icon-btn {
+      width: 36px;
+      height: 36px;
+      background: hsl(var(--muted));
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      color: hsl(var(--foreground));
+      cursor: pointer;
+    }
+
+    .header-icon-btn svg { width: 18px; height: 18px; }
+
+    /* Mobile Search Bar */
+    .search-bar-mobile {
+      height: 40px;
+      background: hsl(var(--muted));
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      padding: 0 14px;
+      gap: 10px;
+    }
+
+    .search-bar-mobile svg {
+      width: 18px;
+      height: 18px;
+      color: hsl(var(--muted-foreground));
+      flex-shrink: 0;
+    }
+
+    .search-bar-mobile input {
+      flex: 1;
+      background: none;
+      border: none;
+      outline: none;
+      font-size: 16px;
+      color: hsl(var(--foreground));
+    }
+
+    .search-bar-mobile input::placeholder {
+      color: hsl(var(--muted-foreground));
+    }
+
+    /* Mobile Stats */
+    .mobile-stats {
+      display: none;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      padding: 0 16px;
+      margin-bottom: 16px;
+    }
+
+    .mobile-stat-card {
+      background: hsl(var(--card));
+      border: 1px solid hsl(var(--border));
+      border-radius: 16px;
+      padding: 16px;
+    }
+
+    .mobile-stat-value {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.025em;
+    }
+
+    .mobile-stat-label {
+      font-size: 12px;
+      color: hsl(var(--muted-foreground));
+      margin-top: 4px;
+    }
+
+    /* iOS-Style Bottom Sheet */
+    .sheet-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgb(0 0 0 / 0.5);
+      z-index: 200;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 200ms ease, visibility 200ms ease;
+    }
+
+    .sheet-overlay.open {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .sheet {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: hsl(var(--card));
+      border-radius: 20px 20px 0 0;
+      max-height: 90vh;
+      transform: translateY(100%);
+      transition: transform 300ms cubic-bezier(0.32, 0.72, 0, 1);
+      z-index: 201;
+      display: flex;
+      flex-direction: column;
+      padding-bottom: env(safe-area-inset-bottom, 0);
+    }
+
+    .sheet-overlay.open .sheet {
+      transform: translateY(0);
+    }
+
+    .sheet-handle {
+      display: flex;
+      justify-content: center;
+      padding: 12px 0 8px;
+    }
+
+    .sheet-handle::before {
+      content: '';
+      width: 36px;
+      height: 5px;
+      background: hsl(var(--muted));
+      border-radius: 3px;
+    }
+
+    .sheet-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px 16px;
+      border-bottom: 1px solid hsl(var(--border));
+    }
+
+    .sheet-title {
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .sheet-close {
+      width: 32px;
+      height: 32px;
+      background: hsl(var(--muted));
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      cursor: pointer;
+      color: hsl(var(--foreground));
+    }
+
+    .sheet-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .sheet-footer {
+      padding: 16px 20px;
+      border-top: 1px solid hsl(var(--border));
+      display: flex;
+      gap: 12px;
+    }
+
+    .sheet-footer .btn { flex: 1; min-height: 50px; font-size: 16px; }
+
+    .form-group-mobile { margin-bottom: 20px; }
+    .form-group-mobile .label { margin-bottom: 10px; font-size: 14px; font-weight: 500; }
+    .form-group-mobile .input,
+    .form-group-mobile .select {
+      height: 50px;
+      font-size: 16px;
+      padding: 0 16px;
+      border-radius: 12px;
+    }
+
+    /* Mobile-only display rules */
+    @media (max-width: 768px) {
+      .tab-bar { display: flex; }
+      .mobile-header { display: block; }
+      .mobile-links { display: block; }
+      .mobile-stats { display: grid; }
+
+      /* Hide desktop elements */
+      .sidebar { display: none !important; }
+      .header { display: none !important; }
+      .content { display: none !important; }
+      .main { margin-left: 0 !important; }
+
+      body {
+        padding-bottom: 83px;
+        padding-top: env(safe-area-inset-top, 0);
+      }
+    }
+
+    /* Animations */
+    @keyframes cardIn {
+      from { opacity: 0; transform: scale(0.96); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    .link-card {
+      animation: cardIn 200ms ease backwards;
+    }
+
+    .link-card:nth-child(1) { animation-delay: 0ms; }
+    .link-card:nth-child(2) { animation-delay: 50ms; }
+    .link-card:nth-child(3) { animation-delay: 100ms; }
+    .link-card:nth-child(4) { animation-delay: 150ms; }
+    .link-card:nth-child(5) { animation-delay: 200ms; }
   </style>
 </head>
 <body>
+  <!-- Mobile Header -->
+  <header class="mobile-header">
+    <div class="mobile-header-top">
+      <h1 class="mobile-header-title">Links</h1>
+      <div class="mobile-header-actions">
+        <button class="header-icon-btn" onclick="openMobileSearch()">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+          </svg>
+        </button>
+        <button class="header-icon-btn" onclick="toggleMobileMenu()">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="search-bar-mobile" id="mobileSearchBar">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+      </svg>
+      <input type="text" placeholder="Search links..." id="mobileSearchInput" oninput="filterMobileLinks(this.value)">
+    </div>
+  </header>
+
+  <!-- Mobile Stats -->
+  <div class="mobile-stats" id="mobileStats">
+    <div class="mobile-stat-card">
+      <div class="mobile-stat-value" id="mobileStatLinks">0</div>
+      <div class="mobile-stat-label">Total Links</div>
+    </div>
+    <div class="mobile-stat-card">
+      <div class="mobile-stat-value" id="mobileStatClicks">0</div>
+      <div class="mobile-stat-label">Total Clicks</div>
+    </div>
+  </div>
+
+  <!-- Mobile Links -->
+  <div class="mobile-links" id="mobileLinksContainer">
+    <!-- Cards rendered by JS -->
+  </div>
+
+  <!-- Bottom Tab Bar -->
+  <nav class="tab-bar" id="tabBar">
+    <button class="tab-item active" data-tab="links" onclick="switchMobileTab('links')">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+      </svg>
+      <span>Links</span>
+    </button>
+    <button class="tab-item" data-tab="stats" onclick="switchMobileTab('stats')">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/>
+      </svg>
+      <span>Stats</span>
+    </button>
+    <div class="fab-container">
+      <button class="fab" onclick="openCreateSheet()" aria-label="Create new link">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 5v14M5 12h14"/>
+        </svg>
+      </button>
+    </div>
+    <button class="tab-item" data-tab="categories" onclick="switchMobileTab('categories')">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/>
+        <rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>
+      </svg>
+      <span>Categories</span>
+    </button>
+    <button class="tab-item" data-tab="settings" onclick="switchMobileTab('settings')">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+        <circle cx="12" cy="12" r="3"/>
+      </svg>
+      <span>Settings</span>
+    </button>
+  </nav>
+
+  <!-- Create Link Sheet (iOS-style bottom sheet) -->
+  <div class="sheet-overlay" id="createSheet" onclick="if(event.target === this) closeCreateSheet()">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <h3 class="sheet-title">New Link</h3>
+        <button class="sheet-close" onclick="closeCreateSheet()">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+            <path d="M18 6 6 18M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+      <div class="sheet-body">
+        <div class="form-group-mobile">
+          <label class="label">Short Code</label>
+          <input type="text" class="input" id="sheetNewCode" placeholder="my-link (optional)">
+        </div>
+        <div class="form-group-mobile">
+          <label class="label">Destination URL</label>
+          <input type="url" class="input" id="sheetNewDestination" placeholder="https://example.com" required>
+        </div>
+        <div class="form-group-mobile">
+          <label class="label">Category</label>
+          <select class="select" id="sheetNewCategory">
+            <option value="">No category</option>
+          </select>
+        </div>
+        <div class="form-group-mobile">
+          <label class="label">Description (optional)</label>
+          <input type="text" class="input" id="sheetNewDescription" placeholder="Brief note">
+        </div>
+      </div>
+      <div class="sheet-footer">
+        <button class="btn btn-outline" onclick="closeCreateSheet()">Cancel</button>
+        <button class="btn btn-default" onclick="createLinkFromSheet()">Create Link</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Mobile Overlay -->
   <div class="mobile-overlay" id="mobileOverlay" onclick="closeMobileMenu()"></div>
 
@@ -5766,8 +6390,174 @@ function getAdminHTML(userEmail, env) {
       }
     });
 
+    // =================================================================
+    // MOBILE UI FUNCTIONS
+    // =================================================================
+
+    // Render mobile link cards
+    function renderMobileLinks(links = allLinks) {
+      const container = document.getElementById('mobileLinksContainer');
+      if (!container) return;
+
+      if (links.length === 0) {
+        container.innerHTML = '<div style="text-align: center; padding: 40px 20px; color: hsl(var(--muted-foreground));">No links yet. Tap + to create one!</div>';
+        return;
+      }
+
+      container.innerHTML = links.map(link => {
+        const safeCode = escapeHtml(link.code);
+        const safeDest = escapeHtml(link.destination);
+        const catName = link.category_name ? escapeHtml(link.category_name) : '';
+
+        return \`
+          <div class="link-card" data-code="\${escapeAttr(link.code)}">
+            <div class="link-card-header">
+              <a href="\${baseUrl}/\${escapeAttr(link.code)}" target="_blank" class="link-card-code">/\${safeCode}</a>
+              <div class="link-card-actions">
+                <button class="link-card-action" onclick="copyLink('\${escapeAttr(link.code)}')" title="Copy">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
+                    <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
+                  </svg>
+                </button>
+                <button class="link-card-action" onclick="showQRCode('\${escapeAttr(link.code)}')" title="QR Code">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect width="5" height="5" x="3" y="3" rx="1"/><rect width="5" height="5" x="16" y="3" rx="1"/>
+                    <rect width="5" height="5" x="3" y="16" rx="1"/><path d="M21 16h-3a2 2 0 0 0-2 2v3"/>
+                    <path d="M21 21v.01"/><path d="M12 7v3a2 2 0 0 1-2 2H7"/><path d="M3 12h.01"/><path d="M12 3h.01"/>
+                    <path d="M12 16v.01"/><path d="M16 12h1"/><path d="M21 12v.01"/><path d="M12 21v-1"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="link-card-url">\${safeDest}</div>
+            <div class="link-card-footer">
+              <div class="link-card-meta">
+                <span class="link-card-clicks">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                    <path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>
+                  </svg>
+                  \${link.clicks || 0}
+                </span>
+                \${catName ? \`<span class="link-card-category">\${catName}</span>\` : ''}
+              </div>
+            </div>
+          </div>
+        \`;
+      }).join('');
+    }
+
+    // Filter mobile links
+    function filterMobileLinks(query) {
+      const q = query.toLowerCase().trim();
+      if (!q) {
+        renderMobileLinks(allLinks);
+        return;
+      }
+      const filtered = allLinks.filter(link =>
+        link.code.toLowerCase().includes(q) ||
+        link.destination.toLowerCase().includes(q) ||
+        (link.description && link.description.toLowerCase().includes(q))
+      );
+      renderMobileLinks(filtered);
+    }
+
+    // Update mobile stats
+    function updateMobileStats() {
+      const linksEl = document.getElementById('mobileStatLinks');
+      const clicksEl = document.getElementById('mobileStatClicks');
+      if (linksEl) linksEl.textContent = allLinks.length;
+      if (clicksEl) clicksEl.textContent = allLinks.reduce((sum, l) => sum + (l.clicks || 0), 0);
+    }
+
+    // Switch mobile tab
+    function switchMobileTab(tab) {
+      document.querySelectorAll('.tab-item').forEach(item => {
+        item.classList.toggle('active', item.dataset.tab === tab);
+      });
+
+      // Update header title
+      const titles = { links: 'Links', stats: 'Analytics', categories: 'Categories', settings: 'Settings' };
+      const titleEl = document.querySelector('.mobile-header-title');
+      if (titleEl) titleEl.textContent = titles[tab] || 'Links';
+    }
+
+    // Sheet functions
+    function openCreateSheet() {
+      document.getElementById('createSheet').classList.add('open');
+      document.body.style.overflow = 'hidden';
+      // Populate categories
+      const select = document.getElementById('sheetNewCategory');
+      if (select) {
+        select.innerHTML = '<option value="">No category</option>' +
+          allCategories.map(c => \`<option value="\${c.id}">\${escapeHtml(c.name)}</option>\`).join('');
+      }
+    }
+
+    function closeCreateSheet() {
+      document.getElementById('createSheet').classList.remove('open');
+      document.body.style.overflow = '';
+    }
+
+    // Create link from sheet
+    async function createLinkFromSheet() {
+      const code = document.getElementById('sheetNewCode').value.trim();
+      const destination = document.getElementById('sheetNewDestination').value.trim();
+      const categoryId = document.getElementById('sheetNewCategory').value;
+      const description = document.getElementById('sheetNewDescription').value.trim();
+
+      if (!destination) {
+        showToast('Error', 'Please enter a destination URL', 'error');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/links', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            code: code || undefined,
+            destination,
+            category_id: categoryId || undefined,
+            description: description || undefined
+          })
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to create link');
+
+        showToast('Success', 'Link created!', 'success');
+        closeCreateSheet();
+
+        // Clear form
+        document.getElementById('sheetNewCode').value = '';
+        document.getElementById('sheetNewDestination').value = '';
+        document.getElementById('sheetNewDescription').value = '';
+
+        // Refresh links
+        await loadLinks();
+        renderMobileLinks();
+        updateMobileStats();
+      } catch (err) {
+        showToast('Error', err.message, 'error');
+      }
+    }
+
+    // Hook into existing functions to update mobile UI
+    const originalLoadLinks = loadLinks;
+    loadLinks = async function() {
+      await originalLoadLinks();
+      renderMobileLinks();
+      updateMobileStats();
+    };
+
     // Init
     init();
+
+    // Register Service Worker for PWA
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
   </script>
 </body>
 </html>`;
