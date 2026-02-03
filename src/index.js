@@ -2,7 +2,7 @@
 import { verifyToken, createClerkClient } from '@clerk/backend';
 
 // Favicon SVG with accessibility title and optimized grouped paths
-const ADMIN_FAVICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctitle%3ELinkShort Admin Icon%3C/title%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Cg stroke='%238b5cf6' stroke-width='2.5' stroke-linecap='round' fill='none'%3E%3Cpath d='M18.5 10.5a4 4 0 0 1 5.66 5.66l-2.83 2.83a4 4 0 0 1-5.66 0'/%3E%3Cpath d='M13.5 21.5a4 4 0 0 1-5.66-5.66l2.83-2.83a4 4 0 0 1 5.66 0'/%3E%3C/g%3E%3C/svg%3E";
+const ADMIN_FAVICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctitle%3EURLsToGo Admin Icon%3C/title%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Cg stroke='%238b5cf6' stroke-width='2.5' stroke-linecap='round' fill='none'%3E%3Cpath d='M18.5 10.5a4 4 0 0 1 5.66 5.66l-2.83 2.83a4 4 0 0 1-5.66 0'/%3E%3Cpath d='M13.5 21.5a4 4 0 0 1-5.66-5.66l2.83-2.83a4 4 0 0 1 5.66 0'/%3E%3C/g%3E%3C/svg%3E";
 
 // Admin path constant - used for redirects and PWA start URL
 const ADMIN_PATH = '/admin';
@@ -22,8 +22,176 @@ const PWA_MANIFEST = {
   theme_color: '#8b5cf6',
   orientation: 'any',
   icons: [
-    { src: '/icon-192.svg', sizes: '192x192', type: 'image/svg+xml', purpose: 'any maskable' },
-    { src: '/icon-512.svg', sizes: '512x512', type: 'image/svg+xml', purpose: 'any maskable' }
+    { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+    { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+  ]
+};
+
+// Service Worker JavaScript
+const SERVICE_WORKER_JS = `
+const CACHE_NAME = 'urlstogo-v1';
+const STATIC_ASSETS = [
+  '${ADMIN_PATH}',
+  '/login',
+  '/manifest.json'
+];
+
+// Install - cache static assets
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
+  );
+  self.skipWaiting();
+});
+
+// Activate - clean old caches
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+    )
+  );
+  self.clients.claim();
+});
+
+// Fetch - network first, fallback to cache
+self.addEventListener('fetch', (event) => {
+  // Skip non-GET requests and API calls
+  if (event.request.method !== 'GET' || event.request.url.includes('/api/')) {
+    return;
+  }
+
+  event.respondWith(
+    fetch(event.request)
+      .then((response) => {
+        // Clone and cache successful responses
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        }
+        return response;
+      })
+      .catch(() => caches.match(event.request))
+  );
+});
+`;
+
+// Generate SVG icon as PNG-like data (actually SVG but works for PWA)
+function generatePWAIcon(size) {
+  const iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}">
+    <rect width="${size}" height="${size}" rx="${size * 0.1875}" fill="#09090b"/>
+    <g stroke="#8b5cf6" stroke-width="${size * 0.08}" stroke-linecap="round" fill="none" transform="translate(${size * 0.25}, ${size * 0.25}) scale(${size / 32 * 0.5})">
+      <path d="M18.5 10.5a4 4 0 0 1 5.66 5.66l-2.83 2.83a4 4 0 0 1-5.66 0"/>
+      <path d="M13.5 21.5a4 4 0 0 1-5.66-5.66l2.83-2.83a4 4 0 0 1 5.66 0"/>
+    </g>
+  </svg>`;
+  return iconSvg;
+}
+
+// Admin path constant - used for redirects and PWA start URL
+const ADMIN_PATH = '/admin';
+
+// =============================================================================
+// PWA - Progressive Web App Assets
+// =============================================================================
+
+// PWA Manifest
+const PWA_MANIFEST = {
+  name: 'URLsToGo',
+  short_name: 'URLsToGo',
+  description: 'Fast, free URL shortener powered by Cloudflare',
+  start_url: ADMIN_PATH,
+  display: 'standalone',
+  background_color: '#09090b',
+  theme_color: '#8b5cf6',
+  orientation: 'any',
+  icons: [
+    { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+    { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+  ]
+};
+
+// Service Worker JavaScript
+const SERVICE_WORKER_JS = `
+const CACHE_NAME = 'urlstogo-v1';
+const STATIC_ASSETS = [
+  '${ADMIN_PATH}',
+  '/login',
+  '/manifest.json'
+];
+
+// Install - cache static assets
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
+  );
+  self.skipWaiting();
+});
+
+// Activate - clean old caches
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+    )
+  );
+  self.clients.claim();
+});
+
+// Fetch - network first, fallback to cache
+self.addEventListener('fetch', (event) => {
+  // Skip non-GET requests and API calls
+  if (event.request.method !== 'GET' || event.request.url.includes('/api/')) {
+    return;
+  }
+
+  event.respondWith(
+    fetch(event.request)
+      .then((response) => {
+        // Clone and cache successful responses
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        }
+        return response;
+      })
+      .catch(() => caches.match(event.request))
+  );
+});
+`;
+
+// Generate SVG icon as PNG-like data (actually SVG but works for PWA)
+function generatePWAIcon(size) {
+  const iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}">
+    <rect width="${size}" height="${size}" rx="${size * 0.1875}" fill="#09090b"/>
+    <g stroke="#8b5cf6" stroke-width="${size * 0.08}" stroke-linecap="round" fill="none" transform="translate(${size * 0.25}, ${size * 0.25}) scale(${size / 32 * 0.5})">
+      <path d="M18.5 10.5a4 4 0 0 1 5.66 5.66l-2.83 2.83a4 4 0 0 1-5.66 0"/>
+      <path d="M13.5 21.5a4 4 0 0 1-5.66-5.66l2.83-2.83a4 4 0 0 1 5.66 0"/>
+    </g>
+  </svg>`;
+  return iconSvg;
+}
+
+// Admin path constant - used for redirects and PWA start URL
+const ADMIN_PATH = '/admin';
+
+// =============================================================================
+// PWA - Progressive Web App Assets
+// =============================================================================
+
+// PWA Manifest
+const PWA_MANIFEST = {
+  name: 'URLsToGo',
+  short_name: 'URLsToGo',
+  description: 'Fast, free URL shortener powered by Cloudflare',
+  start_url: ADMIN_PATH,
+  display: 'standalone',
+  background_color: '#09090b',
+  theme_color: '#8b5cf6',
+  orientation: 'any',
+  icons: [
+    { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+    { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
   ]
 };
 
@@ -210,8 +378,8 @@ export default {
         headers: { 'Content-Type': 'application/javascript' }
       });
     }
-    if (path === 'icon-192.svg' || path === 'icon-512.svg') {
-      const size = path === 'icon-192.svg' ? 192 : 512;
+    if (path === 'icon-192.png' || path === 'icon-512.png') {
+      const size = path === 'icon-192.png' ? 192 : 512;
       return new Response(generatePWAIcon(size), {
         headers: { 'Content-Type': 'image/svg+xml' }
       });
@@ -963,13 +1131,19 @@ async function getUserEmail(request, env) {
 
     if (!payload) return null;
 
-    // Return email from claims
-    return payload.email ||
-           payload.primary_email ||
-           (payload.unsafe_metadata && payload.unsafe_metadata.email) ||
-           payload.sub; // Fall back to user ID if no email
+    // Get user details from Clerk API to fetch email
+    // Email is not included in JWT by default for security
+    const userId = payload.sub;
+    if (!userId) return null;
+
+    const clerkClient = createClerkClient({ secretKey });
+    const user = await clerkClient.users.getUser(userId);
+
+    return user.emailAddresses?.[0]?.emailAddress ||
+           user.primaryEmailAddress?.emailAddress ||
+           userId; // Fall back to user ID if no email
   } catch (e) {
-    console.error('JWT verification error:', e.message);
+    console.error('Clerk user fetch error:', e.message);
     return null;
   }
 }
@@ -1314,7 +1488,7 @@ function getPasswordHTML(code, error = false) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Password Required - LinkShort</title>
+  <title>Password Required - URLsToGo</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -3088,7 +3262,7 @@ function get404HTML(code) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Link Not Found - LinkShort</title>
+  <title>Link Not Found - URLsToGo</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -3179,7 +3353,7 @@ function getExpiredHTML() {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Link Expired - LinkShort</title>
+  <title>Link Expired - URLsToGo</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -3241,70 +3415,70 @@ function getAdminHTML(userEmail, env) {
   <meta name="apple-mobile-web-app-title" content="URLsToGo">
   <link rel="icon" type="image/svg+xml" href="${ADMIN_FAVICON}">
   <link rel="manifest" href="/manifest.json">
-  <link rel="apple-touch-icon" href="/icon-192.svg">
+  <link rel="apple-touch-icon" href="/icon-192.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   ${clerkPublishableKey ? `<script data-clerk-publishable-key="${clerkPublishableKey}" src="https://cdn.jsdelivr.net/npm/@clerk/clerk-js@5/dist/clerk.browser.js" crossorigin="anonymous"></script>` : ''}
   <style>
     :root {
-      --background: 0 0% 3.9%;
-      --foreground: 0 0% 98%;
-      --card: 0 0% 3.9%;
-      --card-foreground: 0 0% 98%;
-      --popover: 0 0% 3.9%;
-      --popover-foreground: 0 0% 98%;
-      --primary: 0 0% 98%;
-      --primary-foreground: 0 0% 9%;
-      --secondary: 0 0% 14.9%;
-      --secondary-foreground: 0 0% 98%;
-      --muted: 0 0% 14.9%;
-      --muted-foreground: 0 0% 63.9%;
-      --accent: 0 0% 14.9%;
-      --accent-foreground: 0 0% 98%;
-      --destructive: 0 62.8% 30.6%;
-      --destructive-foreground: 0 0% 98%;
-      --border: 0 0% 14.9%;
-      --input: 0 0% 14.9%;
-      --ring: 0 0% 83.1%;
-      --radius: 0.5rem;
-      --indigo: 239 84% 67%;
-      --cat-work: 271 91% 65%;
-      --cat-personal: 330 81% 60%;
-      --cat-social: 189 94% 43%;
-      --cat-marketing: 25 95% 53%;
-      --cat-docs: 160 84% 39%;
+      --background: 0.1430 0.0219 293.0857;
+      --foreground: 0.9842 0.0034 247.8575;
+      --card: 0.1831 0.0284 289.8409;
+      --card-foreground: 0.9842 0.0034 247.8575;
+      --popover: 0.1831 0.0284 289.8409;
+      --popover-foreground: 0.9842 0.0034 247.8575;
+      --primary: 0.6056 0.2189 292.7172;
+      --primary-foreground: 1.0000 0 0;
+      --secondary: 0.2352 0.0362 290.5754;
+      --secondary-foreground: 0.9842 0.0034 247.8575;
+      --muted: 0.2352 0.0362 290.5754;
+      --muted-foreground: 0.7000 0.0100 285.0000;
+      --accent: 0.3043 0.0569 286.7954;
+      --accent-foreground: 0.9842 0.0034 247.8575;
+      --destructive: 0.6368 0.2078 25.3313;
+      --destructive-foreground: 1.0000 0 0;
+      --border: 0.2352 0.0362 290.5754;
+      --input: 0.2352 0.0362 290.5754;
+      --ring: 0.6056 0.2189 292.7172;
+      --radius: 0.75rem;
+      --indigo: 0.6056 0.2189 292.7172;
+      --purple: 0.6368 0.2078 307.3313;
+      --cat-work: 0.6850 0.2190 307.0000;
+      --cat-personal: 0.6520 0.2450 340.0000;
+      --cat-social: 0.6000 0.1700 210.0000;
+      --cat-marketing: 0.6800 0.2000 50.0000;
+      --cat-docs: 0.5800 0.1500 165.0000;
     }
     /* Light mode variables */
     .light {
-      --background: 0 0% 98%;
-      --foreground: 0 0% 3.9%;
-      --card: 0 0% 100%;
-      --card-foreground: 0 0% 3.9%;
-      --popover: 0 0% 100%;
-      --popover-foreground: 0 0% 3.9%;
-      --primary: 0 0% 9%;
-      --primary-foreground: 0 0% 98%;
-      --secondary: 0 0% 96.1%;
-      --secondary-foreground: 0 0% 9%;
-      --muted: 0 0% 96.1%;
-      --muted-foreground: 0 0% 35%;
-      --accent: 0 0% 96.1%;
-      --accent-foreground: 0 0% 9%;
-      --destructive: 0 84.2% 60.2%;
-      --destructive-foreground: 0 0% 98%;
-      --border: 0 0% 85%;
-      --input: 0 0% 89.8%;
-      --ring: 0 0% 3.9%;
-      --indigo: 239 84% 50%;
+      --background: 0.9946 0.0026 286.3519;
+      --foreground: 0.1430 0.0219 293.0857;
+      --card: 1.0000 0 0;
+      --card-foreground: 0.1430 0.0219 293.0857;
+      --popover: 1.0000 0 0;
+      --popover-foreground: 0.1430 0.0219 293.0857;
+      --primary: 0.6056 0.2189 292.7172;
+      --primary-foreground: 1.0000 0 0;
+      --secondary: 0.9276 0.0058 264.5313;
+      --secondary-foreground: 0.2781 0.0296 256.8480;
+      --muted: 0.9276 0.0058 264.5313;
+      --muted-foreground: 0.5000 0.0150 280.0000;
+      --accent: 0.9433 0.0284 294.5878;
+      --accent-foreground: 0.4320 0.2106 292.7591;
+      --destructive: 0.6368 0.2078 25.3313;
+      --destructive-foreground: 1.0000 0 0;
+      --border: 0.9288 0.0126 255.5078;
+      --input: 0.9288 0.0126 255.5078;
+      --ring: 0.6056 0.2189 292.7172;
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
       font-size: 14px;
       line-height: 1.5;
-      background: hsl(var(--background));
-      color: hsl(var(--foreground));
+      background: oklch(var(--background));
+      color: oklch(var(--foreground));
       min-height: 100vh;
       -webkit-font-smoothing: antialiased;
     }
@@ -3313,8 +3487,8 @@ function getAdminHTML(userEmail, env) {
     /* Sidebar */
     .sidebar {
       width: 256px;
-      background: hsl(var(--card));
-      border-right: 1px solid hsl(var(--border));
+      background: oklch(var(--card));
+      border-right: 1px solid oklch(var(--border));
       display: flex;
       flex-direction: column;
       position: fixed;
@@ -3326,12 +3500,12 @@ function getAdminHTML(userEmail, env) {
       padding: 0 16px;
       display: flex;
       align-items: center;
-      border-bottom: 1px solid hsl(var(--border));
+      border-bottom: 1px solid oklch(var(--border));
     }
     .logo { display: flex; align-items: center; gap: 8px; }
     .logo-icon {
       width: 32px; height: 32px;
-      background: linear-gradient(135deg, hsl(var(--indigo)) 0%, hsl(271 91% 65%) 100%);
+      background: linear-gradient(135deg, oklch(var(--indigo)) 0%, oklch(var(--purple)) 100%);
       border-radius: 8px;
       display: flex; align-items: center; justify-content: center;
     }
@@ -3342,60 +3516,60 @@ function getAdminHTML(userEmail, env) {
     .nav-group-label {
       padding: 0 12px; margin-bottom: 4px;
       font-size: 12px; font-weight: 500;
-      color: hsl(var(--muted-foreground));
+      color: oklch(var(--muted-foreground));
     }
     .nav-item {
       display: flex; align-items: center; gap: 12px;
       padding: 8px 12px;
       border-radius: calc(var(--radius) - 2px);
-      color: hsl(var(--muted-foreground));
+      color: oklch(var(--muted-foreground));
       font-size: 14px;
       cursor: pointer;
       transition: all 150ms;
     }
-    .nav-item:hover { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
-    .nav-item.active { background: hsl(var(--secondary)); color: hsl(var(--secondary-foreground)); }
+    .nav-item:hover { background: oklch(var(--accent)); color: oklch(var(--accent-foreground)); }
+    .nav-item.active { background: oklch(var(--secondary)); color: oklch(var(--secondary-foreground)); }
     .nav-item-icon { width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; }
     .nav-item-icon svg { width: 16px; height: 16px; }
-    .nav-item-badge { margin-left: auto; font-size: 12px; color: hsl(var(--muted-foreground)); }
+    .nav-item-badge { margin-left: auto; font-size: 12px; color: oklch(var(--muted-foreground)); }
     .cat-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-    .cat-dot.work, .cat-dot.violet { background: hsl(var(--cat-work)); }
-    .cat-dot.personal, .cat-dot.pink { background: hsl(var(--cat-personal)); }
-    .cat-dot.social, .cat-dot.cyan { background: hsl(var(--cat-social)); }
-    .cat-dot.marketing, .cat-dot.orange { background: hsl(var(--cat-marketing)); }
-    .cat-dot.docs, .cat-dot.green { background: hsl(var(--cat-docs)); }
-    .cat-dot.gray { background: hsl(var(--muted-foreground)); }
-    .sidebar-footer { padding: 12px; border-top: 1px solid hsl(var(--border)); }
+    .cat-dot.work, .cat-dot.violet { background: oklch(var(--cat-work)); }
+    .cat-dot.personal, .cat-dot.pink { background: oklch(var(--cat-personal)); }
+    .cat-dot.social, .cat-dot.cyan { background: oklch(var(--cat-social)); }
+    .cat-dot.marketing, .cat-dot.orange { background: oklch(var(--cat-marketing)); }
+    .cat-dot.docs, .cat-dot.green { background: oklch(var(--cat-docs)); }
+    .cat-dot.gray { background: oklch(var(--muted-foreground)); }
+    .sidebar-footer { padding: 12px; border-top: 1px solid oklch(var(--border)); }
     .user-button {
       display: flex; align-items: center; gap: 12px;
       width: 100%; padding: 8px 12px;
       border-radius: calc(var(--radius) - 2px);
       background: transparent; border: none;
-      color: hsl(var(--foreground));
+      color: oklch(var(--foreground));
       cursor: pointer;
       transition: background 150ms;
       text-align: left;
     }
-    .user-button:hover { background: hsl(var(--accent)); }
+    .user-button:hover { background: oklch(var(--accent)); }
     .user-button-icon { margin-left: auto; opacity: 0.5; }
     .hidden-input { display: none; }
     .avatar {
       width: 32px; height: 32px;
       border-radius: 50%;
-      background: linear-gradient(135deg, hsl(var(--indigo)) 0%, hsl(271 91% 65%) 100%);
+      background: linear-gradient(135deg, oklch(var(--indigo)) 0%, oklch(var(--purple)) 100%);
       display: flex; align-items: center; justify-content: center;
       font-size: 12px; font-weight: 600; color: white;
     }
     .user-info { flex: 1; min-width: 0; }
     .user-name { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .user-email { font-size: 12px; color: hsl(var(--muted-foreground)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .user-email { font-size: 12px; color: oklch(var(--muted-foreground)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
     /* Main */
     .main { flex: 1; margin-left: 256px; display: flex; flex-direction: column; }
     .header {
       height: 56px;
-      background: hsl(var(--background));
-      border-bottom: 1px solid hsl(var(--border));
+      background: oklch(var(--background));
+      border-bottom: 1px solid oklch(var(--border));
       display: flex; align-items: center;
       padding: 0 24px; gap: 16px;
       position: sticky; top: 0; z-index: 30;
@@ -3406,29 +3580,29 @@ function getAdminHTML(userEmail, env) {
     .search-trigger {
       display: flex; align-items: center;
       width: 100%; height: 36px; padding: 0 12px;
-      background: hsl(var(--secondary));
-      border: 1px solid hsl(var(--border));
+      background: oklch(var(--secondary));
+      border: 1px solid oklch(var(--border));
       border-radius: var(--radius);
-      color: hsl(var(--muted-foreground));
+      color: oklch(var(--muted-foreground));
       font-size: 14px;
       cursor: pointer;
       transition: all 150ms;
     }
-    .search-trigger:hover { background: hsl(var(--accent)); }
+    .search-trigger:hover { background: oklch(var(--accent)); }
     .search-trigger svg { width: 16px; height: 16px; margin-right: 8px; flex-shrink: 0; }
     .search-trigger span { flex: 1; text-align: left; }
     .search-kbd {
       display: inline-flex; align-items: center; gap: 2px;
       font-size: 11px; font-family: inherit;
-      background: hsl(var(--muted));
+      background: oklch(var(--muted));
       padding: 2px 6px; border-radius: 4px;
-      color: hsl(var(--muted-foreground));
+      color: oklch(var(--muted-foreground));
     }
     .search-dialog {
       position: absolute;
       top: calc(100% + 8px); left: 0; right: 0;
-      background: hsl(var(--popover));
-      border: 1px solid hsl(var(--border));
+      background: oklch(var(--popover));
+      border: 1px solid oklch(var(--border));
       border-radius: var(--radius);
       box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1);
       overflow: hidden;
@@ -3440,20 +3614,20 @@ function getAdminHTML(userEmail, env) {
     .search-input-wrapper {
       display: flex; align-items: center;
       padding: 12px;
-      border-bottom: 1px solid hsl(var(--border));
+      border-bottom: 1px solid oklch(var(--border));
     }
-    .search-input-wrapper svg { width: 16px; height: 16px; color: hsl(var(--muted-foreground)); margin-right: 8px; flex-shrink: 0; }
+    .search-input-wrapper svg { width: 16px; height: 16px; color: oklch(var(--muted-foreground)); margin-right: 8px; flex-shrink: 0; }
     .search-input {
       flex: 1;
       background: transparent; border: none; outline: none;
-      color: hsl(var(--foreground));
+      color: oklch(var(--foreground));
       font-size: 14px;
     }
-    .search-input::placeholder { color: hsl(var(--muted-foreground)); }
+    .search-input::placeholder { color: oklch(var(--muted-foreground)); }
     .search-spinner {
       width: 16px; height: 16px;
-      border: 2px solid hsl(var(--muted));
-      border-top-color: hsl(var(--foreground));
+      border: 2px solid oklch(var(--muted));
+      border-top-color: oklch(var(--foreground));
       border-radius: 50%;
       animation: spin 0.6s linear infinite;
       display: none;
@@ -3462,7 +3636,7 @@ function getAdminHTML(userEmail, env) {
     @keyframes spin { to { transform: rotate(360deg); } }
     .search-results { max-height: 300px; overflow-y: auto; padding: 4px; }
     .search-group { padding: 8px 8px 4px; }
-    .search-group-label { font-size: 12px; font-weight: 500; color: hsl(var(--muted-foreground)); padding: 0 8px 4px; }
+    .search-group-label { font-size: 12px; font-weight: 500; color: oklch(var(--muted-foreground)); padding: 0 8px 4px; }
     .search-item {
       display: flex; align-items: center; gap: 12px;
       padding: 8px 12px;
@@ -3470,20 +3644,20 @@ function getAdminHTML(userEmail, env) {
       cursor: pointer;
       transition: background 150ms;
     }
-    .search-item:hover { background: hsl(var(--accent)); }
+    .search-item:hover { background: oklch(var(--accent)); }
     .search-item-code {
       font-family: 'SF Mono', Monaco, monospace;
       font-size: 13px;
-      color: hsl(var(--indigo));
-      background: hsl(var(--indigo) / 0.1);
+      color: oklch(var(--indigo));
+      background: oklch(var(--indigo) / 0.1);
       padding: 2px 8px; border-radius: 4px;
     }
     .search-item-url {
       flex: 1; font-size: 13px;
-      color: hsl(var(--muted-foreground));
+      color: oklch(var(--muted-foreground));
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-    .search-empty { padding: 24px; text-align: center; color: hsl(var(--muted-foreground)); }
+    .search-empty { padding: 24px; text-align: center; color: oklch(var(--muted-foreground)); }
     .header-actions { display: flex; align-items: center; gap: 8px; }
     .page { flex: 1; padding: 24px; }
 
@@ -3499,46 +3673,46 @@ function getAdminHTML(userEmail, env) {
       white-space: nowrap;
     }
     .btn svg { width: 16px; height: 16px; }
-    .btn-default { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
-    .btn-default:hover { background: hsl(var(--primary) / 0.9); }
-    .btn-secondary { background: hsl(var(--secondary)); color: hsl(var(--secondary-foreground)); border: 1px solid hsl(var(--border)); }
-    .btn-secondary:hover { background: hsl(var(--accent)); }
-    .btn-outline { background: transparent; color: hsl(var(--foreground)); border: 1px solid hsl(var(--border)); }
-    .btn-outline:hover { background: hsl(var(--accent)); }
-    .btn-ghost { background: transparent; color: hsl(var(--foreground)); }
-    .btn-ghost:hover { background: hsl(var(--accent)); }
-    .btn-destructive { background: hsl(var(--destructive)); color: hsl(var(--destructive-foreground)); }
-    .btn-destructive:hover { background: hsl(var(--destructive) / 0.9); }
+    .btn-default { background: linear-gradient(135deg, oklch(var(--indigo)) 0%, oklch(var(--purple)) 100%); color: white; border: none; }
+    .btn-default:hover { opacity: 0.9; }
+    .btn-secondary { background: oklch(var(--secondary)); color: oklch(var(--secondary-foreground)); border: 1px solid oklch(var(--border)); }
+    .btn-secondary:hover { background: oklch(var(--accent)); }
+    .btn-outline { background: transparent; color: oklch(var(--foreground)); border: 1px solid oklch(var(--border)); }
+    .btn-outline:hover { background: oklch(var(--accent)); }
+    .btn-ghost { background: transparent; color: oklch(var(--foreground)); }
+    .btn-ghost:hover { background: oklch(var(--accent)); }
+    .btn-destructive { background: oklch(var(--destructive)); color: oklch(var(--destructive-foreground)); }
+    .btn-destructive:hover { background: oklch(var(--destructive) / 0.9); }
     .btn-sm { height: 32px; padding: 0 12px; font-size: 13px; }
     .btn-icon { width: 36px; height: 36px; padding: 0; }
     .btn-icon.sm { width: 32px; height: 32px; }
 
     /* Card */
-    .card { background: hsl(var(--card)); border: 1px solid hsl(var(--border)); border-radius: var(--radius); }
+    .card { background: oklch(var(--card)); border: 1px solid oklch(var(--border)); border-radius: var(--radius); }
     .card-header { display: flex; flex-direction: column; padding: 24px 24px 0; }
     .card-header.row { flex-direction: row; align-items: center; justify-content: space-between; }
     .card-title { font-size: 18px; font-weight: 600; letter-spacing: -0.025em; }
-    .card-description { font-size: 14px; color: hsl(var(--muted-foreground)); margin-top: 4px; }
+    .card-description { font-size: 14px; color: oklch(var(--muted-foreground)); margin-top: 4px; }
     .card-content { padding: 24px; }
 
     /* Form */
     .input {
       display: flex; height: 40px; width: 100%; padding: 0 12px;
-      background: hsl(var(--background));
-      border: 1px solid hsl(var(--input));
+      background: oklch(var(--background));
+      border: 1px solid oklch(var(--input));
       border-radius: var(--radius);
-      font-size: 14px; color: hsl(var(--foreground));
+      font-size: 14px; color: oklch(var(--foreground));
       transition: all 150ms;
     }
-    .input:focus { outline: none; border-color: hsl(var(--ring)); box-shadow: 0 0 0 2px hsl(var(--background)), 0 0 0 4px hsl(var(--ring) / 0.3); }
-    .input::placeholder { color: hsl(var(--muted-foreground)); }
+    .input:focus { outline: none; border-color: oklch(var(--ring)); box-shadow: 0 0 0 2px oklch(var(--background)), 0 0 0 4px oklch(var(--ring) / 0.3); }
+    .input::placeholder { color: oklch(var(--muted-foreground)); }
     .label { display: block; font-size: 14px; font-weight: 500; margin-bottom: 8px; }
     .select {
       display: flex; height: 40px; width: 100%; padding: 0 12px;
-      background: hsl(var(--background));
-      border: 1px solid hsl(var(--input));
+      background: oklch(var(--background));
+      border: 1px solid oklch(var(--input));
       border-radius: var(--radius);
-      font-size: 14px; color: hsl(var(--foreground));
+      font-size: 14px; color: oklch(var(--foreground));
       cursor: pointer; appearance: none;
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
       background-repeat: no-repeat;
@@ -3546,7 +3720,7 @@ function getAdminHTML(userEmail, env) {
       padding-right: 40px;
       transition: all 150ms;
     }
-    .select:focus { outline: none; border-color: hsl(var(--ring)); box-shadow: 0 0 0 2px hsl(var(--background)), 0 0 0 4px hsl(var(--ring) / 0.3); }
+    .select:focus { outline: none; border-color: oklch(var(--ring)); box-shadow: 0 0 0 2px oklch(var(--background)), 0 0 0 4px oklch(var(--ring) / 0.3); }
     .select.sm { height: 32px; font-size: 13px; }
 
     /* Tags */
@@ -3557,39 +3731,39 @@ function getAdminHTML(userEmail, env) {
       border-radius: 9999px;
       border: 1px solid transparent;
     }
-    .badge-secondary { background: hsl(var(--secondary)); color: hsl(var(--secondary-foreground)); border-color: hsl(var(--border)); }
-    .badge-outline { background: transparent; color: hsl(var(--foreground)); border-color: hsl(var(--border)); }
+    .badge-secondary { background: oklch(var(--secondary)); color: oklch(var(--secondary-foreground)); border-color: oklch(var(--border)); }
+    .badge-outline { background: transparent; color: oklch(var(--foreground)); border-color: oklch(var(--border)); }
     .badge-cat {
       display: inline-flex; align-items: center; gap: 6px;
       padding: 4px 10px;
       font-size: 12px; font-weight: 500;
       border-radius: var(--radius);
     }
-    .badge-cat.work, .badge-cat.violet { background: hsl(var(--cat-work) / 0.15); color: hsl(var(--cat-work)); }
-    .badge-cat.personal, .badge-cat.pink { background: hsl(var(--cat-personal) / 0.15); color: hsl(var(--cat-personal)); }
-    .badge-cat.social, .badge-cat.cyan { background: hsl(var(--cat-social) / 0.15); color: hsl(var(--cat-social)); }
-    .badge-cat.marketing, .badge-cat.orange { background: hsl(var(--cat-marketing) / 0.15); color: hsl(var(--cat-marketing)); }
-    .badge-cat.docs, .badge-cat.green { background: hsl(var(--cat-docs) / 0.15); color: hsl(var(--cat-docs)); }
-    .badge-cat.gray { background: hsl(var(--muted)); color: hsl(var(--muted-foreground)); }
+    .badge-cat.work, .badge-cat.violet { background: oklch(var(--cat-work) / 0.15); color: oklch(var(--cat-work)); }
+    .badge-cat.personal, .badge-cat.pink { background: oklch(var(--cat-personal) / 0.15); color: oklch(var(--cat-personal)); }
+    .badge-cat.social, .badge-cat.cyan { background: oklch(var(--cat-social) / 0.15); color: oklch(var(--cat-social)); }
+    .badge-cat.marketing, .badge-cat.orange { background: oklch(var(--cat-marketing) / 0.15); color: oklch(var(--cat-marketing)); }
+    .badge-cat.docs, .badge-cat.green { background: oklch(var(--cat-docs) / 0.15); color: oklch(var(--cat-docs)); }
+    .badge-cat.gray { background: oklch(var(--muted)); color: oklch(var(--muted-foreground)); }
     .tag-input {
       display: flex; flex-wrap: wrap; gap: 6px;
       min-height: 40px; padding: 6px 8px;
-      background: hsl(var(--background));
-      border: 1px solid hsl(var(--input));
+      background: oklch(var(--background));
+      border: 1px solid oklch(var(--input));
       border-radius: var(--radius);
       transition: all 150ms;
     }
-    .tag-input:focus-within { border-color: hsl(var(--ring)); box-shadow: 0 0 0 2px hsl(var(--background)), 0 0 0 4px hsl(var(--ring) / 0.3); }
+    .tag-input:focus-within { border-color: oklch(var(--ring)); box-shadow: 0 0 0 2px oklch(var(--background)), 0 0 0 4px oklch(var(--ring) / 0.3); }
     .tag-input input {
       flex: 1; min-width: 80px;
       background: transparent; border: none; outline: none;
-      font-size: 14px; color: hsl(var(--foreground));
+      font-size: 14px; color: oklch(var(--foreground));
     }
-    .tag-input input::placeholder { color: hsl(var(--muted-foreground)); }
+    .tag-input input::placeholder { color: oklch(var(--muted-foreground)); }
     .tag {
       display: inline-flex; align-items: center; gap: 4px;
       padding: 2px 8px;
-      background: hsl(var(--secondary));
+      background: oklch(var(--secondary));
       border-radius: var(--radius);
       font-size: 13px;
     }
@@ -3597,11 +3771,11 @@ function getAdminHTML(userEmail, env) {
       display: flex; width: 14px; height: 14px;
       align-items: center; justify-content: center;
       border-radius: 2px;
-      color: hsl(var(--muted-foreground));
+      color: oklch(var(--muted-foreground));
       cursor: pointer;
       transition: all 150ms;
     }
-    .tag-close:hover { background: hsl(var(--destructive)); color: hsl(var(--destructive-foreground)); }
+    .tag-close:hover { background: oklch(var(--destructive)); color: oklch(var(--destructive-foreground)); }
 
     /* Table */
     .table-wrapper { overflow-x: auto; }
@@ -3609,38 +3783,38 @@ function getAdminHTML(userEmail, env) {
     .table th {
       height: 48px; padding: 0 16px;
       text-align: left; font-weight: 500;
-      color: hsl(var(--muted-foreground));
-      background: hsl(var(--muted) / 0.5);
-      border-bottom: 1px solid hsl(var(--border));
+      color: oklch(var(--muted-foreground));
+      background: oklch(var(--muted) / 0.5);
+      border-bottom: 1px solid oklch(var(--border));
     }
-    .table td { height: 56px; padding: 0 16px; border-bottom: 1px solid hsl(var(--border)); vertical-align: middle; }
+    .table td { height: 56px; padding: 0 16px; border-bottom: 1px solid oklch(var(--border)); vertical-align: middle; }
     .table tr:last-child td { border-bottom: none; }
-    .table tr:hover td { background: hsl(var(--muted) / 0.3); }
+    .table tr:hover td { background: oklch(var(--muted) / 0.3); }
     .cell-link { display: flex; align-items: center; gap: 8px; }
     .cell-link a {
       font-family: 'SF Mono', Monaco, monospace;
       font-size: 13px;
-      color: hsl(var(--indigo));
-      background: hsl(var(--indigo) / 0.1);
+      color: oklch(var(--indigo));
+      background: oklch(var(--indigo) / 0.1);
       padding: 4px 10px;
       border-radius: var(--radius);
       text-decoration: none;
       transition: all 150ms;
     }
-    .cell-link a:hover { background: hsl(var(--indigo)); color: white; }
-    .cell-url { max-width: 280px; color: hsl(var(--muted-foreground)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: none; display: block; }
-    .cell-url:hover { color: hsl(var(--foreground)); }
+    .cell-link a:hover { background: oklch(var(--indigo)); color: white; }
+    .cell-url { max-width: 280px; color: oklch(var(--muted-foreground)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: none; display: block; }
+    .cell-url:hover { color: oklch(var(--foreground)); }
     .cell-tags { display: flex; flex-wrap: wrap; gap: 4px; }
     .cell-clicks { display: inline-flex; align-items: center; gap: 4px; color: hsl(142 76% 46%); }
     .cell-clicks svg { width: 14px; height: 14px; }
-    .cell-date { color: hsl(var(--muted-foreground)); font-size: 13px; }
+    .cell-date { color: oklch(var(--muted-foreground)); font-size: 13px; }
     .cell-actions { display: flex; gap: 4px; justify-content: flex-end; opacity: 0; transition: opacity 150ms; }
     .table tr:hover .cell-actions { opacity: 1; }
 
     /* Stats */
     .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
     .stat-card { padding: 24px; }
-    .stat-label { font-size: 14px; color: hsl(var(--muted-foreground)); margin-bottom: 8px; }
+    .stat-label { font-size: 14px; color: oklch(var(--muted-foreground)); margin-bottom: 8px; }
     .stat-value { font-size: 32px; font-weight: 700; letter-spacing: -0.025em; line-height: 1; }
 
     /* Form Grid */
@@ -3648,22 +3822,22 @@ function getAdminHTML(userEmail, env) {
     .form-group { display: flex; flex-direction: column; gap: 8px; }
 
     /* Pagination */
-    .pagination { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; border-top: 1px solid hsl(var(--border)); }
-    .pagination-info { font-size: 14px; color: hsl(var(--muted-foreground)); }
+    .pagination { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; border-top: 1px solid oklch(var(--border)); }
+    .pagination-info { font-size: 14px; color: oklch(var(--muted-foreground)); }
     .pagination-controls { display: flex; gap: 4px; }
     .pagination-btn {
       width: 32px; height: 32px;
       display: flex; align-items: center; justify-content: center;
       background: transparent;
-      border: 1px solid hsl(var(--border));
+      border: 1px solid oklch(var(--border));
       border-radius: var(--radius);
-      color: hsl(var(--foreground));
+      color: oklch(var(--foreground));
       font-size: 13px;
       cursor: pointer;
       transition: all 150ms;
     }
-    .pagination-btn:hover:not(:disabled) { background: hsl(var(--accent)); }
-    .pagination-btn.active { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); border-color: hsl(var(--primary)); }
+    .pagination-btn:hover:not(:disabled) { background: oklch(var(--accent)); }
+    .pagination-btn.active { background: oklch(var(--primary)); color: oklch(var(--primary-foreground)); border-color: oklch(var(--primary)); }
     .pagination-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
     /* Modal */
@@ -3678,8 +3852,8 @@ function getAdminHTML(userEmail, env) {
     .modal-overlay.open { opacity: 1; visibility: visible; }
     .modal {
       width: 100%; max-width: 500px;
-      background: hsl(var(--card));
-      border: 1px solid hsl(var(--border));
+      background: oklch(var(--card));
+      border: 1px solid oklch(var(--border));
       border-radius: var(--radius);
       box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.25);
       transform: scale(0.95);
@@ -3689,14 +3863,14 @@ function getAdminHTML(userEmail, env) {
     .modal-header {
       display: flex; align-items: center; justify-content: space-between;
       padding: 16px 24px;
-      border-bottom: 1px solid hsl(var(--border));
+      border-bottom: 1px solid oklch(var(--border));
     }
     .modal-title { font-size: 16px; font-weight: 600; }
     .modal-body { padding: 24px; }
     .modal-footer {
       display: flex; justify-content: flex-end; gap: 8px;
       padding: 16px 24px;
-      border-top: 1px solid hsl(var(--border));
+      border-top: 1px solid oklch(var(--border));
     }
 
     /* Toast */
@@ -3704,8 +3878,8 @@ function getAdminHTML(userEmail, env) {
     .toast {
       display: flex; align-items: center; gap: 12px;
       padding: 16px;
-      background: hsl(var(--card));
-      border: 1px solid hsl(var(--border));
+      background: oklch(var(--card));
+      border: 1px solid oklch(var(--border));
       border-radius: var(--radius);
       box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1);
       min-width: 320px;
@@ -3717,40 +3891,40 @@ function getAdminHTML(userEmail, env) {
     .toast-icon.error { color: hsl(0 84% 60%); }
     .toast-content { flex: 1; }
     .toast-title { font-weight: 500; }
-    .toast-description { font-size: 13px; color: hsl(var(--muted-foreground)); }
-    .toast-close { color: hsl(var(--muted-foreground)); cursor: pointer; background: none; border: none; }
-    .toast-close:hover { color: hsl(var(--foreground)); }
+    .toast-description { font-size: 13px; color: oklch(var(--muted-foreground)); }
+    .toast-close { color: oklch(var(--muted-foreground)); cursor: pointer; background: none; border: none; }
+    .toast-close:hover { color: oklch(var(--foreground)); }
 
     /* Dev Tools Floating Button */
     .dev-tools-fab { position: fixed; bottom: 24px; left: 24px; z-index: 90; }
     .dev-tools-btn {
       width: 48px; height: 48px;
-      background: linear-gradient(135deg, hsl(var(--indigo)) 0%, hsl(271 91% 65%) 100%);
+      background: linear-gradient(135deg, oklch(var(--indigo)) 0%, oklch(var(--purple)) 100%);
       border: none; border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
-      cursor: pointer; box-shadow: 0 4px 12px hsl(var(--indigo) / 0.4);
+      cursor: pointer; box-shadow: 0 4px 12px oklch(var(--indigo) / 0.4);
       transition: transform 150ms, box-shadow 150ms;
     }
-    .dev-tools-btn:hover { transform: scale(1.05); box-shadow: 0 6px 20px hsl(var(--indigo) / 0.5); }
+    .dev-tools-btn:hover { transform: scale(1.05); box-shadow: 0 6px 20px oklch(var(--indigo) / 0.5); }
     .dev-tools-btn svg { width: 22px; height: 22px; color: white; }
     .dev-tools-menu {
       position: absolute; bottom: 56px; left: 0;
-      background: hsl(var(--card)); border: 1px solid hsl(var(--border));
+      background: oklch(var(--card)); border: 1px solid oklch(var(--border));
       border-radius: var(--radius); padding: 8px; min-width: 200px;
       box-shadow: 0 10px 25px rgb(0 0 0 / 0.3);
       opacity: 0; visibility: hidden; transform: translateY(8px);
       transition: opacity 150ms, visibility 150ms, transform 150ms;
     }
     .dev-tools-fab.open .dev-tools-menu { opacity: 1; visibility: visible; transform: translateY(0); }
-    .dev-tools-menu-title { padding: 8px 12px; font-size: 11px; font-weight: 600; color: hsl(var(--muted-foreground)); text-transform: uppercase; letter-spacing: 0.05em; }
+    .dev-tools-menu-title { padding: 8px 12px; font-size: 11px; font-weight: 600; color: oklch(var(--muted-foreground)); text-transform: uppercase; letter-spacing: 0.05em; }
     .dev-tools-menu-item {
       display: flex; align-items: center; gap: 10px;
       padding: 10px 12px; border-radius: calc(var(--radius) - 4px);
-      color: hsl(var(--foreground)); text-decoration: none; font-size: 14px;
+      color: oklch(var(--foreground)); text-decoration: none; font-size: 14px;
       transition: background 150ms;
     }
-    .dev-tools-menu-item:hover { background: hsl(var(--accent)); }
-    .dev-tools-menu-item svg { width: 16px; height: 16px; color: hsl(var(--muted-foreground)); }
+    .dev-tools-menu-item:hover { background: oklch(var(--accent)); }
+    .dev-tools-menu-item svg { width: 16px; height: 16px; color: oklch(var(--muted-foreground)); }
     @media (max-width: 768px) { .dev-tools-fab { bottom: 80px; } }
 
     /* Mobile Menu Button */
@@ -3759,7 +3933,7 @@ function getAdminHTML(userEmail, env) {
       padding: 0.5rem;
       background: none;
       border: none;
-      color: hsl(var(--foreground));
+      color: oklch(var(--foreground));
       cursor: pointer;
       border-radius: 6px;
       min-width: 44px;
@@ -3767,7 +3941,7 @@ function getAdminHTML(userEmail, env) {
       align-items: center;
       justify-content: center;
     }
-    .mobile-menu-btn:hover { background: hsl(var(--muted)); }
+    .mobile-menu-btn:hover { background: oklch(var(--muted)); }
 
     /* Mobile Overlay */
     .mobile-overlay {
@@ -3845,7 +4019,7 @@ function getAdminHTML(userEmail, env) {
     .chart-bars { display: flex; align-items: flex-end; gap: 4px; height: 160px; padding-top: 20px; }
     .chart-bar {
       flex: 1;
-      background: linear-gradient(180deg, hsl(var(--indigo)) 0%, hsl(271 91% 65%) 100%);
+      background: linear-gradient(180deg, oklch(var(--indigo)) 0%, oklch(var(--purple)) 100%);
       border-radius: 4px 4px 0 0;
       min-width: 8px;
       position: relative;
@@ -3858,7 +4032,7 @@ function getAdminHTML(userEmail, env) {
       left: 50%;
       transform: translateX(-50%);
       font-size: 10px;
-      color: hsl(var(--muted-foreground));
+      color: oklch(var(--muted-foreground));
       white-space: nowrap;
     }
     .chart-bar-value {
@@ -3868,7 +4042,7 @@ function getAdminHTML(userEmail, env) {
       transform: translateX(-50%);
       font-size: 11px;
       font-weight: 500;
-      color: hsl(var(--foreground));
+      color: oklch(var(--foreground));
     }
 
     .pie-chart { display: flex; gap: 16px; align-items: center; }
@@ -3885,20 +4059,20 @@ function getAdminHTML(userEmail, env) {
       font-size: 13px;
     }
     .pie-legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-    .pie-legend-value { margin-left: auto; color: hsl(var(--muted-foreground)); }
+    .pie-legend-value { margin-left: auto; color: oklch(var(--muted-foreground)); }
 
     .list-stat { padding: 16px; }
     .list-stat-item {
       display: flex; align-items: center; justify-content: space-between;
       padding: 8px 0;
-      border-bottom: 1px solid hsl(var(--border));
+      border-bottom: 1px solid oklch(var(--border));
     }
     .list-stat-item:last-child { border-bottom: none; }
-    .list-stat-label { font-size: 13px; color: hsl(var(--foreground)); }
-    .list-stat-value { font-size: 13px; font-weight: 500; color: hsl(var(--indigo)); }
+    .list-stat-label { font-size: 13px; color: oklch(var(--foreground)); }
+    .list-stat-value { font-size: 13px; font-weight: 500; color: oklch(var(--indigo)); }
     .list-stat-bar {
       height: 4px;
-      background: hsl(var(--indigo));
+      background: oklch(var(--indigo));
       border-radius: 2px;
       margin-top: 4px;
     }
@@ -3915,19 +4089,19 @@ function getAdminHTML(userEmail, env) {
       padding: 6px 12px;
       font-size: 13px;
       background: transparent;
-      border: 1px solid hsl(var(--border));
+      border: 1px solid oklch(var(--border));
       border-radius: var(--radius);
-      color: hsl(var(--muted-foreground));
+      color: oklch(var(--muted-foreground));
       cursor: pointer;
       transition: all 150ms;
     }
-    .period-btn:hover { background: hsl(var(--accent)); }
-    .period-btn.active { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); border-color: hsl(var(--primary)); }
+    .period-btn:hover { background: oklch(var(--accent)); }
+    .period-btn.active { background: oklch(var(--primary)); color: oklch(var(--primary-foreground)); border-color: oklch(var(--primary)); }
 
     .recent-clicks-table { max-height: 300px; overflow-y: auto; }
     .recent-clicks-table table { width: 100%; font-size: 12px; }
     .recent-clicks-table th, .recent-clicks-table td { padding: 8px; text-align: left; }
-    .recent-clicks-table th { background: hsl(var(--muted) / 0.5); position: sticky; top: 0; }
+    .recent-clicks-table th { background: oklch(var(--muted) / 0.5); position: sticky; top: 0; }
 
     /* Analytics page view */
     .page-analytics { display: none; }
@@ -3941,8 +4115,8 @@ function getAdminHTML(userEmail, env) {
       align-items: center;
       gap: 12px;
       padding: 12px 16px;
-      background: hsl(var(--indigo) / 0.1);
-      border: 1px solid hsl(var(--indigo) / 0.3);
+      background: oklch(var(--indigo) / 0.1);
+      border: 1px solid oklch(var(--indigo) / 0.3);
       border-radius: var(--radius);
       margin-bottom: 16px;
     }
@@ -3950,7 +4124,7 @@ function getAdminHTML(userEmail, env) {
     .bulk-actions-count {
       font-size: 14px;
       font-weight: 500;
-      color: hsl(var(--indigo));
+      color: oklch(var(--indigo));
     }
     .bulk-actions-buttons { display: flex; gap: 8px; margin-left: auto; }
     .cell-checkbox { width: 40px; text-align: center; }
@@ -3976,10 +4150,6 @@ function getAdminHTML(userEmail, env) {
       padding: 8px 0 0;
       padding-bottom: env(safe-area-inset-bottom, 25px);
       z-index: 100;
-    }
-
-    .light .tab-bar {
-      box-shadow: 0 -1px 10px rgba(0, 0, 0, 0.05);
     }
 
     .tab-item {
@@ -4038,11 +4208,7 @@ function getAdminHTML(userEmail, env) {
       border-radius: 16px;
       padding: 16px;
       margin-bottom: 12px;
-      transition: transform 150ms ease, box-shadow 150ms ease;
-    }
-
-    .light .link-card {
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
+      transition: transform 150ms ease;
     }
 
     .link-card:active { transform: scale(0.98); }
@@ -4211,10 +4377,6 @@ function getAdminHTML(userEmail, env) {
       padding: 16px;
     }
 
-    .light .mobile-stat-card {
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
-    }
-
     .mobile-stat-value {
       font-size: 28px;
       font-weight: 700;
@@ -4254,7 +4416,6 @@ function getAdminHTML(userEmail, env) {
       transform: translateY(100%);
       transition: transform 300ms cubic-bezier(0.32, 0.72, 0, 1);
       z-index: 201;
-      box-shadow: 0 -4px 30px rgba(0, 0, 0, 0.15);
       display: flex;
       flex-direction: column;
       padding-bottom: env(safe-area-inset-bottom, 0);
@@ -4500,7 +4661,7 @@ function getAdminHTML(userEmail, env) {
               <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
             </svg>
           </div>
-          <span class="logo-text">LinkShort</span>
+          <span class="logo-text">URLsToGo</span>
         </div>
       </div>
 
@@ -4530,7 +4691,7 @@ function getAdminHTML(userEmail, env) {
         <div class="nav-group">
           <div class="nav-group-label">Categories</div>
           <div id="categoriesNav"></div>
-          <div class="nav-item" style="color: hsl(var(--muted-foreground));" onclick="promptAddCategory()">
+          <div class="nav-item" style="color: oklch(var(--muted-foreground));" onclick="promptAddCategory()">
             <span class="nav-item-icon">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px;">
                 <path d="M5 12h14"/>
@@ -4684,7 +4845,7 @@ function getAdminHTML(userEmail, env) {
                 <input type="text" class="input" id="newDescription" placeholder="Brief note about this link">
               </div>
               <!-- UTM Builder Panel -->
-              <div id="utmBuilder" style="grid-column: 1 / -1; display: none; padding: 16px; background: hsl(var(--muted) / 0.3); border-radius: var(--radius); margin-top: -8px;">
+              <div id="utmBuilder" style="grid-column: 1 / -1; display: none; padding: 16px; background: oklch(var(--muted) / 0.3); border-radius: var(--radius); margin-top: -8px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                   <span style="font-size: 13px; font-weight: 500;">UTM Parameters</span>
                   <button type="button" class="btn btn-ghost btn-sm" onclick="toggleUTMBuilder()">Close</button>
@@ -4884,12 +5045,12 @@ function getAdminHTML(userEmail, env) {
         <div class="form-group" id="editCustomExpiryGroup" style="display: none; margin-top: 8px;">
           <input type="datetime-local" class="input" id="editExpiresCustom">
         </div>
-        <div id="currentExpiryInfo" style="margin-top: 8px; font-size: 12px; color: hsl(var(--muted-foreground));"></div>
+        <div id="currentExpiryInfo" style="margin-top: 8px; font-size: 12px; color: oklch(var(--muted-foreground));"></div>
         <div class="form-group" style="margin-top: 16px;">
           <label class="label">Password Protection</label>
-          <div id="editPasswordInfo" style="font-size: 12px; color: hsl(var(--muted-foreground)); margin-bottom: 8px;"></div>
+          <div id="editPasswordInfo" style="font-size: 12px; color: oklch(var(--muted-foreground)); margin-bottom: 8px;"></div>
           <input type="password" class="input" id="editPassword" placeholder="New password (leave blank to keep current)">
-          <label style="display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; color: hsl(var(--muted-foreground)); cursor: pointer;">
+          <label style="display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; color: oklch(var(--muted-foreground)); cursor: pointer;">
             <input type="checkbox" id="editRemovePassword" style="width: 16px; height: 16px;">
             Remove password protection
           </label>
@@ -4914,9 +5075,9 @@ function getAdminHTML(userEmail, env) {
       <div class="modal-body" style="text-align: center;">
         <div id="qrCodeContainer" style="background: white; padding: 24px; border-radius: 8px; display: inline-block; margin-bottom: 16px;"></div>
         <div style="margin-bottom: 8px;">
-          <code style="font-size: 14px; color: hsl(var(--indigo));" id="qrLinkUrl"></code>
+          <code style="font-size: 14px; color: oklch(var(--indigo));" id="qrLinkUrl"></code>
         </div>
-        <p style="font-size: 13px; color: hsl(var(--muted-foreground));">Scan to visit this link</p>
+        <p style="font-size: 13px; color: oklch(var(--muted-foreground));">Scan to visit this link</p>
       </div>
       <div class="modal-footer">
         <button class="btn btn-outline" onclick="closeQRModal()">Close</button>
@@ -4944,7 +5105,7 @@ function getAdminHTML(userEmail, env) {
       <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
         <div class="analytics-header">
           <div>
-            <div style="font-size: 13px; color: hsl(var(--muted-foreground));">Total Clicks</div>
+            <div style="font-size: 13px; color: oklch(var(--muted-foreground));">Total Clicks</div>
             <div style="font-size: 24px; font-weight: 700;" id="analyticsTotalClicks">0</div>
           </div>
           <div class="analytics-period">
@@ -5026,20 +5187,9 @@ function getAdminHTML(userEmail, env) {
       if (str === null || str === undefined) return '';
       return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#x27;').replace(/\\\\/g,'\\\\\\\\');
     }
-    function escapeJs(str) {
-      if (str === null || str === undefined) return '';
-      return String(str).replace(/\\\\/g,'\\\\\\\\').replace(/'/g,"\\\\'").replace(/"/g,'\\\\"').replace(/\\n/g,'\\\\n').replace(/\\r/g,'\\\\r');
-    }
-    function generateRandomCode(length = 6) {
-      const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-      let result = '';
-      for (let i = 0; i < length; i++) {
-        result += chars.charAt(Math.floor(Math.random() * chars.length));
-      }
-      return result;
-    }
 
     const baseUrl = window.location.origin;
+    const shortlinkBase = 'https://go.urlstogo.cloud';
     const CLERK_PUBLISHABLE_KEY = '${clerkPublishableKey}';
     let allLinks = [];
     let allCategories = [];
@@ -5186,7 +5336,7 @@ function getAdminHTML(userEmail, env) {
       const pageLinks = allLinks.slice(start, start + perPage);
 
       if (pageLinks.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 48px; color: hsl(var(--muted-foreground));">No links found. Create your first one above!</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 48px; color: oklch(var(--muted-foreground));">No links found. Create your first one above!</td></tr>';
         document.getElementById('pagination').style.display = 'none';
         return;
       }
@@ -5197,15 +5347,15 @@ function getAdminHTML(userEmail, env) {
         const safeCodeHtml = escapeHtml(link.code);
         const safeDest = escapeAttr(link.destination);
         const safeDestHtml = escapeHtml(link.destination);
-        const catBadge = link.category_name ? \`<span class="badge-cat \${escapeAttr(link.category_color)}"><span class="cat-dot \${escapeAttr(link.category_color)}"></span>\${escapeHtml(link.category_name)}</span>\` : '<span style="color: hsl(var(--muted-foreground))">-</span>';
-        const tags = link.tags.length ? link.tags.map(t => \`<span class="badge badge-outline">\${escapeHtml(t)}</span>\`).join('') : '<span style="color: hsl(var(--muted-foreground))">-</span>';
+        const catBadge = link.category_name ? \`<span class="badge-cat \${escapeAttr(link.category_color)}"><span class="cat-dot \${escapeAttr(link.category_color)}"></span>\${escapeHtml(link.category_name)}</span>\` : '<span style="color: oklch(var(--muted-foreground))">-</span>';
+        const tags = link.tags.length ? link.tags.map(t => \`<span class="badge badge-outline">\${escapeHtml(t)}</span>\`).join('') : '<span style="color: oklch(var(--muted-foreground))">-</span>';
 
         return \`
           <tr data-code="\${safeCode}">
             <td class="cell-checkbox"><input type="checkbox" class="link-checkbox" value="\${safeCode}" onchange="updateBulkSelection()"></td>
             <td>
               <div class="cell-link">
-                \${link.is_protected ? '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: hsl(var(--indigo)); flex-shrink: 0;" title="Password protected"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>' : ''}
+                \${link.is_protected ? '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: oklch(var(--indigo)); flex-shrink: 0;" title="Password protected"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>' : ''}
                 <a href="\${baseUrl}/\${safeCode}" target="_blank">/\${safeCodeHtml}</a>
                 <button class="btn btn-ghost btn-icon sm" onclick="copyLink('\${safeCode}')" title="Copy">
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -5447,7 +5597,7 @@ function getAdminHTML(userEmail, env) {
       } else if (diffDays <= 1) {
         return '<span style="display: inline-block; margin-left: 6px; padding: 2px 6px; font-size: 10px; background: hsl(38 92% 50% / 0.15); color: hsl(38 92% 50%); border-radius: 4px;">Expires soon</span>';
       } else if (diffDays <= 7) {
-        return \`<span style="display: inline-block; margin-left: 6px; padding: 2px 6px; font-size: 10px; background: hsl(var(--muted)); color: hsl(var(--muted-foreground)); border-radius: 4px;">\${diffDays}d left</span>\`;
+        return \`<span style="display: inline-block; margin-left: 6px; padding: 2px 6px; font-size: 10px; background: oklch(var(--muted)); color: oklch(var(--muted-foreground)); border-radius: 4px;">\${diffDays}d left</span>\`;
       }
       return '';
     }
@@ -5461,7 +5611,7 @@ function getAdminHTML(userEmail, env) {
     }
 
     function copyLink(code) {
-      navigator.clipboard.writeText(baseUrl + '/' + code);
+      navigator.clipboard.writeText(shortlinkBase + '/' + code);
       showToast('Copied!', 'Link copied to clipboard');
     }
 
@@ -5613,7 +5763,7 @@ function getAdminHTML(userEmail, env) {
           } else {
             searchResults.innerHTML = '<div class="search-group"><div class="search-group-label">Results</div>' +
               results.map(link => \`
-                <div class="search-item" onclick="window.open('\${baseUrl}/\${encodeURIComponent(link.code)}', '_blank')">
+                <div class="search-item" onclick="window.open('\${baseUrl}/\${escapeAttr(link.code)}', '_blank')">
                   <span class="search-item-code">/\${escapeHtml(link.code)}</span>
                   <span class="search-item-url">\${escapeHtml(link.destination)}</span>
                 </div>
@@ -5701,7 +5851,7 @@ function getAdminHTML(userEmail, env) {
       document.getElementById('editPassword').value = '';
       document.getElementById('editRemovePassword').checked = false;
       if (link.is_protected) {
-        passwordInfo.innerHTML = '<span style="color: hsl(var(--indigo));">This link is password protected</span>';
+        passwordInfo.innerHTML = '<span style="color: oklch(var(--indigo));">This link is password protected</span>';
       } else {
         passwordInfo.textContent = 'No password set';
       }
@@ -5841,7 +5991,7 @@ function getAdminHTML(userEmail, env) {
       const container = document.getElementById('analyticsClicksChart');
 
       if (!clicksByDay || clicksByDay.length === 0) {
-        container.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: hsl(var(--muted-foreground));">No click data yet</div>';
+        container.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: oklch(var(--muted-foreground));">No click data yet</div>';
         return;
       }
 
@@ -5879,7 +6029,7 @@ function getAdminHTML(userEmail, env) {
       const container = document.getElementById(containerId);
 
       if (!items || items.length === 0) {
-        container.innerHTML = '<div style="padding: 16px; text-align: center; color: hsl(var(--muted-foreground)); font-size: 13px;">No data</div>';
+        container.innerHTML = '<div style="padding: 16px; text-align: center; color: oklch(var(--muted-foreground)); font-size: 13px;">No data</div>';
         return;
       }
 
@@ -5905,7 +6055,7 @@ function getAdminHTML(userEmail, env) {
       const container = document.getElementById('analyticsRecentClicks');
 
       if (!clicks || clicks.length === 0) {
-        container.innerHTML = '<tr><td colspan="5" style="text-align: center; color: hsl(var(--muted-foreground));">No recent clicks</td></tr>';
+        container.innerHTML = '<tr><td colspan="5" style="text-align: center; color: oklch(var(--muted-foreground));">No recent clicks</td></tr>';
         return;
       }
 
@@ -5958,7 +6108,7 @@ function getAdminHTML(userEmail, env) {
     let currentQRCode = null;
 
     function showQRCode(code) {
-      const url = baseUrl + '/' + code;
+      const url = shortlinkBase + '/' + code;
       document.getElementById('qrLinkUrl').textContent = url;
       document.getElementById('qrModal').classList.add('open');
 
@@ -6519,7 +6669,7 @@ function getAdminHTML(userEmail, env) {
 
     // Create link from sheet
     async function createLinkFromSheet() {
-      const codeInput = document.getElementById('sheetNewCode').value.trim();
+      const code = document.getElementById('sheetNewCode').value.trim();
       const destination = document.getElementById('sheetNewDestination').value.trim();
       const categoryId = document.getElementById('sheetNewCategory').value;
       const description = document.getElementById('sheetNewDescription').value.trim();
@@ -6529,15 +6679,12 @@ function getAdminHTML(userEmail, env) {
         return;
       }
 
-      // Generate random code if not provided
-      const code = codeInput || generateRandomCode(6);
-
       try {
         const res = await fetch('/api/links', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            code,
+            code: code || undefined,
             destination,
             category_id: categoryId || undefined,
             description: description || undefined
@@ -6577,9 +6724,7 @@ function getAdminHTML(userEmail, env) {
 
     // Register Service Worker for PWA
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(err => {
-        console.error('Service worker registration failed:', err);
-      });
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
     }
   </script>
 </body>
@@ -6593,59 +6738,59 @@ function getDesignSystemHTML() {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LinkShort - Design System</title>
+  <title>URLsToGo - Design System</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    :root { --background: 0 0% 3.9%; --foreground: 0 0% 98%; --card: 0 0% 7%; --muted: 0 0% 14.9%; --muted-foreground: 0 0% 63.9%; --border: 0 0% 14.9%; --primary: 0 0% 98%; --primary-foreground: 0 0% 9%; --indigo: 239 84% 67%; --radius: 0.5rem; --cat-work: 271 91% 65%; --cat-personal: 330 81% 60%; --cat-social: 189 94% 43%; --cat-marketing: 25 95% 53%; }
+    :root { --background: 0.1430 0.0219 293.0857; --foreground: 0.9842 0.0034 247.8575; --card: 0.1831 0.0284 289.8409; --muted: 0.2352 0.0362 290.5754; --muted-foreground: 0.7000 0.0100 285.0000; --border: 0.2352 0.0362 290.5754; --primary: 0.6056 0.2189 292.7172; --primary-foreground: 1.0000 0 0; --indigo: 0.6056 0.2189 292.7172; --purple: 0.6368 0.2078 307.3313; --radius: 0.75rem; --cat-work: 0.6850 0.2190 307.0000; --cat-personal: 0.6520 0.2450 340.0000; --cat-social: 0.6000 0.1700 210.0000; --cat-marketing: 0.6800 0.2000 50.0000; --cat-docs: 0.5800 0.1500 165.0000; }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Inter', -apple-system, sans-serif; background: hsl(var(--background)); color: hsl(var(--foreground)); min-height: 100vh; padding: 48px 24px; max-width: 1200px; margin: 0 auto; }
+    body { font-family: 'Inter', -apple-system, sans-serif; background: oklch(var(--background)); color: oklch(var(--foreground)); min-height: 100vh; padding: 48px 24px; max-width: 1200px; margin: 0 auto; }
     h1 { font-size: 32px; font-weight: 700; margin-bottom: 8px; }
-    .subtitle { color: hsl(var(--muted-foreground)); margin-bottom: 48px; }
-    h2 { font-size: 20px; font-weight: 600; margin: 32px 0 16px; padding-bottom: 8px; border-bottom: 1px solid hsl(var(--border)); }
+    .subtitle { color: oklch(var(--muted-foreground)); margin-bottom: 48px; }
+    h2 { font-size: 20px; font-weight: 600; margin: 32px 0 16px; padding-bottom: 8px; border-bottom: 1px solid oklch(var(--border)); }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; margin-bottom: 32px; }
-    .card { background: hsl(var(--card)); border: 1px solid hsl(var(--border)); border-radius: var(--radius); padding: 20px; }
+    .card { background: oklch(var(--card)); border: 1px solid oklch(var(--border)); border-radius: var(--radius); padding: 20px; }
     .color-swatch { width: 100%; height: 60px; border-radius: calc(var(--radius) - 4px); margin-bottom: 12px; }
     .color-name { font-weight: 500; margin-bottom: 4px; }
-    .color-value { font-size: 12px; color: hsl(var(--muted-foreground)); font-family: monospace; }
+    .color-value { font-size: 12px; color: oklch(var(--muted-foreground)); font-family: monospace; }
     .btn { display: inline-flex; align-items: center; justify-content: center; height: 36px; padding: 0 16px; font-size: 14px; font-weight: 500; border-radius: var(--radius); border: none; cursor: pointer; transition: all 150ms; }
-    .btn-primary { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
-    .btn-secondary { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
-    .btn-indigo { background: hsl(var(--indigo)); color: white; }
-    .btn-outline { background: transparent; border: 1px solid hsl(var(--border)); color: hsl(var(--foreground)); }
-    .btn-ghost { background: transparent; color: hsl(var(--foreground)); }
+    .btn-primary { background: oklch(var(--primary)); color: oklch(var(--primary-foreground)); }
+    .btn-secondary { background: oklch(var(--muted)); color: oklch(var(--foreground)); }
+    .btn-indigo { background: oklch(var(--indigo)); color: white; }
+    .btn-outline { background: transparent; border: 1px solid oklch(var(--border)); color: oklch(var(--foreground)); }
+    .btn-ghost { background: transparent; color: oklch(var(--foreground)); }
     .btn:hover { opacity: 0.9; }
-    .input { height: 40px; width: 100%; padding: 0 12px; background: hsl(var(--background)); border: 1px solid hsl(var(--border)); border-radius: var(--radius); font-size: 14px; color: hsl(var(--foreground)); }
-    .input:focus { outline: none; border-color: hsl(var(--indigo)); }
+    .input { height: 40px; width: 100%; padding: 0 12px; background: oklch(var(--background)); border: 1px solid oklch(var(--border)); border-radius: var(--radius); font-size: 14px; color: oklch(var(--foreground)); }
+    .input:focus { outline: none; border-color: oklch(var(--indigo)); }
     .badge { display: inline-flex; padding: 4px 10px; font-size: 12px; font-weight: 500; border-radius: var(--radius); }
     .badge-cat { display: inline-flex; align-items: center; gap: 6px; }
     .cat-dot { width: 8px; height: 8px; border-radius: 50%; }
     .flex { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
-    .back-link { display: inline-flex; align-items: center; gap: 8px; color: hsl(var(--indigo)); text-decoration: none; margin-bottom: 24px; }
+    .back-link { display: inline-flex; align-items: center; gap: 8px; color: oklch(var(--indigo)); text-decoration: none; margin-bottom: 24px; }
     .back-link:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
   <a href="/admin" class="back-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg> Back to Admin</a>
   <h1>Design System</h1>
-  <p class="subtitle">Shadcn-style components and colors for LinkShort</p>
+  <p class="subtitle">Shadcn-style components and colors for URLsToGo</p>
 
   <h2>Colors</h2>
   <div class="grid">
-    <div class="card"><div class="color-swatch" style="background: hsl(var(--background)); border: 1px solid hsl(var(--border));"></div><div class="color-name">Background</div><div class="color-value">--background</div></div>
-    <div class="card"><div class="color-swatch" style="background: hsl(var(--foreground));"></div><div class="color-name">Foreground</div><div class="color-value">--foreground</div></div>
-    <div class="card"><div class="color-swatch" style="background: hsl(var(--card)); border: 1px solid hsl(var(--border));"></div><div class="color-name">Card</div><div class="color-value">--card</div></div>
-    <div class="card"><div class="color-swatch" style="background: hsl(var(--muted));"></div><div class="color-name">Muted</div><div class="color-value">--muted</div></div>
-    <div class="card"><div class="color-swatch" style="background: hsl(var(--indigo));"></div><div class="color-name">Indigo</div><div class="color-value">--indigo</div></div>
-    <div class="card"><div class="color-swatch" style="background: linear-gradient(135deg, hsl(var(--indigo)) 0%, hsl(271 91% 65%) 100%);"></div><div class="color-name">Gradient</div><div class="color-value">indigo → purple</div></div>
+    <div class="card"><div class="color-swatch" style="background: oklch(var(--background)); border: 1px solid oklch(var(--border));"></div><div class="color-name">Background</div><div class="color-value">--background</div></div>
+    <div class="card"><div class="color-swatch" style="background: oklch(var(--foreground));"></div><div class="color-name">Foreground</div><div class="color-value">--foreground</div></div>
+    <div class="card"><div class="color-swatch" style="background: oklch(var(--card)); border: 1px solid oklch(var(--border));"></div><div class="color-name">Card</div><div class="color-value">--card</div></div>
+    <div class="card"><div class="color-swatch" style="background: oklch(var(--muted));"></div><div class="color-name">Muted</div><div class="color-value">--muted</div></div>
+    <div class="card"><div class="color-swatch" style="background: oklch(var(--indigo));"></div><div class="color-name">Indigo</div><div class="color-value">--indigo</div></div>
+    <div class="card"><div class="color-swatch" style="background: linear-gradient(135deg, oklch(var(--indigo)) 0%, oklch(var(--purple)) 100%);"></div><div class="color-name">Gradient</div><div class="color-value">indigo → purple</div></div>
   </div>
 
   <h2>Category Colors</h2>
   <div class="flex">
-    <span class="badge badge-cat" style="background: hsl(var(--cat-work) / 0.15); color: hsl(var(--cat-work));"><span class="cat-dot" style="background: hsl(var(--cat-work));"></span> Work</span>
-    <span class="badge badge-cat" style="background: hsl(var(--cat-personal) / 0.15); color: hsl(var(--cat-personal));"><span class="cat-dot" style="background: hsl(var(--cat-personal));"></span> Personal</span>
-    <span class="badge badge-cat" style="background: hsl(var(--cat-social) / 0.15); color: hsl(var(--cat-social));"><span class="cat-dot" style="background: hsl(var(--cat-social));"></span> Social</span>
-    <span class="badge badge-cat" style="background: hsl(var(--cat-marketing) / 0.15); color: hsl(var(--cat-marketing));"><span class="cat-dot" style="background: hsl(var(--cat-marketing));"></span> Marketing</span>
+    <span class="badge badge-cat" style="background: oklch(var(--cat-work) / 0.15); color: oklch(var(--cat-work));"><span class="cat-dot" style="background: oklch(var(--cat-work));"></span> Work</span>
+    <span class="badge badge-cat" style="background: oklch(var(--cat-personal) / 0.15); color: oklch(var(--cat-personal));"><span class="cat-dot" style="background: oklch(var(--cat-personal));"></span> Personal</span>
+    <span class="badge badge-cat" style="background: oklch(var(--cat-social) / 0.15); color: oklch(var(--cat-social));"><span class="cat-dot" style="background: oklch(var(--cat-social));"></span> Social</span>
+    <span class="badge badge-cat" style="background: oklch(var(--cat-marketing) / 0.15); color: oklch(var(--cat-marketing));"><span class="cat-dot" style="background: oklch(var(--cat-marketing));"></span> Marketing</span>
   </div>
 
   <h2>Buttons</h2>
@@ -6665,8 +6810,8 @@ function getDesignSystemHTML() {
 
   <h2>Cards</h2>
   <div class="grid">
-    <div class="card"><div style="font-weight: 600; margin-bottom: 8px;">Card Title</div><div style="color: hsl(var(--muted-foreground)); font-size: 14px;">Card description text goes here.</div></div>
-    <div class="card"><div style="font-size: 28px; font-weight: 700;">128</div><div style="color: hsl(var(--muted-foreground)); font-size: 14px;">Total Links</div></div>
+    <div class="card"><div style="font-weight: 600; margin-bottom: 8px;">Card Title</div><div style="color: oklch(var(--muted-foreground)); font-size: 14px;">Card description text goes here.</div></div>
+    <div class="card"><div style="font-size: 28px; font-weight: 700;">128</div><div style="color: oklch(var(--muted-foreground)); font-size: 14px;">Total Links</div></div>
   </div>
 
   <h2>Typography</h2>
@@ -6675,7 +6820,7 @@ function getDesignSystemHTML() {
     <div style="font-size: 24px; font-weight: 600; margin-bottom: 8px;">Heading 2</div>
     <div style="font-size: 18px; font-weight: 600; margin-bottom: 8px;">Heading 3</div>
     <div style="font-size: 14px; margin-bottom: 8px;">Body text - The quick brown fox jumps over the lazy dog.</div>
-    <div style="font-size: 14px; color: hsl(var(--muted-foreground));">Muted text - Secondary information displayed here.</div>
+    <div style="font-size: 14px; color: oklch(var(--muted-foreground));">Muted text - Secondary information displayed here.</div>
   </div>
 </body>
 </html>`;
@@ -6688,7 +6833,7 @@ function getMobileMockupHTML() {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LinkShort - Mobile App Mockup</title>
+  <title>URLsToGo - Mobile App Mockup</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
