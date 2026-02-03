@@ -22,8 +22,8 @@ const PWA_MANIFEST = {
   theme_color: '#8b5cf6',
   orientation: 'any',
   icons: [
-    { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
-    { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+    { src: '/icon-192.svg', sizes: '192x192', type: 'image/svg+xml', purpose: 'any maskable' },
+    { src: '/icon-512.svg', sizes: '512x512', type: 'image/svg+xml', purpose: 'any maskable' }
   ]
 };
 
@@ -210,8 +210,8 @@ export default {
         headers: { 'Content-Type': 'application/javascript' }
       });
     }
-    if (path === 'icon-192.png' || path === 'icon-512.png') {
-      const size = path === 'icon-192.png' ? 192 : 512;
+    if (path === 'icon-192.svg' || path === 'icon-512.svg') {
+      const size = path === 'icon-192.svg' ? 192 : 512;
       return new Response(generatePWAIcon(size), {
         headers: { 'Content-Type': 'image/svg+xml' }
       });
@@ -3241,7 +3241,7 @@ function getAdminHTML(userEmail, env) {
   <meta name="apple-mobile-web-app-title" content="URLsToGo">
   <link rel="icon" type="image/svg+xml" href="${ADMIN_FAVICON}">
   <link rel="manifest" href="/manifest.json">
-  <link rel="apple-touch-icon" href="/icon-192.png">
+  <link rel="apple-touch-icon" href="/icon-192.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -5026,6 +5026,18 @@ function getAdminHTML(userEmail, env) {
       if (str === null || str === undefined) return '';
       return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#x27;').replace(/\\\\/g,'\\\\\\\\');
     }
+    function escapeJs(str) {
+      if (str === null || str === undefined) return '';
+      return String(str).replace(/\\\\/g,'\\\\\\\\').replace(/'/g,"\\\\'").replace(/"/g,'\\\\"').replace(/\\n/g,'\\\\n').replace(/\\r/g,'\\\\r');
+    }
+    function generateRandomCode(length = 6) {
+      const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+      let result = '';
+      for (let i = 0; i < length; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      return result;
+    }
 
     const baseUrl = window.location.origin;
     const CLERK_PUBLISHABLE_KEY = '${clerkPublishableKey}';
@@ -5601,7 +5613,7 @@ function getAdminHTML(userEmail, env) {
           } else {
             searchResults.innerHTML = '<div class="search-group"><div class="search-group-label">Results</div>' +
               results.map(link => \`
-                <div class="search-item" onclick="window.open('\${baseUrl}/\${escapeAttr(link.code)}', '_blank')">
+                <div class="search-item" onclick="window.open('\${baseUrl}/\${encodeURIComponent(link.code)}', '_blank')">
                   <span class="search-item-code">/\${escapeHtml(link.code)}</span>
                   <span class="search-item-url">\${escapeHtml(link.destination)}</span>
                 </div>
@@ -6418,15 +6430,15 @@ function getAdminHTML(userEmail, env) {
         return \`
           <div class="link-card" data-code="\${escapeAttr(link.code)}">
             <div class="link-card-header">
-              <a href="\${baseUrl}/\${escapeAttr(link.code)}" target="_blank" class="link-card-code">/\${safeCode}</a>
+              <a href="\${baseUrl}/\${encodeURIComponent(link.code)}" target="_blank" class="link-card-code">/\${safeCode}</a>
               <div class="link-card-actions">
-                <button class="link-card-action" onclick="copyLink('\${escapeAttr(link.code)}')" title="Copy">
+                <button class="link-card-action" onclick="copyLink('\${escapeJs(link.code)}')" title="Copy">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
                     <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
                   </svg>
                 </button>
-                <button class="link-card-action" onclick="showQRCode('\${escapeAttr(link.code)}')" title="QR Code">
+                <button class="link-card-action" onclick="showQRCode('\${escapeJs(link.code)}')" title="QR Code">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <rect width="5" height="5" x="3" y="3" rx="1"/><rect width="5" height="5" x="16" y="3" rx="1"/>
                     <rect width="5" height="5" x="3" y="16" rx="1"/><path d="M21 16h-3a2 2 0 0 0-2 2v3"/>
@@ -6507,7 +6519,7 @@ function getAdminHTML(userEmail, env) {
 
     // Create link from sheet
     async function createLinkFromSheet() {
-      const code = document.getElementById('sheetNewCode').value.trim();
+      const codeInput = document.getElementById('sheetNewCode').value.trim();
       const destination = document.getElementById('sheetNewDestination').value.trim();
       const categoryId = document.getElementById('sheetNewCategory').value;
       const description = document.getElementById('sheetNewDescription').value.trim();
@@ -6517,12 +6529,15 @@ function getAdminHTML(userEmail, env) {
         return;
       }
 
+      // Generate random code if not provided
+      const code = codeInput || generateRandomCode(6);
+
       try {
         const res = await fetch('/api/links', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            code: code || undefined,
+            code,
             destination,
             category_id: categoryId || undefined,
             description: description || undefined
@@ -6562,7 +6577,9 @@ function getAdminHTML(userEmail, env) {
 
     // Register Service Worker for PWA
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(() => {});
+      navigator.serviceWorker.register('/sw.js').catch(err => {
+        console.error('Service worker registration failed:', err);
+      });
     }
   </script>
 </body>
