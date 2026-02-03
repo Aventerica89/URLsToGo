@@ -6580,15 +6580,15 @@ function getAdminHTML(userEmail, env) {
         return \`
           <div class="link-card" data-code="\${escapeAttr(link.code)}">
             <div class="link-card-header">
-              <a href="\${baseUrl}/\${escapeAttr(link.code)}" target="_blank" class="link-card-code">/\${safeCode}</a>
+              <a href="\${baseUrl}/\${encodeURIComponent(link.code)}" target="_blank" class="link-card-code">/\${safeCode}</a>
               <div class="link-card-actions">
-                <button class="link-card-action" onclick="copyLink('\${escapeAttr(link.code)}')" title="Copy">
+                <button class="link-card-action" onclick="copyLink('\${escapeJs(link.code)}')" title="Copy">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
                     <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
                   </svg>
                 </button>
-                <button class="link-card-action" onclick="showQRCode('\${escapeAttr(link.code)}')" title="QR Code">
+                <button class="link-card-action" onclick="showQRCode('\${escapeJs(link.code)}')" title="QR Code">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <rect width="5" height="5" x="3" y="3" rx="1"/><rect width="5" height="5" x="16" y="3" rx="1"/>
                     <rect width="5" height="5" x="3" y="16" rx="1"/><path d="M21 16h-3a2 2 0 0 0-2 2v3"/>
