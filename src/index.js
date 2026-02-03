@@ -5017,41 +5017,6 @@ function getAdminHTML(userEmail, env) {
   </div>
 
   <script>
-    // DEBUG: Error overlay for mobile debugging
-    (function() {
-      const errors = [];
-      const overlay = document.createElement('div');
-      overlay.id = 'debugOverlay';
-      overlay.style.cssText = 'display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.95);z-index:99999;padding:20px;overflow:auto;font-family:monospace;font-size:12px;color:#fff;';
-      overlay.innerHTML = '<div style="display:flex;justify-content:space-between;margin-bottom:10px;"><b style="color:#f87171;">Console Errors</b><div><button onclick="copyDebugErrors()" style="background:#6366f1;color:#fff;border:none;padding:6px 12px;border-radius:6px;margin-right:8px;">Copy All</button><button onclick="document.getElementById(\\'debugOverlay\\').style.display=\\'none\\'" style="background:#333;color:#fff;border:none;padding:6px 12px;border-radius:6px;">Close</button></div></div><pre id="debugErrors" style="white-space:pre-wrap;word-break:break-all;"></pre>';
-      document.addEventListener('DOMContentLoaded', () => document.body.appendChild(overlay));
-
-      window.onerror = function(msg, url, line, col, error) {
-        errors.push('[ERROR] ' + msg + ' at ' + url + ':' + line + ':' + col + (error && error.stack ? '\\n' + error.stack : ''));
-        updateDebugOverlay();
-        return false;
-      };
-      window.addEventListener('unhandledrejection', function(e) {
-        errors.push('[PROMISE] ' + (e.reason && e.reason.stack ? e.reason.stack : e.reason));
-        updateDebugOverlay();
-      });
-      const origError = console.error;
-      console.error = function(...args) {
-        errors.push('[console.error] ' + args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '));
-        updateDebugOverlay();
-        origError.apply(console, args);
-      };
-      function updateDebugOverlay() {
-        const el = document.getElementById('debugErrors');
-        if (el) el.textContent = errors.join('\\n\\n');
-        const ov = document.getElementById('debugOverlay');
-        if (ov && errors.length > 0) ov.style.display = 'block';
-      }
-      window.copyDebugErrors = function() {
-        navigator.clipboard.writeText(errors.join('\\n\\n')).then(() => alert('Copied!')).catch(() => alert('Copy failed'));
-      };
-    })();
-
     // XSS Prevention - Escape functions for safe HTML rendering
     function escapeHtml(str) {
       if (str === null || str === undefined) return '';
