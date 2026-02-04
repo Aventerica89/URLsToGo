@@ -88,174 +88,6 @@ function generatePWAIcon(size) {
   return iconSvg;
 }
 
-// Admin path constant - used for redirects and PWA start URL
-const ADMIN_PATH = '/admin';
-
-// =============================================================================
-// PWA - Progressive Web App Assets
-// =============================================================================
-
-// PWA Manifest
-const PWA_MANIFEST = {
-  name: 'URLsToGo',
-  short_name: 'URLsToGo',
-  description: 'Fast, free URL shortener powered by Cloudflare',
-  start_url: ADMIN_PATH,
-  display: 'standalone',
-  background_color: '#09090b',
-  theme_color: '#8b5cf6',
-  orientation: 'any',
-  icons: [
-    { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
-    { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
-  ]
-};
-
-// Service Worker JavaScript
-const SERVICE_WORKER_JS = `
-const CACHE_NAME = 'urlstogo-v1';
-const STATIC_ASSETS = [
-  '${ADMIN_PATH}',
-  '/login',
-  '/manifest.json'
-];
-
-// Install - cache static assets
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
-  );
-  self.skipWaiting();
-});
-
-// Activate - clean old caches
-self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    )
-  );
-  self.clients.claim();
-});
-
-// Fetch - network first, fallback to cache
-self.addEventListener('fetch', (event) => {
-  // Skip non-GET requests and API calls
-  if (event.request.method !== 'GET' || event.request.url.includes('/api/')) {
-    return;
-  }
-
-  event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        // Clone and cache successful responses
-        if (response.ok) {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-        }
-        return response;
-      })
-      .catch(() => caches.match(event.request))
-  );
-});
-`;
-
-// Generate SVG icon as PNG-like data (actually SVG but works for PWA)
-function generatePWAIcon(size) {
-  const iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}">
-    <rect width="${size}" height="${size}" rx="${size * 0.1875}" fill="#09090b"/>
-    <g stroke="#8b5cf6" stroke-width="${size * 0.08}" stroke-linecap="round" fill="none" transform="translate(${size * 0.25}, ${size * 0.25}) scale(${size / 32 * 0.5})">
-      <path d="M18.5 10.5a4 4 0 0 1 5.66 5.66l-2.83 2.83a4 4 0 0 1-5.66 0"/>
-      <path d="M13.5 21.5a4 4 0 0 1-5.66-5.66l2.83-2.83a4 4 0 0 1 5.66 0"/>
-    </g>
-  </svg>`;
-  return iconSvg;
-}
-
-// Admin path constant - used for redirects and PWA start URL
-const ADMIN_PATH = '/admin';
-
-// =============================================================================
-// PWA - Progressive Web App Assets
-// =============================================================================
-
-// PWA Manifest
-const PWA_MANIFEST = {
-  name: 'URLsToGo',
-  short_name: 'URLsToGo',
-  description: 'Fast, free URL shortener powered by Cloudflare',
-  start_url: ADMIN_PATH,
-  display: 'standalone',
-  background_color: '#09090b',
-  theme_color: '#8b5cf6',
-  orientation: 'any',
-  icons: [
-    { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
-    { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
-  ]
-};
-
-// Service Worker JavaScript
-const SERVICE_WORKER_JS = `
-const CACHE_NAME = 'urlstogo-v1';
-const STATIC_ASSETS = [
-  '${ADMIN_PATH}',
-  '/login',
-  '/manifest.json'
-];
-
-// Install - cache static assets
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
-  );
-  self.skipWaiting();
-});
-
-// Activate - clean old caches
-self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    )
-  );
-  self.clients.claim();
-});
-
-// Fetch - network first, fallback to cache
-self.addEventListener('fetch', (event) => {
-  // Skip non-GET requests and API calls
-  if (event.request.method !== 'GET' || event.request.url.includes('/api/')) {
-    return;
-  }
-
-  event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        // Clone and cache successful responses
-        if (response.ok) {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-        }
-        return response;
-      })
-      .catch(() => caches.match(event.request))
-  );
-});
-`;
-
-// Generate SVG icon as PNG-like data (actually SVG but works for PWA)
-function generatePWAIcon(size) {
-  const iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}">
-    <rect width="${size}" height="${size}" rx="${size * 0.1875}" fill="#09090b"/>
-    <g stroke="#8b5cf6" stroke-width="${size * 0.08}" stroke-linecap="round" fill="none" transform="translate(${size * 0.25}, ${size * 0.25}) scale(${size / 32 * 0.5})">
-      <path d="M18.5 10.5a4 4 0 0 1 5.66 5.66l-2.83 2.83a4 4 0 0 1-5.66 0"/>
-      <path d="M13.5 21.5a4 4 0 0 1-5.66-5.66l2.83-2.83a4 4 0 0 1 5.66 0"/>
-    </g>
-  </svg>`;
-  return iconSvg;
-}
-
 // =============================================================================
 // SECURITY HELPER FUNCTIONS - XSS Prevention
 // =============================================================================
@@ -3528,6 +3360,7 @@ function getAdminHTML(userEmail, env) {
       transition: all 150ms;
     }
     .nav-item:hover { background: oklch(var(--accent)); color: oklch(var(--accent-foreground)); }
+    .nav-item:active { transform: scale(0.98); opacity: 0.9; }
     .nav-item.active { background: oklch(var(--secondary)); color: oklch(var(--secondary-foreground)); }
     .nav-item-icon { width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; }
     .nav-item-icon svg { width: 16px; height: 16px; }
@@ -3686,6 +3519,9 @@ function getAdminHTML(userEmail, env) {
     .btn-sm { height: 32px; padding: 0 12px; font-size: 13px; }
     .btn-icon { width: 36px; height: 36px; padding: 0; }
     .btn-icon.sm { width: 32px; height: 32px; }
+    /* Touch feedback - active states for mobile */
+    .btn:active { transform: scale(0.97); opacity: 0.9; }
+    .btn-icon:active { transform: scale(0.92); }
 
     /* Card */
     .card { background: oklch(var(--card)); border: 1px solid oklch(var(--border)); border-radius: var(--radius); }
@@ -4001,6 +3837,8 @@ function getAdminHTML(userEmail, env) {
       .cell-actions .icon-btn { width: 32px; height: 32px; min-width: 32px; }
       .pagination { padding: 12px 16px; flex-wrap: wrap; gap: 8px; }
       .pagination-info { font-size: 12px; }
+      /* Prevent iOS zoom on input focus - minimum 16px */
+      .input, .select, input, select, textarea { font-size: 16px !important; }
     }
     @media (max-width: 480px) {
       /* Extra small screens - show only essential columns */
@@ -4127,8 +3965,14 @@ function getAdminHTML(userEmail, env) {
       color: oklch(var(--indigo));
     }
     .bulk-actions-buttons { display: flex; gap: 8px; margin-left: auto; }
-    .cell-checkbox { width: 40px; text-align: center; }
-    .cell-checkbox input { width: 16px; height: 16px; cursor: pointer; }
+    .cell-checkbox { width: 48px; text-align: center; }
+    .cell-checkbox input {
+      width: 20px; height: 20px; cursor: pointer;
+      /* Expand touch target to 44px minimum */
+      padding: 12px;
+      margin: -12px;
+      -webkit-tap-highlight-color: transparent;
+    }
 
     /* =================================================================
        MOBILE-FIRST UI - iOS-Style Components
@@ -4170,6 +4014,7 @@ function getAdminHTML(userEmail, env) {
     }
 
     .tab-item.active { color: hsl(var(--indigo)); }
+    .tab-item:active { transform: scale(0.95); opacity: 0.8; }
     .tab-item svg { width: 24px; height: 24px; }
 
     /* Floating Action Button */
@@ -4529,7 +4374,7 @@ function getAdminHTML(userEmail, env) {
 </head>
 <body>
   <!-- Mobile Header -->
-  <header class="mobile-header">
+  <header class="mobile-header" role="banner" aria-label="Mobile header">
     <div class="mobile-header-top">
       <h1 class="mobile-header-title">Links</h1>
       <div class="mobile-header-actions">
@@ -4571,15 +4416,15 @@ function getAdminHTML(userEmail, env) {
   </div>
 
   <!-- Bottom Tab Bar -->
-  <nav class="tab-bar" id="tabBar">
-    <button class="tab-item active" data-tab="links" onclick="switchMobileTab('links')">
+  <nav class="tab-bar" id="tabBar" aria-label="Main navigation" role="tablist">
+    <button class="tab-item active" data-tab="links" onclick="switchMobileTab('links')" role="tab" aria-selected="true" aria-label="Links">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
         <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
       </svg>
       <span>Links</span>
     </button>
-    <button class="tab-item" data-tab="stats" onclick="switchMobileTab('stats')">
+    <button class="tab-item" data-tab="stats" onclick="switchMobileTab('stats')" role="tab" aria-selected="false" aria-label="Statistics">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/>
       </svg>
@@ -4592,14 +4437,14 @@ function getAdminHTML(userEmail, env) {
         </svg>
       </button>
     </div>
-    <button class="tab-item" data-tab="categories" onclick="switchMobileTab('categories')">
+    <button class="tab-item" data-tab="categories" onclick="switchMobileTab('categories')" role="tab" aria-selected="false" aria-label="Categories">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/>
         <rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>
       </svg>
       <span>Categories</span>
     </button>
-    <button class="tab-item" data-tab="settings" onclick="switchMobileTab('settings')">
+    <button class="tab-item" data-tab="settings" onclick="switchMobileTab('settings')" role="tab" aria-selected="false" aria-label="Settings">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
         <circle cx="12" cy="12" r="3"/>
@@ -4614,8 +4459,8 @@ function getAdminHTML(userEmail, env) {
       <div class="sheet-handle"></div>
       <div class="sheet-header">
         <h3 class="sheet-title">New Link</h3>
-        <button class="sheet-close" onclick="closeCreateSheet()">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+        <button class="sheet-close" onclick="closeCreateSheet()" aria-label="Close sheet">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16" aria-hidden="true">
             <path d="M18 6 6 18M6 6l12 12"/>
           </svg>
         </button>
@@ -4648,7 +4493,7 @@ function getAdminHTML(userEmail, env) {
   </div>
 
   <!-- Mobile Overlay -->
-  <div class="mobile-overlay" id="mobileOverlay" onclick="closeMobileMenu()"></div>
+  <div class="mobile-overlay" id="mobileOverlay" onclick="closeMobileMenu()" role="presentation" aria-hidden="true"></div>
 
   <div class="app-layout">
     <!-- Sidebar -->
@@ -4853,23 +4698,23 @@ function getAdminHTML(userEmail, env) {
                 <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
                   <div>
                     <label class="label" style="font-size: 12px;">Source *</label>
-                    <input type="text" class="input" id="utmSource" placeholder="google, newsletter" style="height: 36px; font-size: 13px;">
+                    <input type="text" class="input" id="utmSource" placeholder="google, newsletter" style="height: 36px; font-size: 16px;">
                   </div>
                   <div>
                     <label class="label" style="font-size: 12px;">Medium *</label>
-                    <input type="text" class="input" id="utmMedium" placeholder="cpc, email, social" style="height: 36px; font-size: 13px;">
+                    <input type="text" class="input" id="utmMedium" placeholder="cpc, email, social" style="height: 36px; font-size: 16px;">
                   </div>
                   <div>
                     <label class="label" style="font-size: 12px;">Campaign *</label>
-                    <input type="text" class="input" id="utmCampaign" placeholder="spring_sale" style="height: 36px; font-size: 13px;">
+                    <input type="text" class="input" id="utmCampaign" placeholder="spring_sale" style="height: 36px; font-size: 16px;">
                   </div>
                   <div>
                     <label class="label" style="font-size: 12px;">Term (optional)</label>
-                    <input type="text" class="input" id="utmTerm" placeholder="running+shoes" style="height: 36px; font-size: 13px;">
+                    <input type="text" class="input" id="utmTerm" placeholder="running+shoes" style="height: 36px; font-size: 16px;">
                   </div>
                   <div>
                     <label class="label" style="font-size: 12px;">Content (optional)</label>
-                    <input type="text" class="input" id="utmContent" placeholder="logolink" style="height: 36px; font-size: 13px;">
+                    <input type="text" class="input" id="utmContent" placeholder="logolink" style="height: 36px; font-size: 16px;">
                   </div>
                   <div style="display: flex; align-items: flex-end;">
                     <button type="button" class="btn btn-default btn-sm" onclick="applyUTM()" style="width: 100%;">Apply UTM</button>
@@ -5050,8 +4895,8 @@ function getAdminHTML(userEmail, env) {
           <label class="label">Password Protection</label>
           <div id="editPasswordInfo" style="font-size: 12px; color: oklch(var(--muted-foreground)); margin-bottom: 8px;"></div>
           <input type="password" class="input" id="editPassword" placeholder="New password (leave blank to keep current)">
-          <label style="display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; color: oklch(var(--muted-foreground)); cursor: pointer;">
-            <input type="checkbox" id="editRemovePassword" style="width: 16px; height: 16px;">
+          <label style="display: flex; align-items: center; gap: 12px; margin-top: 8px; font-size: 16px; color: oklch(var(--muted-foreground)); cursor: pointer; min-height: 44px;">
+            <input type="checkbox" id="editRemovePassword" style="width: 20px; height: 20px; min-width: 20px;">
             Remove password protection
           </label>
         </div>
