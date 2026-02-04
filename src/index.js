@@ -875,6 +875,55 @@ export default {
       }
     }
 
+    // =============================================================================
+    // API KEY MANAGEMENT ENDPOINTS
+    // =============================================================================
+
+    // List API keys (without revealing full keys)
+    if (path === 'api/keys' && request.method === 'GET') {
+      const keys = await env.DB.prepare(`
+        SELECT id, name, key_prefix, scopes, last_used_at, created_at, expires_at
+        FROM api_keys WHERE user_email = ? ORDER BY created_at DESC
+      `).bind(userEmail).all();
+      return jsonResponse({ keys: keys.results });
+    }
+
+    // Create new API key
+    if (path === 'api/keys' && request.method === 'POST') {
+      const { name, scopes, expires_at } = await request.json();
+
+      if (!name || name.length < 1) {
+        return jsonResponse({ error: 'Name is required' }, { status: 400 });
+      }
+
+      // Generate key and hash it
+      const apiKey = generateApiKey();
+      const keyHash = await hashApiKey(apiKey);
+      const keyPrefix = apiKey.slice(0, 11); // utg_ + first 7 chars
+
+      await env.DB.prepare(`
+        INSERT INTO api_keys (user_email, name, key_hash, key_prefix, scopes, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).bind(userEmail, name, keyHash, keyPrefix, scopes || 'read,write', expires_at || null).run();
+
+      // Return the full key only once (it can never be retrieved again)
+      return jsonResponse({
+        success: true,
+        key: apiKey,
+        name,
+        prefix: keyPrefix,
+        message: 'Save this key now - it cannot be shown again'
+      });
+    }
+
+    // Delete API key
+    if (path.startsWith('api/keys/') && request.method === 'DELETE') {
+      const keyId = path.replace('api/keys/', '');
+      await env.DB.prepare('DELETE FROM api_keys WHERE id = ? AND user_email = ?')
+        .bind(keyId, userEmail).run();
+      return jsonResponse({ success: true });
+    }
+
     // Init default categories (one-time setup helper)
     if (path === 'api/init-categories' && request.method === 'POST') {
       const defaults = [
@@ -980,11 +1029,15 @@ async function getUserEmail(request, env) {
   }
 }
 
-// Legacy support: Also check Cloudflare Access JWT
+// Legacy support: Also check Cloudflare Access JWT and API keys
 async function getUserEmailWithFallback(request, env) {
   // First try Clerk
   const clerkEmail = await getUserEmail(request, env);
   if (clerkEmail) return clerkEmail;
+
+  // Try API key authentication (for programmatic access)
+  const apiKeyEmail = await validateApiKey(request, env);
+  if (apiKeyEmail) return apiKeyEmail;
 
   // Fallback to Cloudflare Access for backwards compatibility
   const cfJwt = request.headers.get('Cf-Access-Jwt-Assertion');
@@ -1001,6 +1054,73 @@ async function getUserEmailWithFallback(request, env) {
   }
 
   return null;
+}
+
+// =============================================================================
+// API KEY AUTHENTICATION - Programmatic Access
+// =============================================================================
+
+// Generate a secure API key
+function generateApiKey() {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  const key = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+  return `utg_${key}`; // utg = URLsToGo
+}
+
+// Hash API key for storage (using SHA-256)
+async function hashApiKey(key) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(key);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Validate API key from request and return user email
+async function validateApiKey(request, env) {
+  const authHeader = request.headers.get('Authorization') || '';
+  const apiKeyHeader = request.headers.get('X-API-Key') || '';
+
+  let apiKey = null;
+
+  // Check Authorization header (Bearer token)
+  if (authHeader.startsWith('Bearer utg_')) {
+    apiKey = authHeader.slice(7);
+  }
+  // Check X-API-Key header
+  else if (apiKeyHeader.startsWith('utg_')) {
+    apiKey = apiKeyHeader;
+  }
+
+  if (!apiKey) return null;
+
+  try {
+    const keyHash = await hashApiKey(apiKey);
+    const keyPrefix = apiKey.slice(0, 11); // utg_ + first 7 chars
+
+    const result = await env.DB.prepare(`
+      SELECT user_email, expires_at FROM api_keys
+      WHERE key_hash = ? AND key_prefix = ?
+    `).bind(keyHash, keyPrefix).first();
+
+    if (!result) return null;
+
+    // Check expiration
+    if (result.expires_at && new Date(result.expires_at) < new Date()) {
+      return null;
+    }
+
+    // Update last_used_at
+    await env.DB.prepare(`
+      UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE key_hash = ?
+    `).bind(keyHash).run();
+
+    return result.user_email;
+  } catch (e) {
+    console.error('API key validation error:', e.message);
+    return null;
+  }
 }
 
 // Parse click data from request headers
