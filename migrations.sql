@@ -75,3 +75,20 @@ CREATE TABLE IF NOT EXISTS rate_limits (
 
 CREATE INDEX IF NOT EXISTS idx_rate_limits_identifier ON rate_limits(identifier);
 CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON rate_limits(window_start);
+
+-- API keys table for programmatic access
+CREATE TABLE IF NOT EXISTS api_keys (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_email TEXT NOT NULL,
+  name TEXT NOT NULL,
+  key_hash TEXT NOT NULL,
+  key_prefix TEXT NOT NULL,
+  scopes TEXT DEFAULT 'read,write',
+  last_used_at DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  expires_at DATETIME DEFAULT NULL,
+  UNIQUE(key_hash)
+);
+
+CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_email);
+CREATE INDEX IF NOT EXISTS idx_api_keys_prefix ON api_keys(key_prefix);
