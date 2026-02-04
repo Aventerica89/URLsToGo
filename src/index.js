@@ -3537,7 +3537,7 @@ function getAdminHTML(userEmail, env) {
       background: oklch(var(--background));
       border: 1px solid oklch(var(--input));
       border-radius: var(--radius);
-      font-size: 14px; color: oklch(var(--foreground));
+      font-size: 16px; color: oklch(var(--foreground));
       transition: all 150ms;
     }
     .input:focus { outline: none; border-color: oklch(var(--ring)); box-shadow: 0 0 0 2px oklch(var(--background)), 0 0 0 4px oklch(var(--ring) / 0.3); }
@@ -3548,7 +3548,7 @@ function getAdminHTML(userEmail, env) {
       background: oklch(var(--background));
       border: 1px solid oklch(var(--input));
       border-radius: var(--radius);
-      font-size: 14px; color: oklch(var(--foreground));
+      font-size: 16px; color: oklch(var(--foreground));
       cursor: pointer; appearance: none;
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
       background-repeat: no-repeat;
@@ -3838,7 +3838,7 @@ function getAdminHTML(userEmail, env) {
       .pagination { padding: 12px 16px; flex-wrap: wrap; gap: 8px; }
       .pagination-info { font-size: 12px; }
       /* Prevent iOS zoom on input focus - minimum 16px */
-      .input, .select, input, select, textarea { font-size: 16px !important; }
+      input, select, textarea { font-size: 16px; }
     }
     @media (max-width: 480px) {
       /* Extra small screens - show only essential columns */
@@ -4698,23 +4698,23 @@ function getAdminHTML(userEmail, env) {
                 <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
                   <div>
                     <label class="label" style="font-size: 12px;">Source *</label>
-                    <input type="text" class="input" id="utmSource" placeholder="google, newsletter" style="height: 36px; font-size: 16px;">
+                    <input type="text" class="input" id="utmSource" placeholder="google, newsletter" style="height: 36px;">
                   </div>
                   <div>
                     <label class="label" style="font-size: 12px;">Medium *</label>
-                    <input type="text" class="input" id="utmMedium" placeholder="cpc, email, social" style="height: 36px; font-size: 16px;">
+                    <input type="text" class="input" id="utmMedium" placeholder="cpc, email, social" style="height: 36px;">
                   </div>
                   <div>
                     <label class="label" style="font-size: 12px;">Campaign *</label>
-                    <input type="text" class="input" id="utmCampaign" placeholder="spring_sale" style="height: 36px; font-size: 16px;">
+                    <input type="text" class="input" id="utmCampaign" placeholder="spring_sale" style="height: 36px;">
                   </div>
                   <div>
                     <label class="label" style="font-size: 12px;">Term (optional)</label>
-                    <input type="text" class="input" id="utmTerm" placeholder="running+shoes" style="height: 36px; font-size: 16px;">
+                    <input type="text" class="input" id="utmTerm" placeholder="running+shoes" style="height: 36px;">
                   </div>
                   <div>
                     <label class="label" style="font-size: 12px;">Content (optional)</label>
-                    <input type="text" class="input" id="utmContent" placeholder="logolink" style="height: 36px; font-size: 16px;">
+                    <input type="text" class="input" id="utmContent" placeholder="logolink" style="height: 36px;">
                   </div>
                   <div style="display: flex; align-items: flex-end;">
                     <button type="button" class="btn btn-default btn-sm" onclick="applyUTM()" style="width: 100%;">Apply UTM</button>
