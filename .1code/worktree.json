@@ -1,6 +1,7 @@
 {
   "setup-worktree": [
     "npm install",
-    "cd mobile-app && npm install"
+    "cd mobile-app && npm install",
+    "claude plugin install github:Aventerica89/claude-codex"
   ]
 }
