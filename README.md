@@ -1,6 +1,33 @@
-# URLsToGo
+<p align="center">
+  <img src="assets/logo.svg" alt="URLsToGo" width="128" height="128">
+</p>
 
-A fast, free URL shortener that runs on Cloudflare's edge network. Multi-user support, categories, tags, search, and a clean dark UI.
+<h1 align="center">URLsToGo</h1>
+
+<p align="center">
+  <strong>Fast, free URL shortener on Cloudflare's edge network</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/Aventerica89/URLsToGo/stargazers"><img src="https://img.shields.io/github/stars/Aventerica89/URLsToGo?style=flat&color=f97316" alt="Stars"></a>
+  <a href="https://github.com/Aventerica89/URLsToGo/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-green" alt="License"></a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white" alt="Cloudflare Workers">
+  <img src="https://img.shields.io/badge/Cloudflare-D1-F38020?logo=cloudflare&logoColor=white" alt="D1 Database">
+  <img src="https://img.shields.io/badge/Clerk-Auth-6C47FF?logo=clerk&logoColor=white" alt="Clerk Auth">
+  <img src="https://img.shields.io/badge/GitHub-Actions-2088FF?logo=githubactions&logoColor=white" alt="GitHub Actions">
+</p>
+
+<p align="center">
+  <a href="#features">Features</a> •
+  <a href="#quick-start">Quick Start</a> •
+  <a href="#how-it-works">How It Works</a> •
+  <a href="#costs">Costs</a>
+</p>
+
+---
 
 ## Quick Start (with Claude Code)
 
@@ -35,16 +62,15 @@ That's it. Claude handles all the Cloudflare configuration.
 
 | Feature | Description |
 |---------|-------------|
-| **Fast redirects** | Runs on Cloudflare's global edge network |
-| **Multi-user** | Each user has private links (via Cloudflare Access) |
-| **Categories** | Organize links by category with color coding |
-| **Tags** | Flexible tagging system |
-| **Search** | Instant search with Cmd+K shortcut |
-| **Click tracking** | See how many times each link was clicked |
-| **Import/Export** | Backup and restore your links as JSON |
-| **Dark theme** | Clean Shadcn-style UI |
-| **Auto-deploy** | Push to main = instant deployment |
-| **Free** | Runs entirely on Cloudflare's free tier |
+| ![fast](https://img.shields.io/badge/-Fast-f97316) | Runs on Cloudflare's global edge network (<50ms) |
+| ![multiuser](https://img.shields.io/badge/-Multi--user-8b5cf6) | Each user has private links via Clerk auth |
+| ![categories](https://img.shields.io/badge/-Categories-3b82f6) | Organize links with color coding |
+| ![tags](https://img.shields.io/badge/-Tags-22c55e) | Flexible tagging system |
+| ![search](https://img.shields.io/badge/-Search-06b6d4) | Instant search with Cmd+K |
+| ![tracking](https://img.shields.io/badge/-Tracking-eab308) | Click analytics per link |
+| ![backup](https://img.shields.io/badge/-Backup-64748b) | Import/Export as JSON |
+| ![dark](https://img.shields.io/badge/-Dark_UI-18181b) | Clean Shadcn-style theme |
+| ![free](https://img.shields.io/badge/-Free-10b981) | Runs on Cloudflare's free tier |
 
 ---
 
@@ -60,11 +86,14 @@ D1 Database lookup
 302 Redirect → github.com/user/repo
 ```
 
-**Stack:**
-- Cloudflare Workers (serverless compute)
-- Cloudflare D1 (SQLite database)
-- Cloudflare Access (authentication)
-- GitHub Actions (CI/CD)
+### Stack
+
+| Component | Technology |
+|-----------|------------|
+| Compute | Cloudflare Workers (serverless) |
+| Database | Cloudflare D1 (SQLite at edge) |
+| Auth | Clerk (Google OAuth) |
+| CI/CD | GitHub Actions (auto-deploy) |
 
 ---
 
@@ -94,9 +123,9 @@ Everything runs on **Cloudflare's free tier**:
 |----------|------------|
 | Workers | 100,000 requests/day |
 | D1 Database | 5GB storage |
-| Access | 50 users |
+| Clerk | 10,000 MAU |
 
-No credit card required. No surprise bills.
+![free](https://img.shields.io/badge/Cost-$0%2Fmonth-10b981) No credit card required. No surprise bills.
 
 ---
 
@@ -108,6 +137,22 @@ Prefer to set things up yourself? See **[MANUAL.md](MANUAL.md)** for:
 - API documentation
 - Database schema
 - Troubleshooting
+
+---
+
+## Project Structure
+
+```
+URLsToGo/
+├── src/
+│   └── index.js        # Main Cloudflare Worker
+├── migrations.sql      # D1 database schema
+├── wrangler.toml       # Cloudflare config
+├── .github/
+│   └── workflows/
+│       └── deploy.yml  # Auto-deploy on push
+└── MANUAL.md           # Full documentation
+```
 
 ---
 
