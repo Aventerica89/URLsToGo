@@ -3958,7 +3958,7 @@ function getAdminHTML(userEmail, env) {
       .pagination { padding: 12px 16px; flex-wrap: wrap; gap: 8px; }
       .pagination-info { font-size: 12px; }
       /* Prevent iOS zoom on input focus - minimum 16px */
-      input, select, textarea { font-size: 16px; }
+      input, select, textarea, .select.sm, .tag-input input { font-size: 16px; }
     }
     @media (max-width: 480px) {
       /* Extra small screens - show only essential columns */
