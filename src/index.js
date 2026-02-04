@@ -5198,6 +5198,25 @@ function getAdminHTML(userEmail, env) {
     </div>
   </div>
 
+  <!-- Confirmation Modal -->
+  <div class="modal-overlay" id="confirmModal" style="display: none;">
+    <div class="modal" style="max-width: 400px;">
+      <div class="modal-header">
+        <h3 class="modal-title" id="confirmModalTitle">Confirm</h3>
+        <button class="btn btn-ghost btn-icon sm" onclick="closeConfirmModal()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p id="confirmModalMessage" style="font-size: 14px; color: oklch(var(--foreground)); margin-bottom: 20px;"></p>
+        <div style="display: flex; gap: 8px; justify-content: flex-end;">
+          <button class="btn btn-outline" onclick="closeConfirmModal()">Cancel</button>
+          <button class="btn btn-destructive" id="confirmModalAction" onclick="executeConfirmAction()">Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     // XSS Prevention - Escape functions for safe HTML rendering
     function escapeHtml(str) {
@@ -5207,6 +5226,29 @@ function getAdminHTML(userEmail, env) {
     function escapeAttr(str) {
       if (str === null || str === undefined) return '';
       return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#x27;').replace(/\\\\/g,'\\\\\\\\');
+    }
+
+    // Confirmation modal functions
+    let confirmModalCallback = null;
+
+    function showConfirmModal(title, message, actionText, callback) {
+      document.getElementById('confirmModalTitle').textContent = title;
+      document.getElementById('confirmModalMessage').textContent = message;
+      document.getElementById('confirmModalAction').textContent = actionText;
+      confirmModalCallback = callback;
+      document.getElementById('confirmModal').style.display = 'flex';
+    }
+
+    function closeConfirmModal() {
+      document.getElementById('confirmModal').style.display = 'none';
+      confirmModalCallback = null;
+    }
+
+    function executeConfirmAction() {
+      if (confirmModalCallback) {
+        confirmModalCallback();
+      }
+      closeConfirmModal();
     }
 
     const baseUrl = window.location.origin;
@@ -6245,16 +6287,21 @@ function getAdminHTML(userEmail, env) {
       });
     }
 
-    async function deleteApiKey(id, name) {
-      if (!confirm(\`Delete API key "\${name}"? This cannot be undone.\`)) return;
-
-      try {
-        await fetch('/api/keys/' + id, { method: 'DELETE' });
-        await loadApiKeys();
-        showToast('API key deleted', 'success');
-      } catch (e) {
-        showToast('Failed to delete API key', 'error');
-      }
+    function deleteApiKey(id, name) {
+      showConfirmModal(
+        'Delete API Key',
+        \`Delete API key "\${name}"? This cannot be undone.\`,
+        'Delete',
+        async () => {
+          try {
+            await fetch('/api/keys/' + id, { method: 'DELETE' });
+            await loadApiKeys();
+            showToast('API key deleted', 'success');
+          } catch (e) {
+            showToast('Failed to delete API key', 'error');
+          }
+        }
+      );
     }
 
     function formatRelativeTime(dateStr) {
@@ -6275,6 +6322,11 @@ function getAdminHTML(userEmail, env) {
     // Close API keys modal on overlay click or Escape
     document.getElementById('apiKeysModal').addEventListener('click', (e) => {
       if (e.target.id === 'apiKeysModal') closeApiKeysModal();
+    });
+
+    // Close confirmation modal on overlay click
+    document.getElementById('confirmModal').addEventListener('click', (e) => {
+      if (e.target.id === 'confirmModal') closeConfirmModal();
     });
 
     async function downloadQR() {
