@@ -6187,7 +6187,7 @@ function getAdminHTML(userEmail, env) {
                 \${key.last_used_at ? ' · Last used ' + formatRelativeTime(key.last_used_at) : ' · Never used'}
               </div>
             </div>
-            <button class="btn btn-ghost btn-icon sm" onclick="deleteApiKey(\${key.id}, '\${escapeAttr(key.name)}')" title="Delete key">
+            <button class="btn btn-ghost btn-icon sm" onclick="deleteApiKey(\${key.id}, '\${escapeJs(key.name)}')" title="Delete key">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
                 <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
@@ -6240,6 +6240,8 @@ function getAdminHTML(userEmail, env) {
       const key = document.getElementById('newKeyValue').textContent;
       navigator.clipboard.writeText(key).then(() => {
         showToast('API key copied to clipboard', 'success');
+      }).catch(() => {
+        showToast('Failed to copy to clipboard', 'error');
       });
     }
 
