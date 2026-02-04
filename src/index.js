@@ -4671,6 +4671,18 @@ function getAdminHTML(userEmail, env) {
           <div class="nav-group-label">Popular Tags</div>
           <div id="tagsNav" style="padding: 0 12px; display: flex; flex-wrap: wrap; gap: 6px;"></div>
         </div>
+
+        <div class="nav-group">
+          <div class="nav-group-label">Settings</div>
+          <div class="nav-item" onclick="showApiKeysModal()">
+            <div class="nav-item-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+              </svg>
+            </div>
+            <span>API Keys</span>
+          </div>
+        </div>
       </div>
 
       <div class="sidebar-footer">
@@ -5142,6 +5154,69 @@ function getAdminHTML(userEmail, env) {
     </div>
   </div>
 
+  <!-- API Keys Modal -->
+  <div class="modal-overlay" id="apiKeysModal">
+    <div class="modal" style="max-width: 600px;">
+      <div class="modal-header">
+        <h3 class="modal-title">API Keys</h3>
+        <button class="btn btn-ghost btn-icon sm" onclick="closeApiKeysModal()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 14px; color: oklch(var(--muted-foreground)); margin-bottom: 16px;">
+          API keys allow external services to access your links programmatically.
+        </p>
+
+        <!-- Create new key form -->
+        <div class="card" style="margin-bottom: 16px; padding: 16px;">
+          <div style="display: flex; gap: 8px; align-items: flex-end;">
+            <div style="flex: 1;">
+              <label class="label">New API Key</label>
+              <input type="text" class="input" id="newApiKeyName" placeholder="Key name (e.g., jb-cloud-app-tracker)">
+            </div>
+            <button class="btn btn-default" onclick="createApiKey()">Create</button>
+          </div>
+        </div>
+
+        <!-- New key display (shown once after creation) -->
+        <div id="newKeyDisplay" style="display: none; margin-bottom: 16px;">
+          <div class="card" style="padding: 16px; background: oklch(var(--indigo) / 0.1); border-color: oklch(var(--indigo));">
+            <div style="font-size: 12px; font-weight: 500; color: oklch(var(--indigo)); margin-bottom: 8px;">
+              Save this key now - it won't be shown again!
+            </div>
+            <code id="newKeyValue" style="display: block; padding: 12px; background: oklch(var(--background)); border-radius: var(--radius); font-size: 13px; word-break: break-all;"></code>
+            <button class="btn btn-outline btn-sm" style="margin-top: 8px;" onclick="copyNewKey()">Copy to Clipboard</button>
+          </div>
+        </div>
+
+        <!-- Existing keys list -->
+        <div id="apiKeysList">
+          <div style="text-align: center; padding: 24px; color: oklch(var(--muted-foreground));">Loading...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirmation Modal -->
+  <div class="modal-overlay" id="confirmModal" style="display: none;">
+    <div class="modal" style="max-width: 400px;">
+      <div class="modal-header">
+        <h3 class="modal-title" id="confirmModalTitle">Confirm</h3>
+        <button class="btn btn-ghost btn-icon sm" onclick="closeConfirmModal()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p id="confirmModalMessage" style="font-size: 14px; color: oklch(var(--foreground)); margin-bottom: 20px;"></p>
+        <div style="display: flex; gap: 8px; justify-content: flex-end;">
+          <button class="btn btn-outline" onclick="closeConfirmModal()">Cancel</button>
+          <button class="btn btn-destructive" id="confirmModalAction" onclick="executeConfirmAction()">Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     // XSS Prevention - Escape functions for safe HTML rendering
     function escapeHtml(str) {
@@ -5151,6 +5226,29 @@ function getAdminHTML(userEmail, env) {
     function escapeAttr(str) {
       if (str === null || str === undefined) return '';
       return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#x27;').replace(/\\\\/g,'\\\\\\\\');
+    }
+
+    // Confirmation modal functions
+    let confirmModalCallback = null;
+
+    function showConfirmModal(title, message, actionText, callback) {
+      document.getElementById('confirmModalTitle').textContent = title;
+      document.getElementById('confirmModalMessage').textContent = message;
+      document.getElementById('confirmModalAction').textContent = actionText;
+      confirmModalCallback = callback;
+      document.getElementById('confirmModal').style.display = 'flex';
+    }
+
+    function closeConfirmModal() {
+      document.getElementById('confirmModal').style.display = 'none';
+      confirmModalCallback = null;
+    }
+
+    function executeConfirmAction() {
+      if (confirmModalCallback) {
+        confirmModalCallback();
+      }
+      closeConfirmModal();
     }
 
     const baseUrl = window.location.origin;
@@ -6095,6 +6193,141 @@ function getAdminHTML(userEmail, env) {
       document.getElementById('qrModal').classList.remove('open');
       currentQRCode = null;
     }
+
+    // =============================================================================
+    // API KEYS MODAL
+    // =============================================================================
+
+    async function showApiKeysModal() {
+      document.getElementById('apiKeysModal').classList.add('open');
+      document.getElementById('newKeyDisplay').style.display = 'none';
+      document.getElementById('newApiKeyName').value = '';
+      await loadApiKeys();
+    }
+
+    function closeApiKeysModal() {
+      document.getElementById('apiKeysModal').classList.remove('open');
+    }
+
+    async function loadApiKeys() {
+      const container = document.getElementById('apiKeysList');
+      try {
+        const res = await fetch('/api/keys');
+        const data = await res.json();
+
+        if (!data.keys || data.keys.length === 0) {
+          container.innerHTML = '<div style="text-align: center; padding: 24px; color: oklch(var(--muted-foreground));">No API keys yet. Create one above.</div>';
+          return;
+        }
+
+        container.innerHTML = data.keys.map(key => \`
+          <div class="card" style="padding: 12px 16px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
+            <div>
+              <div style="font-weight: 500;">\${escapeHtml(key.name)}</div>
+              <div style="font-size: 12px; color: oklch(var(--muted-foreground)); margin-top: 2px;">
+                <code>\${escapeHtml(key.key_prefix)}...</code>
+                \${key.last_used_at ? ' · Last used ' + formatRelativeTime(key.last_used_at) : ' · Never used'}
+              </div>
+            </div>
+            <button class="btn btn-ghost btn-icon sm" onclick="deleteApiKey(\${key.id}, '\${escapeJs(key.name)}')" title="Delete key">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+              </svg>
+            </button>
+          </div>
+        \`).join('');
+      } catch (e) {
+        container.innerHTML = '<div style="text-align: center; padding: 24px; color: oklch(var(--destructive));">Failed to load API keys</div>';
+      }
+    }
+
+    async function createApiKey() {
+      const nameInput = document.getElementById('newApiKeyName');
+      const name = nameInput.value.trim();
+
+      if (!name) {
+        showToast('Please enter a name for the API key', 'error');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/keys', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name })
+        });
+
+        const data = await res.json();
+
+        if (data.error) {
+          showToast(data.error, 'error');
+          return;
+        }
+
+        // Show the new key (only shown once!)
+        document.getElementById('newKeyValue').textContent = data.key;
+        document.getElementById('newKeyDisplay').style.display = 'block';
+        nameInput.value = '';
+
+        // Refresh the list
+        await loadApiKeys();
+        showToast('API key created! Save it now - it won\\'t be shown again.', 'success');
+      } catch (e) {
+        showToast('Failed to create API key', 'error');
+      }
+    }
+
+    function copyNewKey() {
+      const key = document.getElementById('newKeyValue').textContent;
+      navigator.clipboard.writeText(key).then(() => {
+        showToast('API key copied to clipboard', 'success');
+      }).catch(() => {
+        showToast('Failed to copy to clipboard', 'error');
+      });
+    }
+
+    function deleteApiKey(id, name) {
+      showConfirmModal(
+        'Delete API Key',
+        \`Delete API key "\${name}"? This cannot be undone.\`,
+        'Delete',
+        async () => {
+          try {
+            await fetch('/api/keys/' + id, { method: 'DELETE' });
+            await loadApiKeys();
+            showToast('API key deleted', 'success');
+          } catch (e) {
+            showToast('Failed to delete API key', 'error');
+          }
+        }
+      );
+    }
+
+    function formatRelativeTime(dateStr) {
+      const date = new Date(dateStr);
+      const now = new Date();
+      const diffMs = now - date;
+      const diffMins = Math.floor(diffMs / 60000);
+      const diffHours = Math.floor(diffMs / 3600000);
+      const diffDays = Math.floor(diffMs / 86400000);
+
+      if (diffMins < 1) return 'just now';
+      if (diffMins < 60) return diffMins + 'm ago';
+      if (diffHours < 24) return diffHours + 'h ago';
+      if (diffDays < 30) return diffDays + 'd ago';
+      return date.toLocaleDateString();
+    }
+
+    // Close API keys modal on overlay click or Escape
+    document.getElementById('apiKeysModal').addEventListener('click', (e) => {
+      if (e.target.id === 'apiKeysModal') closeApiKeysModal();
+    });
+
+    // Close confirmation modal on overlay click
+    document.getElementById('confirmModal').addEventListener('click', (e) => {
+      if (e.target.id === 'confirmModal') closeConfirmModal();
+    });
 
     async function downloadQR() {
       if (!currentQRCode) return;
