@@ -5347,17 +5347,20 @@ function getAdminHTML(userEmail, env) {
 
     // Escape for use in JavaScript string literals (client-side version)
     function escapeJs(str) {
-      if (!str) return '';
-      var result = '';
-      for (var i = 0; i < str.length; i++) {
-        var c = str[i];
-        if (c === '\\\\') result += '\\\\\\\\';
-        else if (c === "'") result += "\\\\'";
-        else if (c === '"') result += '\\\\"';
-        else if (c === '\\n') result += '\\\\n';
-        else if (c === '\\r') result += '\\\\r';
-        else if (c === '\\t') result += '\\\\t';
-        else result += c;
+      if (str === null || str === undefined) return '';
+      str = String(str);
+      let result = '';
+      for (let i = 0; i < str.length; i++) {
+        const c = str[i];
+        switch (c) {
+          case '\\\\': result += '\\\\\\\\'; break;
+          case "'": result += "\\\\'"; break;
+          case '"': result += '\\\\"'; break;
+          case '\n': result += '\\\\n'; break;
+          case '\r': result += '\\\\r'; break;
+          case '\t': result += '\\\\t'; break;
+          default: result += c;
+        }
       }
       return result;
     }
