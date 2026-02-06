@@ -5344,6 +5344,19 @@ function getAdminHTML(userEmail, env) {
     let allCategories = [];
     let allTags = [];
     let newTags = [];
+    
+    // Escape for use in JavaScript string literals (client-side version)
+    function escapeJs(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/"/g, '\\"')
+        .replace(/\n/g, '\\n')
+        .replace(/\r/g, '\\r')
+        .replace(/\t/g, '\\t');
+    }
+
     let currentPage = 1;
     const perPage = 10;
     let currentCategory = null;
