@@ -571,7 +571,17 @@ export default {
 
     // Create or update a preview link
     if (path.startsWith('api/preview-links/') && (request.method === 'PUT' || request.method === 'POST')) {
+      // Rate limit check
+      const rateLimit = await checkRateLimit(env, userEmail, 'api/preview-links:PUT');
+      if (!rateLimit.allowed) return rateLimitExceeded(rateLimit);
+
       const code = path.replace('api/preview-links/', '');
+
+      // Validate code format using standard validation
+      const codeValidation = validateCode(code);
+      if (!codeValidation.valid) {
+        return jsonResponse({ error: codeValidation.error }, { status: 400 });
+      }
 
       // Validate code ends with --preview
       if (!code.endsWith('--preview')) {
@@ -619,7 +629,7 @@ export default {
       } else {
         // Create new preview link
         try {
-          const result = await env.DB.prepare(
+          await env.DB.prepare(
             'INSERT INTO links (code, destination, user_email, is_preview_link, description) VALUES (?, ?, ?, 1, ?)'
           ).bind(code, destination, userEmail, 'Auto-updated preview deployment link').run();
 
@@ -631,8 +641,10 @@ export default {
             url: `https://${url.host}/${code}`
           });
         } catch (e) {
+          // Log error internally but return generic message to user
+          console.error('Preview link creation failed:', e);
           return jsonResponse({
-            error: 'Failed to create preview link: ' + e.message
+            error: 'Failed to create preview link. Please check the code and try again.'
           }, { status: 500 });
         }
       }
@@ -1251,6 +1263,7 @@ function getRateLimits(env) {
   return {
     'api/links:POST': { limit: parseInt(env?.RATE_LIMIT_CREATE) || 30, windowSeconds },
     'api/links:DELETE': { limit: parseInt(env?.RATE_LIMIT_DELETE) || 30, windowSeconds },
+    'api/preview-links:PUT': { limit: parseInt(env?.RATE_LIMIT_PREVIEW) || 30, windowSeconds },
     'api/search': { limit: parseInt(env?.RATE_LIMIT_SEARCH) || 60, windowSeconds },
     'api/import': { limit: parseInt(env?.RATE_LIMIT_IMPORT) || 5, windowSeconds },
     'redirect': { limit: parseInt(env?.RATE_LIMIT_REDIRECT) || 300, windowSeconds },

@@ -7,20 +7,20 @@
 # 1. Copy this file to your project repo: .github/workflows/update-preview-link.yml
 # 2. Add these GitHub Secrets to your repo (Settings → Secrets → Actions):
 #    - URLSTOGO_API_KEY: Your URLsToGo API key (create at go.urlstogo.cloud/admin → API Keys)
-# 3. Update the REPO_NAME variable below to match your repository name
-# 4. Customize the DEPLOYMENT_PLATFORM if needed (vercel, cloudflare-pages, or github-pages)
+# 3. Customize the env variables below if needed (repo name, platform, etc.)
 #
 # The shortlink will be: go.urlstogo.cloud/{repo-name}--preview
 
 name: Update Preview Link
 
 on:
-  # Trigger on any push to main or preview branches
+  # Trigger on any push to preview branches (not main, since that's typically production)
   push:
     branches:
-      - main
       - preview
+      - staging
       - 'preview/**'
+      - 'feat/**'
 
   # Also trigger when deployments complete (works with Vercel, Cloudflare, etc.)
   deployment_status:
@@ -29,7 +29,7 @@ on:
   workflow_dispatch:
 
 env:
-  # REQUIRED: Set this to your repository name (e.g., "bricks-cc" or "jb-cloud-app-tracker")
+  # REQUIRED: Repository name (auto-detected, or customize if needed)
   REPO_NAME: ${{ github.event.repository.name }}
 
   # REQUIRED: Your URLsToGo domain
@@ -39,14 +39,18 @@ env:
   # Options: vercel, cloudflare-pages, github-pages
   DEPLOYMENT_PLATFORM: auto
 
+  # OPTIONAL: Override Cloudflare Pages project name (defaults to repo name)
+  # Only needed if your CF Pages project name differs from your repo name
+  # CF_PROJECT_NAME: my-custom-project
+
 jobs:
   update-preview-link:
     name: Update Preview Link
     runs-on: ubuntu-latest
 
-    # Only run on successful deployments (not for deployment_status failures)
+    # Only run on successful deployments or direct push events
     if: |
-      (github.event_name == 'push' && github.ref != 'refs/heads/main') ||
+      github.event_name == 'push' ||
       (github.event_name == 'deployment_status' && github.event.deployment_status.state == 'success') ||
       github.event_name == 'workflow_dispatch'
 
@@ -73,6 +77,11 @@ jobs:
 
           echo "Detected platform: $PLATFORM"
 
+          # Slugify function (mimics Vercel/Cloudflare slugification)
+          slugify() {
+            echo "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//'
+          }
+
           # Get deployment URL based on platform
           case "$PLATFORM" in
             vercel)
@@ -80,23 +89,32 @@ jobs:
               if [ "${{ github.event_name }}" = "deployment_status" ]; then
                 DEPLOYMENT_URL="${{ github.event.deployment_status.environment_url }}"
               else
-                # Construct Vercel preview URL from branch name
-                BRANCH_NAME=$(echo "${{ github.ref_name }}" | sed 's/\//-/g')
-                DEPLOYMENT_URL="https://${{ env.REPO_NAME }}-git-${BRANCH_NAME}-${{ github.repository_owner }}.vercel.app"
+                # Slugify repo name and branch name (Vercel converts to lowercase and replaces special chars)
+                REPO_SLUG=$(slugify "${{ env.REPO_NAME }}")
+                BRANCH_SLUG=$(slugify "${{ github.ref_name }}")
+                OWNER_SLUG=$(slugify "${{ github.repository_owner }}")
+
+                DEPLOYMENT_URL="https://${REPO_SLUG}-git-${BRANCH_SLUG}-${OWNER_SLUG}.vercel.app"
               fi
               ;;
 
             cloudflare-pages)
-              # For Cloudflare Pages: Construct from branch name
-              BRANCH_NAME=$(echo "${{ github.ref_name }}" | sed 's/\//-/g')
-              # Note: You may need to customize this based on your Cloudflare Pages project name
-              CF_PROJECT="${{ env.REPO_NAME }}"
-              DEPLOYMENT_URL="https://${BRANCH_NAME}.${CF_PROJECT}.pages.dev"
+              # For Cloudflare Pages: Use custom project name or default to repo name
+              if [ -n "${{ env.CF_PROJECT_NAME }}" ]; then
+                CF_PROJECT="${{ env.CF_PROJECT_NAME }}"
+              else
+                CF_PROJECT=$(slugify "${{ env.REPO_NAME }}")
+              fi
+
+              BRANCH_SLUG=$(slugify "${{ github.ref_name }}")
+              DEPLOYMENT_URL="https://${BRANCH_SLUG}.${CF_PROJECT}.pages.dev"
               ;;
 
             github-pages)
               # For GitHub Pages: Use repository URL
-              DEPLOYMENT_URL="https://${{ github.repository_owner }}.github.io/${{ env.REPO_NAME }}"
+              OWNER_SLUG=$(slugify "${{ github.repository_owner }}")
+              REPO_SLUG=$(slugify "${{ env.REPO_NAME }}")
+              DEPLOYMENT_URL="https://${OWNER_SLUG}.github.io/${REPO_SLUG}"
               ;;
 
             *)
@@ -139,7 +157,8 @@ jobs:
             echo "✅ Preview link updated successfully!"
             echo ""
             echo "🔗 Preview link: https://${{ env.URLSTOGO_DOMAIN }}/${PREVIEW_CODE}"
-            echo "Platform: ${{ steps.detect-url.outputs.platform }}"
+            echo "🌐 Platform: ${{ steps.detect-url.outputs.platform }}"
+            echo "📦 Deployment: $DEPLOYMENT_URL"
             echo ""
             echo "Response: $BODY"
           else
@@ -147,29 +166,3 @@ jobs:
             echo "Response: $BODY"
             exit 1
           fi
-
-      - name: Comment on PR (if applicable)
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const previewCode = '${{ env.REPO_NAME }}--preview';
-            const previewUrl = 'https://${{ env.URLSTOGO_DOMAIN }}/' + previewCode;
-            const deploymentUrl = '${{ steps.detect-url.outputs.url }}';
-
-            const comment = `## 🔗 Preview Link Updated
-
-            Your preview deployment is ready:
-
-            - **Preview Link:** ${previewUrl}
-            - **Direct URL:** ${deploymentUrl}
-            - **Platform:** ${{ steps.detect-url.outputs.platform }}
-
-            > The preview link will be updated with each new deployment.`;
-
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: comment
-            });
