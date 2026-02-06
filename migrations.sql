@@ -92,3 +92,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
 
 CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_email);
 CREATE INDEX IF NOT EXISTS idx_api_keys_prefix ON api_keys(key_prefix);
+
+-- Add is_preview_link column to links table for dynamic preview URLs
+-- This allows links to be updated programmatically via API without manual auth
+ALTER TABLE links ADD COLUMN is_preview_link INTEGER DEFAULT 0;

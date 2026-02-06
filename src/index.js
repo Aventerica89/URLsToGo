@@ -565,6 +565,91 @@ export default {
       return jsonResponse({ success: true, updated });
     }
 
+    // === PREVIEW LINKS API ===
+    // Special endpoint for updating preview deployment URLs
+    // Used by GitHub Actions to update shortlinks like "bricks-cc--preview" automatically
+
+    // Create or update a preview link
+    if (path.startsWith('api/preview-links/') && (request.method === 'PUT' || request.method === 'POST')) {
+      // Rate limit check
+      const rateLimit = await checkRateLimit(env, userEmail, 'api/preview-links:PUT');
+      if (!rateLimit.allowed) return rateLimitExceeded(rateLimit);
+
+      const code = path.replace('api/preview-links/', '');
+
+      // Validate code format using standard validation
+      const codeValidation = validateCode(code);
+      if (!codeValidation.valid) {
+        return jsonResponse({ error: codeValidation.error }, { status: 400 });
+      }
+
+      // Validate code ends with --preview
+      if (!code.endsWith('--preview')) {
+        return jsonResponse({
+          error: 'Preview link codes must end with --preview (e.g., "my-app--preview")'
+        }, { status: 400 });
+      }
+
+      const { destination } = await request.json();
+      if (!destination) {
+        return jsonResponse({ error: 'Missing destination URL' }, { status: 400 });
+      }
+
+      // Validate destination URL
+      const urlValidation = validateUrl(destination);
+      if (!urlValidation.valid) {
+        return jsonResponse({ error: urlValidation.error }, { status: 400 });
+      }
+
+      // Check if link already exists
+      const existingLink = await env.DB.prepare(
+        'SELECT id, user_email FROM links WHERE code = ?'
+      ).bind(code).first();
+
+      if (existingLink) {
+        // Verify ownership - only the owner or same API key user can update
+        if (existingLink.user_email !== userEmail) {
+          return jsonResponse({
+            error: 'This preview link belongs to another user'
+          }, { status: 403 });
+        }
+
+        // Update existing preview link
+        await env.DB.prepare(
+          'UPDATE links SET destination = ?, is_preview_link = 1 WHERE code = ?'
+        ).bind(destination, code).run();
+
+        return jsonResponse({
+          success: true,
+          action: 'updated',
+          code,
+          destination,
+          url: `https://${url.host}/${code}`
+        });
+      } else {
+        // Create new preview link
+        try {
+          await env.DB.prepare(
+            'INSERT INTO links (code, destination, user_email, is_preview_link, description) VALUES (?, ?, ?, 1, ?)'
+          ).bind(code, destination, userEmail, 'Auto-updated preview deployment link').run();
+
+          return jsonResponse({
+            success: true,
+            action: 'created',
+            code,
+            destination,
+            url: `https://${url.host}/${code}`
+          });
+        } catch (e) {
+          // Log error internally but return generic message to user
+          console.error('Preview link creation failed:', e);
+          return jsonResponse({
+            error: 'Failed to create preview link. Please check the code and try again.'
+          }, { status: 500 });
+        }
+      }
+    }
+
     // === CATEGORIES API ===
 
     // List categories
@@ -1178,6 +1263,7 @@ function getRateLimits(env) {
   return {
     'api/links:POST': { limit: parseInt(env?.RATE_LIMIT_CREATE) || 30, windowSeconds },
     'api/links:DELETE': { limit: parseInt(env?.RATE_LIMIT_DELETE) || 30, windowSeconds },
+    'api/preview-links:PUT': { limit: parseInt(env?.RATE_LIMIT_PREVIEW) || 30, windowSeconds },
     'api/search': { limit: parseInt(env?.RATE_LIMIT_SEARCH) || 60, windowSeconds },
     'api/import': { limit: parseInt(env?.RATE_LIMIT_IMPORT) || 5, windowSeconds },
     'redirect': { limit: parseInt(env?.RATE_LIMIT_REDIRECT) || 300, windowSeconds },
