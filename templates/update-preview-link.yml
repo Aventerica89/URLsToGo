@@ -1,0 +1,175 @@
+# GitHub Actions Workflow: Update URLsToGo Preview Link
+#
+# This workflow automatically updates a URLsToGo shortlink when a preview deployment completes.
+# Works with Vercel, Cloudflare Pages, and GitHub Pages.
+#
+# Setup Instructions:
+# 1. Copy this file to your project repo: .github/workflows/update-preview-link.yml
+# 2. Add these GitHub Secrets to your repo (Settings → Secrets → Actions):
+#    - URLSTOGO_API_KEY: Your URLsToGo API key (create at go.urlstogo.cloud/admin → API Keys)
+# 3. Update the REPO_NAME variable below to match your repository name
+# 4. Customize the DEPLOYMENT_PLATFORM if needed (vercel, cloudflare-pages, or github-pages)
+#
+# The shortlink will be: go.urlstogo.cloud/{repo-name}--preview
+
+name: Update Preview Link
+
+on:
+  # Trigger on any push to main or preview branches
+  push:
+    branches:
+      - main
+      - preview
+      - 'preview/**'
+
+  # Also trigger when deployments complete (works with Vercel, Cloudflare, etc.)
+  deployment_status:
+
+  # Allow manual trigger for testing
+  workflow_dispatch:
+
+env:
+  # REQUIRED: Set this to your repository name (e.g., "bricks-cc" or "jb-cloud-app-tracker")
+  REPO_NAME: ${{ github.event.repository.name }}
+
+  # REQUIRED: Your URLsToGo domain
+  URLSTOGO_DOMAIN: go.urlstogo.cloud
+
+  # OPTIONAL: Set deployment platform (auto-detects if not set)
+  # Options: vercel, cloudflare-pages, github-pages
+  DEPLOYMENT_PLATFORM: auto
+
+jobs:
+  update-preview-link:
+    name: Update Preview Link
+    runs-on: ubuntu-latest
+
+    # Only run on successful deployments (not for deployment_status failures)
+    if: |
+      (github.event_name == 'push' && github.ref != 'refs/heads/main') ||
+      (github.event_name == 'deployment_status' && github.event.deployment_status.state == 'success') ||
+      github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Detect deployment URL
+        id: detect-url
+        run: |
+          DEPLOYMENT_URL=""
+          PLATFORM="${{ env.DEPLOYMENT_PLATFORM }}"
+
+          # Auto-detect platform if not specified
+          if [ "$PLATFORM" = "auto" ]; then
+            if [ -f "vercel.json" ] || [ -f ".vercel/project.json" ]; then
+              PLATFORM="vercel"
+            elif [ -f "wrangler.toml" ]; then
+              PLATFORM="cloudflare-pages"
+            elif [ -f ".github/workflows/pages.yml" ] || [ -f ".github/workflows/deploy-pages.yml" ]; then
+              PLATFORM="github-pages"
+            fi
+          fi
+
+          echo "Detected platform: $PLATFORM"
+
+          # Get deployment URL based on platform
+          case "$PLATFORM" in
+            vercel)
+              # For Vercel: Use deployment URL from environment or construct from branch
+              if [ "${{ github.event_name }}" = "deployment_status" ]; then
+                DEPLOYMENT_URL="${{ github.event.deployment_status.environment_url }}"
+              else
+                # Construct Vercel preview URL from branch name
+                BRANCH_NAME=$(echo "${{ github.ref_name }}" | sed 's/\//-/g')
+                DEPLOYMENT_URL="https://${{ env.REPO_NAME }}-git-${BRANCH_NAME}-${{ github.repository_owner }}.vercel.app"
+              fi
+              ;;
+
+            cloudflare-pages)
+              # For Cloudflare Pages: Construct from branch name
+              BRANCH_NAME=$(echo "${{ github.ref_name }}" | sed 's/\//-/g')
+              # Note: You may need to customize this based on your Cloudflare Pages project name
+              CF_PROJECT="${{ env.REPO_NAME }}"
+              DEPLOYMENT_URL="https://${BRANCH_NAME}.${CF_PROJECT}.pages.dev"
+              ;;
+
+            github-pages)
+              # For GitHub Pages: Use repository URL
+              DEPLOYMENT_URL="https://${{ github.repository_owner }}.github.io/${{ env.REPO_NAME }}"
+              ;;
+
+            *)
+              echo "❌ Could not detect deployment platform. Please set DEPLOYMENT_PLATFORM env var."
+              exit 1
+              ;;
+          esac
+
+          if [ -z "$DEPLOYMENT_URL" ]; then
+            echo "❌ Could not determine deployment URL"
+            exit 1
+          fi
+
+          echo "Deployment URL: $DEPLOYMENT_URL"
+          echo "url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
+          echo "platform=$PLATFORM" >> $GITHUB_OUTPUT
+
+      - name: Update URLsToGo preview link
+        env:
+          URLSTOGO_API_KEY: ${{ secrets.URLSTOGO_API_KEY }}
+        run: |
+          PREVIEW_CODE="${{ env.REPO_NAME }}--preview"
+          DEPLOYMENT_URL="${{ steps.detect-url.outputs.url }}"
+
+          echo "📝 Updating preview link: ${{ env.URLSTOGO_DOMAIN }}/${PREVIEW_CODE}"
+          echo "🎯 Target URL: $DEPLOYMENT_URL"
+
+          # Call URLsToGo API to create/update preview link
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -X PUT \
+            -H "Authorization: Bearer $URLSTOGO_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"destination\":\"$DEPLOYMENT_URL\"}" \
+            "https://${{ env.URLSTOGO_DOMAIN }}/api/preview-links/${PREVIEW_CODE}")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n-1)
+
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "✅ Preview link updated successfully!"
+            echo ""
+            echo "🔗 Preview link: https://${{ env.URLSTOGO_DOMAIN }}/${PREVIEW_CODE}"
+            echo "Platform: ${{ steps.detect-url.outputs.platform }}"
+            echo ""
+            echo "Response: $BODY"
+          else
+            echo "❌ Failed to update preview link (HTTP $HTTP_CODE)"
+            echo "Response: $BODY"
+            exit 1
+          fi
+
+      - name: Comment on PR (if applicable)
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const previewCode = '${{ env.REPO_NAME }}--preview';
+            const previewUrl = 'https://${{ env.URLSTOGO_DOMAIN }}/' + previewCode;
+            const deploymentUrl = '${{ steps.detect-url.outputs.url }}';
+
+            const comment = `## 🔗 Preview Link Updated
+
+            Your preview deployment is ready:
+
+            - **Preview Link:** ${previewUrl}
+            - **Direct URL:** ${deploymentUrl}
+            - **Platform:** ${{ steps.detect-url.outputs.platform }}
+
+            > The preview link will be updated with each new deployment.`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });

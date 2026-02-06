@@ -104,7 +104,7 @@ The UI uses Shadcn-style CSS variables. To test UI changes:
 ### Database
 
 - **D1 database name:** `url-shortener`
-- **Tables:** links, categories, tags, link_tags
+- **Tables:** links, categories, tags, link_tags, api_keys
 - **Multi-user:** Each user's data is isolated by `user_email`
 
 ### Remember
@@ -112,6 +112,104 @@ The UI uses Shadcn-style CSS variables. To test UI changes:
 - Merging to `main` = automatic deploy
 - Schema changes go in `migrations.sql`
 - Never ask user to run wrangler commands or edit Cloudflare dashboard
+
+---
+
+## DYNAMIC PREVIEW LINKS (February 2026)
+
+### Overview
+
+Automatically update URLsToGo shortlinks when preview deployments complete. Works with Vercel, Cloudflare Pages, and GitHub Pages.
+
+### How It Works
+
+1. User pushes code to a preview branch
+2. GitHub Actions triggers deployment
+3. Deployment completes on platform (Vercel/Cloudflare/GitHub Pages)
+4. Workflow calls URLsToGo API to update `{repo-name}--preview` shortlink
+5. Shortlink now points to latest preview URL
+
+### Architecture
+
+- **Pattern:** `go.urlstogo.cloud/{repo-name}--preview`
+- **Example:** `go.urlstogo.cloud/bricks-cc--preview`
+- **API Endpoint:** `PUT /api/preview-links/{code}` (requires API key auth)
+- **Database:** Links table has `is_preview_link` column (INTEGER, default 0)
+
+### Key Code Locations
+
+| Location | Purpose |
+|----------|---------|
+| `src/index.js:~567-630` | Preview links API endpoint (PUT /api/preview-links/:code) |
+| `migrations.sql:97` | is_preview_link column added to links table |
+| `templates/update-preview-link.yml` | Reusable GitHub Actions workflow |
+| `docs/preview-links.md` | Full documentation and setup guide |
+
+### API Endpoint
+
+**Request:**
+```
+PUT /api/preview-links/{code}
+Authorization: Bearer utg_xxxxx
+Content-Type: application/json
+
+{
+  "destination": "https://app-git-branch-user.vercel.app"
+}
+```
+
+**Requirements:**
+- Code must end with `--preview`
+- Must be authenticated with valid API key
+- Creates new link if doesn't exist, updates if exists
+- Only owner can update existing preview link
+
+**Response:**
+```json
+{
+  "success": true,
+  "action": "created", // or "updated"
+  "code": "my-app--preview",
+  "destination": "https://app-git-branch-user.vercel.app",
+  "url": "https://go.urlstogo.cloud/my-app--preview"
+}
+```
+
+### Setup for New Repos
+
+To add dynamic preview links to a new repository:
+
+1. **Create API Key** (in URLsToGo admin):
+   - Go to go.urlstogo.cloud/admin → API Keys
+   - Create key with name like "bricks-cc-preview"
+   - Save the key (format: `utg_xxxxxxx...`)
+
+2. **Add GitHub Secret** (in project repo):
+   - Go to repo Settings → Secrets → Actions
+   - Add `URLSTOGO_API_KEY` with the key from step 1
+
+3. **Copy Workflow Template**:
+   ```bash
+   cp templates/update-preview-link.yml /path/to/project/.github/workflows/
+   ```
+
+4. **Push to test**:
+   - Workflow auto-detects repo name and platform
+   - Creates/updates `{repo-name}--preview` link
+   - No customization needed for basic setup
+
+### Supported Platforms
+
+| Platform | Detection Method | Preview URL Pattern |
+|----------|-----------------|-------------------|
+| Vercel | Auto (vercel.json) | `{repo}-git-{branch}-{owner}.vercel.app` |
+| Cloudflare Pages | Auto (wrangler.toml) | `{branch}.{project}.pages.dev` |
+| GitHub Pages | Auto (.github/workflows/pages.yml) | `{owner}.github.io/{repo}` |
+
+### User's Projects
+
+- **bricks-cc** (Vercel): `go.urlstogo.cloud/bricks-cc--preview`
+- **jb-cloud-app-tracker** (TBD): `go.urlstogo.cloud/jb-cloud-app-tracker--preview`
 
 ---
 
