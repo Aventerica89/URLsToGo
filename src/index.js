@@ -5344,17 +5344,22 @@ function getAdminHTML(userEmail, env) {
     let allCategories = [];
     let allTags = [];
     let newTags = [];
-    
+
     // Escape for use in JavaScript string literals (client-side version)
     function escapeJs(str) {
-      if (str === null || str === undefined) return '';
-      return String(str)
-        .replace(/\\/g, '\\\\')
-        .replace(/'/g, "\\'")
-        .replace(/"/g, '\\"')
-        .replace(/\n/g, '\\n')
-        .replace(/\r/g, '\\r')
-        .replace(/\t/g, '\\t');
+      if (!str) return '';
+      var result = '';
+      for (var i = 0; i < str.length; i++) {
+        var c = str[i];
+        if (c === '\\\\') result += '\\\\\\\\';
+        else if (c === "'") result += "\\\\'";
+        else if (c === '"') result += '\\\\"';
+        else if (c === '\\n') result += '\\\\n';
+        else if (c === '\\r') result += '\\\\r';
+        else if (c === '\\t') result += '\\\\t';
+        else result += c;
+      }
+      return result;
     }
 
     let currentPage = 1;
