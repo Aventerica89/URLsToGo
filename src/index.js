@@ -5352,15 +5352,14 @@ function getAdminHTML(userEmail, env) {
       let result = '';
       for (let i = 0; i < str.length; i++) {
         const c = str[i];
-        switch (c) {
-          case '\\\\': result += '\\\\\\\\'; break;
-          case "'": result += "\\\\'"; break;
-          case '"': result += '\\\\"'; break;
-          case '\n': result += '\\\\n'; break;
-          case '\r': result += '\\\\r'; break;
-          case '\t': result += '\\\\t'; break;
-          default: result += c;
-        }
+        const code = str.charCodeAt(i);
+        if (c === '\\\\') result += '\\\\\\\\';
+        else if (c === "'") result += "\\\\'";
+        else if (c === '"') result += '\\\\"';
+        else if (code === 10) result += '\\\\n';  // newline
+        else if (code === 13) result += '\\\\r';  // carriage return
+        else if (code === 9) result += '\\\\t';   // tab
+        else result += c;
       }
       return result;
     }
