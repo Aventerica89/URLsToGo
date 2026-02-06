@@ -60,9 +60,19 @@ jobs:
 
       - name: Detect deployment URL
         id: detect-url
+        env:
+          # Pass GitHub context as environment variables (safer than direct interpolation)
+          GH_REF_NAME: ${{ github.ref_name }}
+          GH_REPO_NAME: ${{ github.event.repository.name }}
+          GH_REPO_OWNER: ${{ github.repository_owner }}
+          GH_EVENT_NAME: ${{ github.event_name }}
+          GH_DEPLOYMENT_URL: ${{ github.event.deployment_status.environment_url }}
+          PLATFORM: ${{ env.DEPLOYMENT_PLATFORM }}
+          CF_PROJECT_OVERRIDE: ${{ env.CF_PROJECT_NAME }}
         run: |
+          set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
           DEPLOYMENT_URL=""
-          PLATFORM="${{ env.DEPLOYMENT_PLATFORM }}"
 
           # Auto-detect platform if not specified
           if [ "$PLATFORM" = "auto" ]; then
@@ -78,21 +88,27 @@ jobs:
           echo "Detected platform: $PLATFORM"
 
           # Slugify function (mimics Vercel/Cloudflare slugification)
+          # Input is passed via stdin to avoid command substitution
           slugify() {
-            echo "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//'
+            # Read from stdin, convert to lowercase, replace non-alphanumeric with hyphens
+            tr '[:upper:]' '[:lower:]' | \
+              sed 's/[^a-z0-9-]/-/g' | \
+              sed 's/--*/-/g' | \
+              sed 's/^-//' | \
+              sed 's/-$//'
           }
 
           # Get deployment URL based on platform
           case "$PLATFORM" in
             vercel)
               # For Vercel: Use deployment URL from environment or construct from branch
-              if [ "${{ github.event_name }}" = "deployment_status" ]; then
-                DEPLOYMENT_URL="${{ github.event.deployment_status.environment_url }}"
+              if [ "$GH_EVENT_NAME" = "deployment_status" ] && [ -n "$GH_DEPLOYMENT_URL" ]; then
+                DEPLOYMENT_URL="$GH_DEPLOYMENT_URL"
               else
-                # Slugify repo name and branch name (Vercel converts to lowercase and replaces special chars)
-                REPO_SLUG=$(slugify "${{ env.REPO_NAME }}")
-                BRANCH_SLUG=$(slugify "${{ github.ref_name }}")
-                OWNER_SLUG=$(slugify "${{ github.repository_owner }}")
+                # Slugify repo name, branch name, and owner (using stdin to prevent injection)
+                REPO_SLUG=$(echo "$GH_REPO_NAME" | slugify)
+                BRANCH_SLUG=$(echo "$GH_REF_NAME" | slugify)
+                OWNER_SLUG=$(echo "$GH_REPO_OWNER" | slugify)
 
                 DEPLOYMENT_URL="https://${REPO_SLUG}-git-${BRANCH_SLUG}-${OWNER_SLUG}.vercel.app"
               fi
@@ -100,20 +116,20 @@ jobs:
 
             cloudflare-pages)
               # For Cloudflare Pages: Use custom project name or default to repo name
-              if [ -n "${{ env.CF_PROJECT_NAME }}" ]; then
-                CF_PROJECT="${{ env.CF_PROJECT_NAME }}"
+              if [ -n "$CF_PROJECT_OVERRIDE" ]; then
+                CF_PROJECT=$(echo "$CF_PROJECT_OVERRIDE" | slugify)
               else
-                CF_PROJECT=$(slugify "${{ env.REPO_NAME }}")
+                CF_PROJECT=$(echo "$GH_REPO_NAME" | slugify)
               fi
 
-              BRANCH_SLUG=$(slugify "${{ github.ref_name }}")
+              BRANCH_SLUG=$(echo "$GH_REF_NAME" | slugify)
               DEPLOYMENT_URL="https://${BRANCH_SLUG}.${CF_PROJECT}.pages.dev"
               ;;
 
             github-pages)
               # For GitHub Pages: Use repository URL
-              OWNER_SLUG=$(slugify "${{ github.repository_owner }}")
-              REPO_SLUG=$(slugify "${{ env.REPO_NAME }}")
+              OWNER_SLUG=$(echo "$GH_REPO_OWNER" | slugify)
+              REPO_SLUG=$(echo "$GH_REPO_NAME" | slugify)
               DEPLOYMENT_URL="https://${OWNER_SLUG}.github.io/${REPO_SLUG}"
               ;;
 
@@ -129,26 +145,32 @@ jobs:
           fi
 
           echo "Deployment URL: $DEPLOYMENT_URL"
-          echo "url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
-          echo "platform=$PLATFORM" >> $GITHUB_OUTPUT
+          # Use >> $GITHUB_OUTPUT (secure) instead of echo with command substitution
+          {
+            echo "url=$DEPLOYMENT_URL"
+            echo "platform=$PLATFORM"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Update URLsToGo preview link
         env:
           URLSTOGO_API_KEY: ${{ secrets.URLSTOGO_API_KEY }}
+          PREVIEW_CODE: ${{ github.event.repository.name }}--preview
+          DEPLOYMENT_URL: ${{ steps.detect-url.outputs.url }}
+          PLATFORM: ${{ steps.detect-url.outputs.platform }}
         run: |
-          PREVIEW_CODE="${{ env.REPO_NAME }}--preview"
-          DEPLOYMENT_URL="${{ steps.detect-url.outputs.url }}"
+          set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
-          echo "📝 Updating preview link: ${{ env.URLSTOGO_DOMAIN }}/${PREVIEW_CODE}"
+          echo "📝 Updating preview link: $URLSTOGO_DOMAIN/${PREVIEW_CODE}"
           echo "🎯 Target URL: $DEPLOYMENT_URL"
 
           # Call URLsToGo API to create/update preview link
+          # Use printf to safely format JSON (prevents injection)
           RESPONSE=$(curl -s -w "\n%{http_code}" \
             -X PUT \
             -H "Authorization: Bearer $URLSTOGO_API_KEY" \
             -H "Content-Type: application/json" \
-            -d "{\"destination\":\"$DEPLOYMENT_URL\"}" \
-            "https://${{ env.URLSTOGO_DOMAIN }}/api/preview-links/${PREVIEW_CODE}")
+            --data "$(printf '{"destination":"%s"}' "$DEPLOYMENT_URL")" \
+            "https://${URLSTOGO_DOMAIN}/api/preview-links/${PREVIEW_CODE}")
 
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
           BODY=$(echo "$RESPONSE" | head -n-1)
@@ -156,8 +178,8 @@ jobs:
           if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
             echo "✅ Preview link updated successfully!"
             echo ""
-            echo "🔗 Preview link: https://${{ env.URLSTOGO_DOMAIN }}/${PREVIEW_CODE}"
-            echo "🌐 Platform: ${{ steps.detect-url.outputs.platform }}"
+            echo "🔗 Preview link: https://${URLSTOGO_DOMAIN}/${PREVIEW_CODE}"
+            echo "🌐 Platform: $PLATFORM"
             echo "📦 Deployment: $DEPLOYMENT_URL"
             echo ""
             echo "Response: $BODY"
