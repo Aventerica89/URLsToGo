@@ -5353,12 +5353,12 @@ function getAdminHTML(userEmail, env) {
       for (let i = 0; i < str.length; i++) {
         const c = str[i];
         const code = str.charCodeAt(i);
-        if (c === '\\\\') result += '\\\\\\\\';
-        else if (c === "'") result += "\\\\'";
-        else if (c === '"') result += '\\\\"';
-        else if (code === 10) result += '\\\\n';  // newline
-        else if (code === 13) result += '\\\\r';  // carriage return
-        else if (code === 9) result += '\\\\t';   // tab
+        if (code === 92) result += '\\\\\\\\';   // backslash
+        else if (code === 39) result += "\\\\'"; // single quote
+        else if (code === 34) result += '\\\\"'; // double quote
+        else if (code === 10) result += '\\\\n'; // newline
+        else if (code === 13) result += '\\\\r'; // carriage return
+        else if (code === 9) result += '\\\\t';  // tab
         else result += c;
       }
       return result;
