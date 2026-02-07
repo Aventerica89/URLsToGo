@@ -3847,7 +3847,7 @@ function getAdminHTML(userEmail, env) {
     .cell-url { max-width: 280px; color: oklch(var(--muted-foreground)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: none; display: block; }
     .cell-url:hover { color: oklch(var(--foreground)); }
     .cell-tags { display: flex; flex-wrap: wrap; gap: 4px; }
-    .cell-clicks { display: inline-flex; align-items: center; gap: 4px; color: hsl(142 76% 46%); }
+    .cell-clicks { display: inline-flex; align-items: center; gap: 4px; color: oklch(0.68 0.19 142); }
     .cell-clicks svg { width: 14px; height: 14px; }
     .cell-date { color: oklch(var(--muted-foreground)); font-size: 13px; }
     .cell-actions { display: flex; gap: 4px; justify-content: flex-end; opacity: 0; transition: opacity 150ms; }
@@ -3929,8 +3929,8 @@ function getAdminHTML(userEmail, env) {
     }
     @keyframes slideIn { from { opacity: 0; transform: translateX(100%); } to { opacity: 1; transform: translateX(0); } }
     .toast-icon { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; }
-    .toast-icon.success { color: hsl(142 76% 46%); }
-    .toast-icon.error { color: hsl(0 84% 60%); }
+    .toast-icon.success { color: oklch(0.68 0.19 142); }
+    .toast-icon.error { color: oklch(0.64 0.23 25); }
     .toast-content { flex: 1; }
     .toast-title { font-weight: 500; }
     .toast-description { font-size: 13px; color: oklch(var(--muted-foreground)); }
@@ -4191,10 +4191,10 @@ function getAdminHTML(userEmail, env) {
       left: 0;
       right: 0;
       height: 83px;
-      background: hsl(var(--background) / 0.95);
+      background: oklch(var(--background) / 0.95);
       backdrop-filter: blur(20px);
       -webkit-backdrop-filter: blur(20px);
-      border-top: 1px solid hsl(var(--border));
+      border-top: 1px solid oklch(var(--border));
       display: none;
       align-items: flex-start;
       padding: 8px 0 0;
@@ -4209,7 +4209,7 @@ function getAdminHTML(userEmail, env) {
       align-items: center;
       gap: 4px;
       padding: 8px 4px;
-      color: hsl(var(--muted-foreground));
+      color: oklch(var(--muted-foreground));
       font-size: 10px;
       font-weight: 500;
       background: none;
@@ -4219,7 +4219,7 @@ function getAdminHTML(userEmail, env) {
       transition: color 150ms ease;
     }
 
-    .tab-item.active { color: hsl(var(--indigo)); }
+    .tab-item.active { color: oklch(var(--indigo)); }
     .tab-item:active { transform: scale(0.95); opacity: 0.8; }
     .tab-item svg { width: 24px; height: 24px; }
 
@@ -4236,13 +4236,13 @@ function getAdminHTML(userEmail, env) {
       bottom: 16px;
       width: 56px;
       height: 56px;
-      background: linear-gradient(135deg, hsl(var(--indigo)) 0%, hsl(271 91% 65%) 100%);
+      background: linear-gradient(135deg, oklch(var(--indigo)) 0%, oklch(0.68 0.24 295) 100%);
       border-radius: 16px;
       border: none;
       display: flex;
       align-items: center;
       justify-content: center;
-      box-shadow: 0 4px 20px hsl(var(--indigo) / 0.4);
+      box-shadow: 0 4px 20px oklch(var(--indigo) / 0.4);
       cursor: pointer;
       transition: transform 150ms ease, box-shadow 150ms ease;
     }
@@ -4254,8 +4254,8 @@ function getAdminHTML(userEmail, env) {
     .mobile-links { display: none; padding: 0 16px 100px; }
 
     .link-card {
-      background: hsl(var(--card));
-      border: 1px solid hsl(var(--border));
+      background: oklch(var(--card));
+      border: 1px solid oklch(var(--border));
       border-radius: 16px;
       padding: 16px;
       margin-bottom: 12px;
@@ -4275,8 +4275,8 @@ function getAdminHTML(userEmail, env) {
       font-family: 'SF Mono', Monaco, monospace;
       font-size: 16px;
       font-weight: 600;
-      color: hsl(var(--indigo));
-      background: hsl(var(--indigo) / 0.1);
+      color: oklch(var(--indigo));
+      background: oklch(var(--indigo) / 0.1);
       padding: 6px 12px;
       border-radius: 8px;
       text-decoration: none;
@@ -4287,21 +4287,21 @@ function getAdminHTML(userEmail, env) {
     .link-card-action {
       width: 36px;
       height: 36px;
-      background: hsl(var(--muted));
+      background: oklch(var(--muted));
       border: none;
       border-radius: 10px;
       display: flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      color: hsl(var(--foreground));
+      color: oklch(var(--foreground));
     }
 
     .link-card-action svg { width: 18px; height: 18px; }
 
     .link-card-url {
       font-size: 14px;
-      color: hsl(var(--muted-foreground));
+      color: oklch(var(--muted-foreground));
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -4318,14 +4318,14 @@ function getAdminHTML(userEmail, env) {
       display: flex;
       gap: 16px;
       font-size: 13px;
-      color: hsl(var(--muted-foreground));
+      color: oklch(var(--muted-foreground));
     }
 
     .link-card-clicks {
       display: flex;
       align-items: center;
       gap: 4px;
-      color: hsl(142 76% 46%);
+      color: oklch(0.68 0.19 142);
       font-weight: 500;
     }
 
@@ -4337,7 +4337,7 @@ function getAdminHTML(userEmail, env) {
       border-radius: 6px;
       font-size: 12px;
       font-weight: 500;
-      background: hsl(var(--muted));
+      background: oklch(var(--muted));
     }
 
     /* Mobile Header */
@@ -4345,7 +4345,7 @@ function getAdminHTML(userEmail, env) {
       display: none;
       padding: 12px 16px;
       padding-top: calc(12px + env(safe-area-inset-top, 0));
-      background: hsl(var(--background));
+      background: oklch(var(--background));
       position: sticky;
       top: 0;
       z-index: 50;
@@ -4369,13 +4369,13 @@ function getAdminHTML(userEmail, env) {
     .header-icon-btn {
       width: 36px;
       height: 36px;
-      background: hsl(var(--muted));
+      background: oklch(var(--muted));
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
       border: none;
-      color: hsl(var(--foreground));
+      color: oklch(var(--foreground));
       cursor: pointer;
     }
 
@@ -4384,7 +4384,7 @@ function getAdminHTML(userEmail, env) {
     /* Mobile Search Bar */
     .search-bar-mobile {
       height: 40px;
-      background: hsl(var(--muted));
+      background: oklch(var(--muted));
       border-radius: 12px;
       display: flex;
       align-items: center;
@@ -4395,7 +4395,7 @@ function getAdminHTML(userEmail, env) {
     .search-bar-mobile svg {
       width: 18px;
       height: 18px;
-      color: hsl(var(--muted-foreground));
+      color: oklch(var(--muted-foreground));
       flex-shrink: 0;
     }
 
@@ -4405,11 +4405,11 @@ function getAdminHTML(userEmail, env) {
       border: none;
       outline: none;
       font-size: 16px;
-      color: hsl(var(--foreground));
+      color: oklch(var(--foreground));
     }
 
     .search-bar-mobile input::placeholder {
-      color: hsl(var(--muted-foreground));
+      color: oklch(var(--muted-foreground));
     }
 
     /* Mobile Stats */
@@ -4422,8 +4422,8 @@ function getAdminHTML(userEmail, env) {
     }
 
     .mobile-stat-card {
-      background: hsl(var(--card));
-      border: 1px solid hsl(var(--border));
+      background: oklch(var(--card));
+      border: 1px solid oklch(var(--border));
       border-radius: 16px;
       padding: 16px;
     }
@@ -4436,7 +4436,7 @@ function getAdminHTML(userEmail, env) {
 
     .mobile-stat-label {
       font-size: 12px;
-      color: hsl(var(--muted-foreground));
+      color: oklch(var(--muted-foreground));
       margin-top: 4px;
     }
 
@@ -4461,7 +4461,7 @@ function getAdminHTML(userEmail, env) {
       bottom: 0;
       left: 0;
       right: 0;
-      background: hsl(var(--card));
+      background: oklch(var(--card));
       border-radius: 20px 20px 0 0;
       max-height: 90vh;
       transform: translateY(100%);
@@ -4486,7 +4486,7 @@ function getAdminHTML(userEmail, env) {
       content: '';
       width: 36px;
       height: 5px;
-      background: hsl(var(--muted));
+      background: oklch(var(--muted));
       border-radius: 3px;
     }
 
@@ -4495,7 +4495,7 @@ function getAdminHTML(userEmail, env) {
       align-items: center;
       justify-content: space-between;
       padding: 0 20px 16px;
-      border-bottom: 1px solid hsl(var(--border));
+      border-bottom: 1px solid oklch(var(--border));
     }
 
     .sheet-title {
@@ -4506,14 +4506,14 @@ function getAdminHTML(userEmail, env) {
     .sheet-close {
       width: 32px;
       height: 32px;
-      background: hsl(var(--muted));
+      background: oklch(var(--muted));
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
       border: none;
       cursor: pointer;
-      color: hsl(var(--foreground));
+      color: oklch(var(--foreground));
     }
 
     .sheet-body {
@@ -4525,7 +4525,7 @@ function getAdminHTML(userEmail, env) {
 
     .sheet-footer {
       padding: 16px 20px;
-      border-top: 1px solid hsl(var(--border));
+      border-top: 1px solid oklch(var(--border));
       display: flex;
       gap: 12px;
     }
@@ -5762,9 +5762,9 @@ function getAdminHTML(userEmail, env) {
       const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 
       if (diffMs < 0) {
-        return '<span style="display: inline-block; margin-left: 6px; padding: 2px 6px; font-size: 10px; background: hsl(0 84% 60% / 0.15); color: hsl(0 84% 60%); border-radius: 4px;">Expired</span>';
+        return '<span style="display: inline-block; margin-left: 6px; padding: 2px 6px; font-size: 10px; background: oklch(0.64 0.23 25 / 0.15); color: oklch(0.64 0.23 25); border-radius: 4px;">Expired</span>';
       } else if (diffDays <= 1) {
-        return '<span style="display: inline-block; margin-left: 6px; padding: 2px 6px; font-size: 10px; background: hsl(38 92% 50% / 0.15); color: hsl(38 92% 50%); border-radius: 4px;">Expires soon</span>';
+        return '<span style="display: inline-block; margin-left: 6px; padding: 2px 6px; font-size: 10px; background: oklch(0.72 0.18 60 / 0.15); color: oklch(0.72 0.18 60); border-radius: 4px;">Expires soon</span>';
       } else if (diffDays <= 7) {
         return \`<span style="display: inline-block; margin-left: 6px; padding: 2px 6px; font-size: 10px; background: oklch(var(--muted)); color: oklch(var(--muted-foreground)); border-radius: 4px;">\${diffDays}d left</span>\`;
       }
@@ -6006,7 +6006,7 @@ function getAdminHTML(userEmail, env) {
       if (link.expires_at) {
         const expiryDate = new Date(link.expires_at);
         const isExpired = expiryDate < new Date();
-        expiryInfo.innerHTML = \`Current: \${expiryDate.toLocaleString()}\${isExpired ? ' <span style="color: hsl(0 84% 60%);">(Expired)</span>' : ''}\`;
+        expiryInfo.innerHTML = \`Current: \${expiryDate.toLocaleString()}\${isExpired ? ' <span style="color: oklch(0.64 0.23 25);">(Expired)</span>' : ''}\`;
         // Set to custom and populate the date
         expiresSelect.value = 'custom';
         customGroup.style.display = 'block';
@@ -6872,7 +6872,7 @@ function getAdminHTML(userEmail, env) {
       if (!container) return;
 
       if (links.length === 0) {
-        container.innerHTML = '<div style="text-align: center; padding: 40px 20px; color: hsl(var(--muted-foreground));">No links yet. Tap + to create one!</div>';
+        container.innerHTML = '<div style="text-align: center; padding: 40px 20px; color: oklch(var(--muted-foreground));">No links yet. Tap + to create one!</div>';
         return;
       }
 
