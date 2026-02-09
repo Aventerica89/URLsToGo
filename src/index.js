@@ -4274,7 +4274,7 @@ function getAdminHTML(userEmail, env) {
       appearance: none;
       -webkit-appearance: none;
       width: 18px; height: 18px;
-      border: 2px solid oklch(var(--border));
+      border: 2px solid oklch(var(--muted-foreground) / 0.5);
       border-radius: 4px;
       background: transparent;
       cursor: pointer;
@@ -4288,6 +4288,7 @@ function getAdminHTML(userEmail, env) {
     }
     .cell-checkbox input[type="checkbox"]:hover {
       border-color: oklch(var(--muted-foreground));
+      background: oklch(var(--accent) / 0.3);
     }
     .cell-checkbox input[type="checkbox"]:checked {
       background: oklch(var(--primary));
