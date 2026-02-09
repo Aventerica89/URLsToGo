@@ -120,10 +120,9 @@ CREATE INDEX IF NOT EXISTS idx_user_settings_email ON user_settings(user_email);
 CREATE INDEX IF NOT EXISTS idx_repo_syncs_user ON repo_syncs(user_email);
 
 -- =============================================================================
--- ALTER TABLE statements (NOT idempotent - will fail on re-runs)
--- Keep these LAST since they abort remaining statements when columns exist.
+-- NOTE: The following ALTER TABLE columns already exist in production and
+-- were removed from this file because D1 runs the entire file as a single
+-- transaction -- a failing ALTER rolls back ALL statements including new
+-- CREATE TABLE IF NOT EXISTS above. Columns present on links table:
+--   expires_at, password_hash, description, is_preview_link
 -- =============================================================================
-ALTER TABLE links ADD COLUMN expires_at DATETIME DEFAULT NULL;
-ALTER TABLE links ADD COLUMN password_hash TEXT DEFAULT NULL;
-ALTER TABLE links ADD COLUMN description TEXT DEFAULT NULL;
-ALTER TABLE links ADD COLUMN is_preview_link INTEGER DEFAULT 0;
