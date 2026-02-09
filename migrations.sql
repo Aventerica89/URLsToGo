@@ -1,5 +1,9 @@
 -- URL Shortener Migrations (safe to run multiple times)
 -- This file runs automatically on every deploy via GitHub Actions
+--
+-- IMPORTANT: CREATE TABLE/INDEX IF NOT EXISTS statements are idempotent and safe.
+-- ALTER TABLE ADD COLUMN is NOT idempotent (fails if column exists) and will abort
+-- remaining statements. Keep all ALTER TABLE at the END of this file.
 
 -- Create categories table
 CREATE TABLE IF NOT EXISTS categories (
@@ -30,14 +34,6 @@ CREATE TABLE IF NOT EXISTS link_tags (
   FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
 );
 
--- Create indexes (IF NOT EXISTS handles re-runs)
-CREATE INDEX IF NOT EXISTS idx_links_user_email ON links(user_email);
-CREATE INDEX IF NOT EXISTS idx_links_category ON links(category_id);
-CREATE INDEX IF NOT EXISTS idx_categories_user ON categories(user_email);
-CREATE INDEX IF NOT EXISTS idx_tags_user ON tags(user_email);
-CREATE INDEX IF NOT EXISTS idx_link_tags_link ON link_tags(link_id);
-CREATE INDEX IF NOT EXISTS idx_link_tags_tag ON link_tags(tag_id);
-
 -- Click events table for detailed analytics
 CREATE TABLE IF NOT EXISTS click_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -52,17 +48,6 @@ CREATE TABLE IF NOT EXISTS click_events (
   FOREIGN KEY (link_id) REFERENCES links(id) ON DELETE CASCADE
 );
 
--- Indexes for click_events
-CREATE INDEX IF NOT EXISTS idx_click_events_link ON click_events(link_id);
-CREATE INDEX IF NOT EXISTS idx_click_events_date ON click_events(clicked_at);
-CREATE INDEX IF NOT EXISTS idx_click_events_country ON click_events(country);
-
--- Add expires_at column to links table for link expiration feature
--- Note: This will error on subsequent runs if column exists, but D1 continues with other statements
-ALTER TABLE links ADD COLUMN expires_at DATETIME DEFAULT NULL;
-ALTER TABLE links ADD COLUMN password_hash TEXT DEFAULT NULL;
-ALTER TABLE links ADD COLUMN description TEXT DEFAULT NULL;
-
 -- Rate limiting table
 CREATE TABLE IF NOT EXISTS rate_limits (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,9 +57,6 @@ CREATE TABLE IF NOT EXISTS rate_limits (
   window_start DATETIME DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(identifier, endpoint)
 );
-
-CREATE INDEX IF NOT EXISTS idx_rate_limits_identifier ON rate_limits(identifier);
-CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON rate_limits(window_start);
 
 -- API keys table for programmatic access
 CREATE TABLE IF NOT EXISTS api_keys (
@@ -90,9 +72,26 @@ CREATE TABLE IF NOT EXISTS api_keys (
   UNIQUE(key_hash)
 );
 
+-- All indexes (idempotent with IF NOT EXISTS)
+CREATE INDEX IF NOT EXISTS idx_links_user_email ON links(user_email);
+CREATE INDEX IF NOT EXISTS idx_links_category ON links(category_id);
+CREATE INDEX IF NOT EXISTS idx_categories_user ON categories(user_email);
+CREATE INDEX IF NOT EXISTS idx_tags_user ON tags(user_email);
+CREATE INDEX IF NOT EXISTS idx_link_tags_link ON link_tags(link_id);
+CREATE INDEX IF NOT EXISTS idx_link_tags_tag ON link_tags(tag_id);
+CREATE INDEX IF NOT EXISTS idx_click_events_link ON click_events(link_id);
+CREATE INDEX IF NOT EXISTS idx_click_events_date ON click_events(clicked_at);
+CREATE INDEX IF NOT EXISTS idx_click_events_country ON click_events(country);
+CREATE INDEX IF NOT EXISTS idx_rate_limits_identifier ON rate_limits(identifier);
+CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON rate_limits(window_start);
 CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_email);
 CREATE INDEX IF NOT EXISTS idx_api_keys_prefix ON api_keys(key_prefix);
 
--- Add is_preview_link column to links table for dynamic preview URLs
--- This allows links to be updated programmatically via API without manual auth
+-- =============================================================================
+-- ALTER TABLE statements (NOT idempotent - will fail on re-runs)
+-- Keep these LAST since they abort remaining statements when columns exist.
+-- =============================================================================
+ALTER TABLE links ADD COLUMN expires_at DATETIME DEFAULT NULL;
+ALTER TABLE links ADD COLUMN password_hash TEXT DEFAULT NULL;
+ALTER TABLE links ADD COLUMN description TEXT DEFAULT NULL;
 ALTER TABLE links ADD COLUMN is_preview_link INTEGER DEFAULT 0;
