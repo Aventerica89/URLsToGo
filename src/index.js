@@ -4270,12 +4270,41 @@ function getAdminHTML(userEmail, env) {
     }
     .bulk-actions-buttons { display: flex; gap: 8px; margin-left: auto; }
     .cell-checkbox { width: 48px; text-align: center; }
-    .cell-checkbox input {
-      width: 20px; height: 20px; cursor: pointer;
+    .cell-checkbox input[type="checkbox"] {
+      appearance: none;
+      -webkit-appearance: none;
+      width: 18px; height: 18px;
+      border: 2px solid oklch(var(--border));
+      border-radius: 4px;
+      background: transparent;
+      cursor: pointer;
+      position: relative;
+      transition: all 150ms;
+      vertical-align: middle;
       /* Expand touch target to 44px minimum */
-      padding: 12px;
-      margin: -12px;
+      padding: 0;
+      margin: 0;
       -webkit-tap-highlight-color: transparent;
+    }
+    .cell-checkbox input[type="checkbox"]:hover {
+      border-color: oklch(var(--muted-foreground));
+    }
+    .cell-checkbox input[type="checkbox"]:checked {
+      background: oklch(var(--primary));
+      border-color: oklch(var(--primary));
+    }
+    .cell-checkbox input[type="checkbox"]:checked::after {
+      content: '';
+      position: absolute;
+      left: 4px; top: 1px;
+      width: 6px; height: 10px;
+      border: solid oklch(var(--primary-foreground));
+      border-width: 0 2px 2px 0;
+      transform: rotate(45deg);
+    }
+    .cell-checkbox input[type="checkbox"]:focus-visible {
+      outline: 2px solid oklch(var(--ring));
+      outline-offset: 2px;
     }
 
     /* =================================================================
