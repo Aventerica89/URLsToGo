@@ -4590,7 +4590,7 @@ function getAdminHTML(userEmail, env) {
     .page-links.hidden { display: none; }
 
     /* Settings page */
-    .settings-view { display: none; padding: 24px; }
+    .settings-view { display: none; padding: 24px; flex: 1; margin-left: 256px; }
     .settings-view.active { display: flex; gap: 24px; }
     .settings-nav {
       width: 200px; flex-shrink: 0;
@@ -4699,6 +4699,7 @@ function getAdminHTML(userEmail, env) {
 
     /* Settings responsive */
     @media (max-width: 768px) {
+      .settings-view { margin-left: 0; }
       .settings-view.active { flex-direction: column; gap: 0; padding: 16px; }
       .settings-nav {
         width: 100%; flex-direction: row;
@@ -7040,7 +7041,7 @@ function getAdminHTML(userEmail, env) {
     function closeApiKeysModal() { document.getElementById('apiKeysModal').classList.remove('open'); }
 
     function showSettingsView(tab) {
-      document.querySelector('.page').style.display = 'none';
+      document.querySelector('.main').style.display = 'none';
       document.getElementById('settingsView').classList.add('active');
       closeMobileMenu();
       document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
@@ -7052,7 +7053,7 @@ function getAdminHTML(userEmail, env) {
 
     function showLinksView() {
       document.getElementById('settingsView').classList.remove('active');
-      document.querySelector('.page').style.display = '';
+      document.querySelector('.main').style.display = '';
       document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
       const linksNav = document.querySelector('[data-nav="links"]');
       if (linksNav) linksNav.classList.add('active');
