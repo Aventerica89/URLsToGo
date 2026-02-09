@@ -1138,6 +1138,21 @@ async function getUserEmailWithFallback(request, env) {
     }
   }
 
+  // Also check CF_Authorization cookie (set by Cloudflare Access)
+  const cookies = request.headers.get('Cookie') || '';
+  const cfAuthCookie = cookies.match(/CF_Authorization=([^;]+)/);
+  if (cfAuthCookie) {
+    try {
+      const parts = cfAuthCookie[1].split('.');
+      if (parts.length === 3) {
+        const payload = JSON.parse(base64UrlDecode(parts[1]));
+        return payload.email || null;
+      }
+    } catch (e) {
+      // Ignore errors
+    }
+  }
+
   return null;
 }
 
@@ -2646,7 +2661,7 @@ function getLandingPageHTML() {
 
     .features-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
       gap: 24px;
     }
 
@@ -2972,7 +2987,7 @@ function getLandingPageHTML() {
     <nav class="nav">
       <a href="/" class="nav-brand">
         <div class="nav-logo">
-          \${LINK_ICON}
+          ${LINK_ICON}
         </div>
         <span class="nav-title">URLsToGo</span>
       </a>
@@ -3097,7 +3112,7 @@ function getLandingPageHTML() {
                       <div class="mockup-link">
                         <div class="mockup-link-left">
                           <div class="mockup-link-icon">
-                            \${LINK_ICON}
+                            ${LINK_ICON}
                           </div>
                           <div>
                             <div class="mockup-link-text">urlstogo.cloud/abc123</div>
@@ -3109,7 +3124,7 @@ function getLandingPageHTML() {
                       <div class="mockup-link">
                         <div class="mockup-link-left">
                           <div class="mockup-link-icon">
-                            \${LINK_ICON}
+                            ${LINK_ICON}
                           </div>
                           <div>
                             <div class="mockup-link-text">urlstogo.cloud/docs</div>
@@ -3186,6 +3201,64 @@ function getLandingPageHTML() {
             Organize your links with custom categories and tags. Find any link instantly with powerful search.
           </p>
         </div>
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65S8.93 17.38 9 18v4"/>
+              <path d="M9 18c-4.51 2-5-2-7-2"/>
+            </svg>
+          </div>
+          <h3 class="feature-name">API Keys & CI/CD</h3>
+          <p class="feature-desc">
+            Programmatic access with secure API keys. Auto-update preview links from GitHub Actions.
+          </p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
+            </svg>
+          </div>
+          <h3 class="feature-name">Password Protection</h3>
+          <p class="feature-desc">
+            Protect sensitive links with password gates. Control who can access your shortened URLs.
+          </p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+          </div>
+          <h3 class="feature-name">Expiration & UTM</h3>
+          <p class="feature-desc">
+            Set auto-expiry dates for temporary links. Build UTM parameters with the built-in UTM builder.
+          </p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect width="5" height="5" x="3" y="3" rx="1"/>
+              <rect width="5" height="5" x="16" y="3" rx="1"/>
+              <rect width="5" height="5" x="3" y="16" rx="1"/>
+              <path d="M21 16h-3a2 2 0 0 0-2 2v3"/>
+              <path d="M21 21v.01"/>
+              <path d="M12 7v3a2 2 0 0 1-2 2H7"/>
+              <path d="M3 12h.01"/>
+              <path d="M12 3h.01"/>
+              <path d="M12 16v.01"/>
+              <path d="M16 12h1"/>
+              <path d="M21 12v.01"/>
+              <path d="M12 21v-1"/>
+            </svg>
+          </div>
+          <h3 class="feature-name">QR Codes & Export</h3>
+          <p class="feature-desc">
+            Generate QR codes for any link. Export and import all your data as JSON for full portability.
+          </p>
+        </div>
       </div>
     </div>
   </section>
@@ -3225,7 +3298,7 @@ function getLandingPageHTML() {
             <div class="step-number-bg"></div>
             <div class="step-number">1</div>
             <div class="step-icon">
-              \${LINK_ICON}
+              ${LINK_ICON}
             </div>
           </div>
           <h3 class="step-title">Paste Your URL</h3>
@@ -3281,7 +3354,7 @@ function getLandingPageHTML() {
     <div class="footer-content">
       <a href="/" class="footer-brand">
         <div class="footer-logo">
-          \${LINK_ICON}
+          ${LINK_ICON}
         </div>
         URLsToGo
       </a>
@@ -3549,7 +3622,11 @@ function getAdminHTML(userEmail, env) {
     }
     .logo-icon svg { width: 18px; height: 18px; color: white; }
     .logo-text { font-size: 16px; font-weight: 600; letter-spacing: -0.025em; }
-    .sidebar-content { flex: 1; padding: 16px 12px; overflow-y: auto; }
+    .sidebar-content { flex: 1; padding: 16px 12px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: oklch(var(--border)) transparent; }
+    .sidebar-content::-webkit-scrollbar { width: 6px; }
+    .sidebar-content::-webkit-scrollbar-track { background: transparent; }
+    .sidebar-content::-webkit-scrollbar-thumb { background: oklch(var(--border)); border-radius: 3px; }
+    .sidebar-content::-webkit-scrollbar-thumb:hover { background: oklch(var(--muted-foreground)); }
     .nav-group { margin-bottom: 24px; }
     .nav-group-label {
       padding: 0 12px; margin-bottom: 4px;
@@ -3844,12 +3921,31 @@ function getAdminHTML(userEmail, env) {
       transition: all 150ms;
     }
     .cell-link a:hover { background: oklch(var(--indigo)); color: white; }
-    .cell-url { max-width: 280px; color: oklch(var(--muted-foreground)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: none; display: block; }
+    .cell-url { max-width: 280px; color: oklch(var(--muted-foreground)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: none; display: block; position: relative; }
     .cell-url:hover { color: oklch(var(--foreground)); }
+    .cell-url:hover::after {
+      content: attr(data-url);
+      position: absolute;
+      bottom: calc(100% + 6px);
+      left: 0;
+      background: oklch(var(--popover));
+      color: oklch(var(--popover-foreground));
+      border: 1px solid oklch(var(--border));
+      padding: 6px 10px;
+      border-radius: var(--radius);
+      font-size: 12px;
+      white-space: nowrap;
+      max-width: 400px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      z-index: 50;
+      pointer-events: none;
+      box-shadow: 0 4px 12px rgb(0 0 0 / 0.15);
+    }
     .cell-tags { display: flex; flex-wrap: wrap; gap: 4px; }
     .cell-clicks { display: inline-flex; align-items: center; gap: 4px; color: oklch(0.68 0.19 142); }
     .cell-clicks svg { width: 14px; height: 14px; }
-    .cell-date { color: oklch(var(--muted-foreground)); font-size: 13px; }
+    .cell-date { color: oklch(var(--muted-foreground)); font-size: 13px; white-space: nowrap; min-width: 80px; }
     .cell-actions { display: flex; gap: 4px; justify-content: flex-end; opacity: 0; transition: opacity 150ms; }
     .table tr:hover .cell-actions { opacity: 1; }
 
@@ -3859,8 +3955,8 @@ function getAdminHTML(userEmail, env) {
     .stat-label { font-size: 14px; color: oklch(var(--muted-foreground)); margin-bottom: 8px; }
     .stat-value { font-size: 32px; font-weight: 700; letter-spacing: -0.025em; line-height: 1; }
 
-    /* Form Grid */
-    .form-grid { display: grid; grid-template-columns: 1fr 2fr 1fr 1fr auto; gap: 16px; align-items: end; }
+    /* Form Grid - 2 row layout */
+    .form-grid { display: grid; grid-template-columns: 1fr 2fr 2fr; gap: 16px; align-items: end; }
     .form-group { display: flex; flex-direction: column; gap: 8px; }
 
     /* Pagination */
@@ -4012,10 +4108,12 @@ function getAdminHTML(userEmail, env) {
         transform: translateX(-100%);
         transition: transform 0.3s ease;
         z-index: 50;
+        left: 0;
         width: 85%;
         max-width: 320px;
       }
       .sidebar.open { transform: translateX(0); }
+      .sidebar-content { scrollbar-width: thin; }
       .main { margin-left: 0; }
       .header { padding: 0.75rem 1rem; gap: 0.5rem; }
       .search { flex: 1; }
@@ -4903,7 +5001,7 @@ function getAdminHTML(userEmail, env) {
                   </button>
                 </div>
               </div>
-              <div class="form-group" style="grid-column: span 2;">
+              <div class="form-group">
                 <label class="label">Description (optional)</label>
                 <input type="text" class="input" id="newDescription" placeholder="Brief note about this link">
               </div>
@@ -5511,7 +5609,9 @@ function getAdminHTML(userEmail, env) {
       }
 
       tbody.innerHTML = pageLinks.map(link => {
-        const date = new Date(link.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        const createdDate = new Date(link.created_at);
+        const isCurrentYear = createdDate.getFullYear() === new Date().getFullYear();
+        const date = createdDate.toLocaleDateString('en-US', isCurrentYear ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' });
         const safeCode = escapeAttr(link.code);
         const safeCodeHtml = escapeHtml(link.code);
         const safeDest = escapeAttr(link.destination);
@@ -5534,7 +5634,7 @@ function getAdminHTML(userEmail, env) {
                 </button>
               </div>
             </td>
-            <td><a href="\${safeDest}" target="_blank" class="cell-url" title="\${safeDest}">\${safeDestHtml}</a></td>
+            <td><a href="\${safeDest}" target="_blank" class="cell-url" data-url="\${safeDest}">\${safeDestHtml}</a></td>
             <td>\${catBadge}</td>
             <td><div class="cell-tags">\${tags}</div></td>
             <td>
@@ -6318,7 +6418,16 @@ function getAdminHTML(userEmail, env) {
     async function loadApiKeys() {
       const container = document.getElementById('apiKeysList');
       try {
-        const res = await fetch('/api/keys');
+        const res = await fetch('/api/keys', { credentials: 'include' });
+        if (!res.ok) {
+          const msg = res.status === 401 ? 'Session expired. Please refresh the page.' : 'Failed to load API keys (HTTP ' + res.status + ')';
+          container.textContent = '';
+          const div = document.createElement('div');
+          div.style.cssText = 'text-align:center;padding:24px;color:oklch(var(--destructive))';
+          div.textContent = msg;
+          container.appendChild(div);
+          return;
+        }
         const data = await res.json();
 
         if (!data.keys || data.keys.length === 0) {
@@ -6344,7 +6453,11 @@ function getAdminHTML(userEmail, env) {
           </div>
         \`).join('');
       } catch (e) {
-        container.innerHTML = '<div style="text-align: center; padding: 24px; color: oklch(var(--destructive));">Failed to load API keys</div>';
+        container.textContent = '';
+        const div = document.createElement('div');
+        div.style.cssText = 'text-align:center;padding:24px;color:oklch(var(--destructive))';
+        div.textContent = 'Failed to load API keys: ' + (e.message || 'Network error');
+        container.appendChild(div);
       }
     }
 
@@ -6361,7 +6474,8 @@ function getAdminHTML(userEmail, env) {
         const res = await fetch('/api/keys', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name })
+          body: JSON.stringify({ name }),
+          credentials: 'include'
         });
 
         const data = await res.json();
@@ -6400,7 +6514,7 @@ function getAdminHTML(userEmail, env) {
         'Delete',
         async () => {
           try {
-            await fetch('/api/keys/' + id, { method: 'DELETE' });
+            await fetch('/api/keys/' + id, { method: 'DELETE', credentials: 'include' });
             await loadApiKeys();
             showToast('API key deleted', 'success');
           } catch (e) {
