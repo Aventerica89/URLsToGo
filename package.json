@@ -13,11 +13,16 @@
     "type": "git",
     "url": "git+https://github.com/Aventerica89/URLsToGo.git"
   },
-  "keywords": ["url-shortener", "cloudflare-workers", "clerk"],
+  "keywords": [
+    "url-shortener",
+    "cloudflare-workers",
+    "clerk"
+  ],
   "author": "Aventerica89",
   "license": "ISC",
   "dependencies": {
-    "@clerk/backend": "^2.29.7"
+    "@clerk/backend": "^2.29.7",
+    "tweetsodium": "^0.0.4"
   },
   "devDependencies": {
     "wrangler": "^4.61.1"

@@ -72,6 +72,36 @@ CREATE TABLE IF NOT EXISTS api_keys (
   UNIQUE(key_hash)
 );
 
+-- User settings table (GitHub token, display name, etc.)
+CREATE TABLE IF NOT EXISTS user_settings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_email TEXT NOT NULL UNIQUE,
+  github_token_encrypted TEXT DEFAULT NULL,
+  github_token_iv TEXT DEFAULT NULL,
+  github_username TEXT DEFAULT NULL,
+  display_name TEXT DEFAULT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Repository sync tracking for Git Sync feature
+CREATE TABLE IF NOT EXISTS repo_syncs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_email TEXT NOT NULL,
+  repo_full_name TEXT NOT NULL,
+  repo_name TEXT NOT NULL,
+  repo_owner TEXT NOT NULL,
+  is_active INTEGER DEFAULT 1,
+  api_key_id INTEGER DEFAULT NULL,
+  workflow_deployed INTEGER DEFAULT 0,
+  secret_deployed INTEGER DEFAULT 0,
+  last_sync_at DATETIME DEFAULT NULL,
+  last_error TEXT DEFAULT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(user_email, repo_full_name),
+  FOREIGN KEY (api_key_id) REFERENCES api_keys(id) ON DELETE SET NULL
+);
+
 -- All indexes (idempotent with IF NOT EXISTS)
 CREATE INDEX IF NOT EXISTS idx_links_user_email ON links(user_email);
 CREATE INDEX IF NOT EXISTS idx_links_category ON links(category_id);
@@ -86,6 +116,8 @@ CREATE INDEX IF NOT EXISTS idx_rate_limits_identifier ON rate_limits(identifier)
 CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON rate_limits(window_start);
 CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_email);
 CREATE INDEX IF NOT EXISTS idx_api_keys_prefix ON api_keys(key_prefix);
+CREATE INDEX IF NOT EXISTS idx_user_settings_email ON user_settings(user_email);
+CREATE INDEX IF NOT EXISTS idx_repo_syncs_user ON repo_syncs(user_email);
 
 -- =============================================================================
 -- ALTER TABLE statements (NOT idempotent - will fail on re-runs)

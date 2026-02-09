@@ -1,5 +1,7 @@
 // Official Clerk SDK for JWT verification
 import { verifyToken, createClerkClient } from '@clerk/backend';
+// GitHub sealed box encryption for deploying secrets
+import { seal as sodiumSeal } from 'tweetsodium';
 
 // Favicon SVG with accessibility title and optimized grouped paths
 const ADMIN_FAVICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctitle%3EURLsToGo Admin Icon%3C/title%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Cg stroke='%238b5cf6' stroke-width='2.5' stroke-linecap='round' fill='none'%3E%3Cpath d='M18.5 10.5a4 4 0 0 1 5.66 5.66l-2.83 2.83a4 4 0 0 1-5.66 0'/%3E%3Cpath d='M13.5 21.5a4 4 0 0 1-5.66-5.66l2.83-2.83a4 4 0 0 1 5.66 0'/%3E%3C/g%3E%3C/svg%3E";
@@ -1029,6 +1031,230 @@ export default {
       return jsonResponse({ success: true });
     }
 
+    // === SETTINGS API ===
+
+    // Get user settings (has_github_token, username, display_name)
+    if (path === 'api/settings' && request.method === 'GET') {
+      const settings = await env.DB.prepare(
+        'SELECT github_username, display_name, github_token_encrypted FROM user_settings WHERE user_email = ?'
+      ).bind(userEmail).first();
+      return jsonResponse({
+        has_github_token: !!(settings && settings.github_token_encrypted),
+        github_username: settings?.github_username || null,
+        display_name: settings?.display_name || null
+      });
+    }
+
+    // Update profile (display_name)
+    if (path === 'api/settings' && request.method === 'PUT') {
+      const { display_name } = await request.json();
+      await env.DB.prepare(`
+        INSERT INTO user_settings (user_email, display_name, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(user_email) DO UPDATE SET display_name = excluded.display_name, updated_at = CURRENT_TIMESTAMP
+      `).bind(userEmail, display_name || null).run();
+      return jsonResponse({ success: true });
+    }
+
+    // Save GitHub token
+    if (path === 'api/settings/github-token' && request.method === 'POST') {
+      const { token } = await request.json();
+      if (!token) return jsonResponse({ error: 'Token is required' }, { status: 400 });
+
+      // Verify token by calling GitHub API
+      const ghRes = await fetch('https://api.github.com/user', {
+        headers: { 'Authorization': `token ${token}`, 'User-Agent': 'URLsToGo/1.0' }
+      });
+      if (!ghRes.ok) {
+        return jsonResponse({ error: 'Invalid GitHub token. Check scopes: repo, workflow.' }, { status: 400 });
+      }
+      const ghUser = await ghRes.json();
+
+      // Encrypt and store
+      const { encrypted, iv } = await encryptToken(token, env.GITHUB_TOKEN_ENCRYPTION_KEY);
+      await env.DB.prepare(`
+        INSERT INTO user_settings (user_email, github_token_encrypted, github_token_iv, github_username, updated_at)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(user_email) DO UPDATE SET
+          github_token_encrypted = excluded.github_token_encrypted,
+          github_token_iv = excluded.github_token_iv,
+          github_username = excluded.github_username,
+          updated_at = CURRENT_TIMESTAMP
+      `).bind(userEmail, encrypted, iv, ghUser.login).run();
+
+      return jsonResponse({ success: true, github_username: ghUser.login });
+    }
+
+    // Disconnect GitHub
+    if (path === 'api/settings/github-token' && request.method === 'DELETE') {
+      await env.DB.prepare(`
+        UPDATE user_settings SET github_token_encrypted = NULL, github_token_iv = NULL, github_username = NULL, updated_at = CURRENT_TIMESTAMP
+        WHERE user_email = ?
+      `).bind(userEmail).run();
+      // Deactivate all repo syncs
+      await env.DB.prepare('UPDATE repo_syncs SET is_active = 0 WHERE user_email = ?').bind(userEmail).run();
+      return jsonResponse({ success: true });
+    }
+
+    // List GitHub repos (merged with sync status)
+    if (path === 'api/github/repos' && request.method === 'GET') {
+      const ghToken = await getUserGitHubToken(env, userEmail);
+      if (!ghToken) return jsonResponse({ error: 'GitHub not connected' }, { status: 400 });
+
+      const ghRes = await fetch('https://api.github.com/user/repos?per_page=100&sort=updated&affiliation=owner', {
+        headers: { 'Authorization': `token ${ghToken}`, 'User-Agent': 'URLsToGo/1.0' }
+      });
+      if (!ghRes.ok) return jsonResponse({ error: 'Failed to fetch repos from GitHub' }, { status: 502 });
+      const repos = await ghRes.json();
+
+      // Get existing syncs
+      const { results: syncs } = await env.DB.prepare(
+        'SELECT * FROM repo_syncs WHERE user_email = ?'
+      ).bind(userEmail).all();
+      const syncMap = Object.fromEntries(syncs.map(s => [s.repo_full_name, s]));
+
+      const merged = repos.map(r => ({
+        full_name: r.full_name,
+        name: r.name,
+        owner: r.owner.login,
+        description: r.description || '',
+        private: r.private,
+        sync: syncMap[r.full_name] || null
+      }));
+
+      return jsonResponse({ repos: merged });
+    }
+
+    // Enable repo sync
+    if (path === 'api/github/repo-syncs' && request.method === 'POST') {
+      const { full_name, name, owner } = await request.json();
+      if (!full_name || !name || !owner) {
+        return jsonResponse({ error: 'Missing repo details' }, { status: 400 });
+      }
+
+      // Create a dedicated API key for this repo
+      const apiKeyRaw = generateApiKey();
+      const keyHash = await hashApiKey(apiKeyRaw);
+      const keyPrefix = apiKeyRaw.slice(0, 11);
+      const keyName = `${name}--preview`;
+
+      await env.DB.prepare(
+        'INSERT INTO api_keys (user_email, name, key_hash, key_prefix, scopes) VALUES (?, ?, ?, ?, ?)'
+      ).bind(userEmail, keyName, keyHash, keyPrefix, 'read,write').run();
+
+      const apiKeyRow = await env.DB.prepare('SELECT id FROM api_keys WHERE key_hash = ?').bind(keyHash).first();
+
+      await env.DB.prepare(`
+        INSERT INTO repo_syncs (user_email, repo_full_name, repo_name, repo_owner, api_key_id, is_active)
+        VALUES (?, ?, ?, ?, ?, 1)
+        ON CONFLICT(user_email, repo_full_name) DO UPDATE SET
+          is_active = 1, api_key_id = excluded.api_key_id
+      `).bind(userEmail, full_name, name, owner, apiKeyRow.id).run();
+
+      const sync = await env.DB.prepare(
+        'SELECT * FROM repo_syncs WHERE user_email = ? AND repo_full_name = ?'
+      ).bind(userEmail, full_name).first();
+
+      return jsonResponse({ success: true, sync, api_key: apiKeyRaw });
+    }
+
+    // Disable repo sync
+    if (path.startsWith('api/github/repo-syncs/') && request.method === 'DELETE') {
+      const syncId = path.replace('api/github/repo-syncs/', '');
+      const sync = await env.DB.prepare(
+        'SELECT * FROM repo_syncs WHERE id = ? AND user_email = ?'
+      ).bind(syncId, userEmail).first();
+      if (!sync) return jsonResponse({ error: 'Sync not found' }, { status: 404 });
+
+      // Delete associated API key
+      if (sync.api_key_id) {
+        await env.DB.prepare('DELETE FROM api_keys WHERE id = ?').bind(sync.api_key_id).run();
+      }
+      await env.DB.prepare('DELETE FROM repo_syncs WHERE id = ?').bind(syncId).run();
+      return jsonResponse({ success: true });
+    }
+
+    // Deploy to repo (push secret + workflow)
+    if (path.startsWith('api/github/deploy/') && request.method === 'POST') {
+      const syncId = path.replace('api/github/deploy/', '');
+      const sync = await env.DB.prepare(
+        'SELECT rs.*, ak.key_hash FROM repo_syncs rs LEFT JOIN api_keys ak ON rs.api_key_id = ak.id WHERE rs.id = ? AND rs.user_email = ?'
+      ).bind(syncId, userEmail).first();
+      if (!sync) return jsonResponse({ error: 'Sync not found' }, { status: 404 });
+
+      const ghToken = await getUserGitHubToken(env, userEmail);
+      if (!ghToken) return jsonResponse({ error: 'GitHub not connected' }, { status: 400 });
+
+      // We need the raw API key but we only stored the hash.
+      // The raw key was returned to the user at creation time.
+      // For deploy, we need to re-read it from the request body.
+      const { api_key } = await request.json();
+      if (!api_key) return jsonResponse({ error: 'API key required for deploy' }, { status: 400 });
+
+      const ghHeaders = { 'Authorization': `token ${ghToken}`, 'User-Agent': 'URLsToGo/1.0', 'Accept': 'application/vnd.github.v3+json' };
+
+      try {
+        // Step 1: Get repo public key for encrypted secrets
+        const pkRes = await fetch(`https://api.github.com/repos/${sync.repo_owner}/${sync.repo_name}/actions/secrets/public-key`, {
+          headers: ghHeaders
+        });
+        if (!pkRes.ok) {
+          const err = await pkRes.text();
+          throw new Error(`Failed to get repo public key: ${pkRes.status}`);
+        }
+        const { key: repoPublicKey, key_id: repoKeyId } = await pkRes.json();
+
+        // Step 2: Encrypt and deploy secret
+        const encryptedSecret = encryptSecretForGitHub(api_key, repoPublicKey);
+        const secretRes = await fetch(`https://api.github.com/repos/${sync.repo_owner}/${sync.repo_name}/actions/secrets/URLSTOGO_API_KEY`, {
+          method: 'PUT',
+          headers: { ...ghHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ encrypted_value: encryptedSecret, key_id: repoKeyId })
+        });
+        if (!secretRes.ok) throw new Error(`Failed to deploy secret: ${secretRes.status}`);
+
+        // Step 3: Deploy workflow file
+        // First check if it already exists
+        const fileCheckRes = await fetch(`https://api.github.com/repos/${sync.repo_owner}/${sync.repo_name}/contents/.github/workflows/update-preview-link.yml`, {
+          headers: ghHeaders
+        });
+        let fileSha = null;
+        if (fileCheckRes.ok) {
+          const existing = await fileCheckRes.json();
+          fileSha = existing.sha;
+        }
+
+        const workflowContent = btoa(unescape(encodeURIComponent(PREVIEW_LINK_WORKFLOW_YAML)));
+        const fileBody = {
+          message: 'chore: add URLsToGo preview link workflow',
+          content: workflowContent
+        };
+        if (fileSha) {
+          fileBody.message = 'chore: update URLsToGo preview link workflow';
+          fileBody.sha = fileSha;
+        }
+
+        const wfRes = await fetch(`https://api.github.com/repos/${sync.repo_owner}/${sync.repo_name}/contents/.github/workflows/update-preview-link.yml`, {
+          method: 'PUT',
+          headers: { ...ghHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify(fileBody)
+        });
+        if (!wfRes.ok) throw new Error(`Failed to deploy workflow: ${wfRes.status}`);
+
+        // Update sync status
+        await env.DB.prepare(`
+          UPDATE repo_syncs SET secret_deployed = 1, workflow_deployed = 1, last_sync_at = CURRENT_TIMESTAMP, last_error = NULL
+          WHERE id = ?
+        `).bind(syncId).run();
+
+        return jsonResponse({ success: true, status: 'deployed' });
+      } catch (e) {
+        console.error('Deploy error:', e.message);
+        await env.DB.prepare('UPDATE repo_syncs SET last_error = ? WHERE id = ?')
+          .bind(e.message, syncId).run();
+        return jsonResponse({ error: e.message }, { status: 500 });
+      }
+    }
+
     return new Response('Not found', { status: 404 });
   }
 };
@@ -1222,6 +1448,118 @@ async function validateApiKey(request, env) {
     return null;
   }
 }
+
+// =============================================================================
+// GITHUB TOKEN ENCRYPTION - AES-GCM via Web Crypto
+// =============================================================================
+
+async function encryptToken(token, keyHex) {
+  const keyBytes = new Uint8Array(keyHex.match(/.{2}/g).map(b => parseInt(b, 16)));
+  const cryptoKey = await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt']);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encoded = new TextEncoder().encode(token);
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, cryptoKey, encoded);
+  const ctArray = Array.from(new Uint8Array(ciphertext));
+  const ivArray = Array.from(iv);
+  return {
+    encrypted: ctArray.map(b => b.toString(16).padStart(2, '0')).join(''),
+    iv: ivArray.map(b => b.toString(16).padStart(2, '0')).join('')
+  };
+}
+
+async function decryptToken(encryptedHex, ivHex, keyHex) {
+  const keyBytes = new Uint8Array(keyHex.match(/.{2}/g).map(b => parseInt(b, 16)));
+  const cryptoKey = await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['decrypt']);
+  const iv = new Uint8Array(ivHex.match(/.{2}/g).map(b => parseInt(b, 16)));
+  const ciphertext = new Uint8Array(encryptedHex.match(/.{2}/g).map(b => parseInt(b, 16)));
+  const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, cryptoKey, ciphertext);
+  return new TextDecoder().decode(decrypted);
+}
+
+async function getUserGitHubToken(env, userEmail) {
+  const row = await env.DB.prepare(
+    'SELECT github_token_encrypted, github_token_iv FROM user_settings WHERE user_email = ?'
+  ).bind(userEmail).first();
+  if (!row || !row.github_token_encrypted || !row.github_token_iv) return null;
+  return decryptToken(row.github_token_encrypted, row.github_token_iv, env.GITHUB_TOKEN_ENCRYPTION_KEY);
+}
+
+function encryptSecretForGitHub(secret, publicKeyB64) {
+  const keyBytes = Uint8Array.from(atob(publicKeyB64), c => c.charCodeAt(0));
+  const msgBytes = new TextEncoder().encode(secret);
+  const sealed = sodiumSeal(msgBytes, keyBytes);
+  return btoa(String.fromCharCode(...sealed));
+}
+
+// Workflow YAML template embedded as constant
+const PREVIEW_LINK_WORKFLOW_YAML = `name: Update Preview Link
+
+on:
+  push:
+    branches: [preview, staging, 'preview/**', 'feat/**']
+  deployment_status:
+  workflow_dispatch:
+
+env:
+  REPO_NAME: \\\${{ github.event.repository.name }}
+  URLSTOGO_DOMAIN: go.urlstogo.cloud
+  DEPLOYMENT_PLATFORM: auto
+
+jobs:
+  update-preview-link:
+    name: Update Preview Link
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'push' ||
+      (github.event_name == 'deployment_status' && github.event.deployment_status.state == 'success') ||
+      github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect deployment URL
+        id: detect-url
+        env:
+          GH_REF_NAME: \\\${{ github.ref_name }}
+          GH_REPO_NAME: \\\${{ github.event.repository.name }}
+          GH_REPO_OWNER: \\\${{ github.repository_owner }}
+          GH_EVENT_NAME: \\\${{ github.event_name }}
+          GH_DEPLOYMENT_URL: \\\${{ github.event.deployment_status.environment_url }}
+          PLATFORM: \\\${{ env.DEPLOYMENT_PLATFORM }}
+        run: |
+          set -euo pipefail
+          DEPLOYMENT_URL=""
+          if [ "\\$PLATFORM" = "auto" ]; then
+            if [ -f "vercel.json" ] || [ -f ".vercel/project.json" ]; then PLATFORM="vercel"
+            elif [ -f "wrangler.toml" ]; then PLATFORM="cloudflare-pages"
+            elif [ -f ".github/workflows/pages.yml" ]; then PLATFORM="github-pages"; fi
+          fi
+          slugify() { tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//'; }
+          case "\\$PLATFORM" in
+            vercel)
+              if [ "\\$GH_EVENT_NAME" = "deployment_status" ] && [ -n "\\$GH_DEPLOYMENT_URL" ]; then
+                DEPLOYMENT_URL="\\$GH_DEPLOYMENT_URL"
+              else
+                DEPLOYMENT_URL="https://\\$(echo "\\$GH_REPO_NAME" | slugify)-git-\\$(echo "\\$GH_REF_NAME" | slugify)-\\$(echo "\\$GH_REPO_OWNER" | slugify).vercel.app"
+              fi ;;
+            cloudflare-pages) DEPLOYMENT_URL="https://\\$(echo "\\$GH_REF_NAME" | slugify).\\$(echo "\\$GH_REPO_NAME" | slugify).pages.dev" ;;
+            github-pages) DEPLOYMENT_URL="https://\\$(echo "\\$GH_REPO_OWNER" | slugify).github.io/\\$(echo "\\$GH_REPO_NAME" | slugify)" ;;
+            *) echo "Could not detect platform"; exit 1 ;;
+          esac
+          echo "url=\\$DEPLOYMENT_URL" >> "\\$GITHUB_OUTPUT"
+      - name: Update URLsToGo preview link
+        env:
+          URLSTOGO_API_KEY: \\\${{ secrets.URLSTOGO_API_KEY }}
+          PREVIEW_CODE: \\\${{ github.event.repository.name }}--preview
+          DEPLOYMENT_URL: \\\${{ steps.detect-url.outputs.url }}
+        run: |
+          set -euo pipefail
+          RESPONSE=\\$(curl -s -w "\\\\n%{http_code}" -X PUT \\\\
+            -H "Authorization: Bearer \\$URLSTOGO_API_KEY" \\\\
+            -H "Content-Type: application/json" \\\\
+            --data "\\$(printf '{"destination":"%s"}' "\\$DEPLOYMENT_URL")" \\\\
+            "https://\\\${URLSTOGO_DOMAIN}/api/preview-links/\\\${PREVIEW_CODE}")
+          HTTP_CODE=\\$(echo "\\$RESPONSE" | tail -n1)
+          if [ "\\$HTTP_CODE" -ge 200 ] && [ "\\$HTTP_CODE" -lt 300 ]; then echo "Preview link updated!"; else echo "Failed (HTTP \\$HTTP_CODE)"; exit 1; fi
+`;
 
 // Parse click data from request headers
 function parseClickData(request) {
@@ -4251,6 +4589,141 @@ function getAdminHTML(userEmail, env) {
     .page-links { display: block; }
     .page-links.hidden { display: none; }
 
+    /* Settings page */
+    .settings-view { display: none; padding: 24px; }
+    .settings-view.active { display: flex; gap: 24px; }
+    .settings-nav {
+      width: 200px; flex-shrink: 0;
+      display: flex; flex-direction: column; gap: 2px;
+    }
+    .settings-tab {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 12px; border-radius: var(--radius);
+      font-size: 14px; color: oklch(var(--muted-foreground));
+      cursor: pointer; transition: all 150ms;
+      background: none; border: none; text-align: left; width: 100%;
+    }
+    .settings-tab:hover { background: oklch(var(--accent)); color: oklch(var(--accent-foreground)); }
+    .settings-tab.active { background: oklch(var(--secondary)); color: oklch(var(--secondary-foreground)); font-weight: 500; }
+    .settings-tab svg { width: 16px; height: 16px; flex-shrink: 0; }
+    .settings-content { flex: 1; min-width: 0; max-width: 640px; }
+    .settings-panel { display: none; }
+    .settings-panel.active { display: block; }
+    .settings-section { margin-bottom: 32px; }
+    .settings-section-title {
+      font-size: 18px; font-weight: 600; margin-bottom: 4px;
+      letter-spacing: -0.025em;
+    }
+    .settings-section-desc {
+      font-size: 14px; color: oklch(var(--muted-foreground)); margin-bottom: 16px;
+    }
+    .settings-card {
+      background: oklch(var(--card));
+      border: 1px solid oklch(var(--border));
+      border-radius: var(--radius); padding: 20px;
+      margin-bottom: 16px;
+    }
+    .settings-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 0;
+      border-bottom: 1px solid oklch(var(--border));
+    }
+    .settings-row:last-child { border-bottom: none; }
+    .settings-row-label { font-size: 14px; font-weight: 500; }
+    .settings-row-desc { font-size: 13px; color: oklch(var(--muted-foreground)); margin-top: 2px; }
+    .settings-row-value { font-size: 14px; color: oklch(var(--muted-foreground)); }
+
+    /* Toggle switch */
+    .switch {
+      position: relative; display: inline-block;
+      width: 40px; height: 22px; flex-shrink: 0;
+    }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .switch-slider {
+      position: absolute; cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: oklch(var(--muted));
+      border-radius: 22px; transition: all 200ms;
+    }
+    .switch-slider:before {
+      content: ""; position: absolute;
+      height: 18px; width: 18px;
+      left: 2px; bottom: 2px;
+      background: white; border-radius: 50%;
+      transition: all 200ms;
+    }
+    .switch input:checked + .switch-slider { background: oklch(var(--indigo)); }
+    .switch input:checked + .switch-slider:before { transform: translateX(18px); }
+
+    /* Repo card */
+    .repo-card {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 16px;
+      border-bottom: 1px solid oklch(var(--border));
+      transition: background 150ms;
+    }
+    .repo-card:last-child { border-bottom: none; }
+    .repo-card:hover { background: oklch(var(--accent) / 0.5); }
+    .repo-card-info { flex: 1; min-width: 0; }
+    .repo-card-name { font-size: 14px; font-weight: 500; }
+    .repo-card-desc {
+      font-size: 13px; color: oklch(var(--muted-foreground));
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .repo-card-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+    /* Status badge */
+    .status-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 8px; border-radius: 9999px;
+      font-size: 11px; font-weight: 500;
+    }
+    .status-badge.pending { background: oklch(0.45 0.1 60 / 0.15); color: oklch(0.75 0.12 60); }
+    .status-badge.deployed { background: oklch(0.45 0.15 145 / 0.15); color: oklch(0.7 0.15 145); }
+    .status-badge.error { background: oklch(0.45 0.15 25 / 0.15); color: oklch(0.7 0.15 25); }
+    .status-badge.connected { background: oklch(0.45 0.15 145 / 0.15); color: oklch(0.7 0.15 145); }
+
+    /* Connection status */
+    .github-status {
+      display: flex; align-items: center; gap: 8px;
+      padding: 12px 16px;
+      background: oklch(var(--muted) / 0.5);
+      border-radius: var(--radius);
+      margin-bottom: 16px;
+    }
+    .github-status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: oklch(0.7 0.15 145);
+    }
+    .github-status-text { flex: 1; font-size: 14px; }
+
+    /* Settings responsive */
+    @media (max-width: 768px) {
+      .settings-view.active { flex-direction: column; gap: 0; padding: 16px; }
+      .settings-nav {
+        width: 100%; flex-direction: row;
+        overflow-x: auto; scrollbar-width: none;
+        gap: 4px; padding-bottom: 12px;
+        border-bottom: 1px solid oklch(var(--border));
+        margin-bottom: 16px;
+      }
+      .settings-nav::-webkit-scrollbar { display: none; }
+      .settings-tab {
+        white-space: nowrap; padding: 6px 12px;
+        border-radius: 9999px; font-size: 13px;
+        border: 1px solid oklch(var(--border));
+      }
+      .settings-tab.active {
+        background: oklch(var(--primary));
+        color: oklch(var(--primary-foreground));
+        border-color: oklch(var(--primary));
+      }
+      .settings-tab svg { display: none; }
+      .settings-content { max-width: none; }
+      .repo-card { flex-wrap: wrap; }
+      .repo-card-actions { width: 100%; justify-content: flex-end; padding-top: 8px; }
+    }
+
     /* Bulk actions */
     .bulk-actions {
       display: none;
@@ -4846,7 +5319,7 @@ function getAdminHTML(userEmail, env) {
 
       <div class="sidebar-content">
         <div class="nav-group">
-          <div class="nav-item active" onclick="filterByCategory(null)" data-nav="links">
+          <div class="nav-item active" onclick="showLinksView(); filterByCategory(null)" data-nav="links">
             <span class="nav-item-icon">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
@@ -4888,13 +5361,29 @@ function getAdminHTML(userEmail, env) {
 
         <div class="nav-group">
           <div class="nav-group-label">Settings</div>
-          <div class="nav-item" onclick="showApiKeysModal()">
-            <div class="nav-item-icon">
+          <div class="nav-item" onclick="showSettingsView('git-sync')" data-nav="git-sync">
+            <span class="nav-item-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>
+              </svg>
+            </span>
+            <span>Git Sync</span>
+          </div>
+          <div class="nav-item" onclick="showSettingsView('api-keys')" data-nav="api-keys">
+            <span class="nav-item-icon">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
               </svg>
-            </div>
+            </span>
             <span>API Keys</span>
+          </div>
+          <div class="nav-item" onclick="showSettingsView('profile')" data-nav="settings">
+            <span class="nav-item-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>
+              </svg>
+            </span>
+            <span>All Settings</span>
           </div>
         </div>
       </div>
@@ -5163,6 +5652,115 @@ function getAdminHTML(userEmail, env) {
         </div>
       </div>
     </main>
+
+    <!-- Settings View -->
+    <div class="settings-view" id="settingsView">
+      <nav class="settings-nav">
+        <button class="settings-tab active" onclick="switchSettingsTab('profile')" data-settings-tab="profile">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          Profile
+        </button>
+        <button class="settings-tab" onclick="switchSettingsTab('git-sync')" data-settings-tab="git-sync">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+          Git Sync
+        </button>
+        <button class="settings-tab" onclick="switchSettingsTab('api-keys')" data-settings-tab="api-keys">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+          API Keys
+        </button>
+        <button class="settings-tab" onclick="switchSettingsTab('appearance')" data-settings-tab="appearance">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+          Appearance
+        </button>
+      </nav>
+
+      <div class="settings-content">
+        <!-- Profile Panel -->
+        <div class="settings-panel active" id="settingsProfile">
+          <div class="settings-section">
+            <div class="settings-section-title">Profile</div>
+            <div class="settings-section-desc">Manage your account settings.</div>
+            <div class="settings-card">
+              <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 20px;">
+                <div class="avatar" style="width: 48px; height: 48px; font-size: 18px;" id="settingsAvatar">${escapeHtml(userEmail.charAt(0).toUpperCase())}</div>
+                <div>
+                  <div style="font-size: 14px; font-weight: 500;" id="settingsEmail">${escapeHtml(userEmail)}</div>
+                  <div style="font-size: 13px; color: oklch(var(--muted-foreground));">Signed in via Clerk</div>
+                </div>
+              </div>
+              <div class="form-group" style="margin-bottom: 16px;">
+                <label class="label">Display Name</label>
+                <input type="text" class="input" id="settingsDisplayName" placeholder="Your name (optional)">
+              </div>
+              <button class="btn btn-default" onclick="saveProfile()">Save Changes</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Git Sync Panel -->
+        <div class="settings-panel" id="settingsGitSync">
+          <div class="settings-section">
+            <div class="settings-section-title">Git Sync</div>
+            <div class="settings-section-desc">Automatically update preview links when you push to GitHub.</div>
+            <div id="gitSyncContent">
+              <div style="text-align: center; padding: 24px; color: oklch(var(--muted-foreground));">Loading...</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- API Keys Panel -->
+        <div class="settings-panel" id="settingsApiKeys">
+          <div class="settings-section">
+            <div class="settings-section-title">API Keys</div>
+            <div class="settings-section-desc">Manage keys for programmatic access to your links.</div>
+
+            <div class="settings-card" style="margin-bottom: 16px;">
+              <div style="display: flex; gap: 8px; align-items: flex-end;">
+                <div style="flex: 1;">
+                  <label class="label">New API Key</label>
+                  <input type="text" class="input" id="settingsNewApiKeyName" placeholder="Key name (e.g., my-ci-workflow)">
+                </div>
+                <button class="btn btn-default" onclick="createApiKey()">Create</button>
+              </div>
+            </div>
+
+            <div id="settingsNewKeyDisplay" style="display: none; margin-bottom: 16px;">
+              <div class="settings-card" style="background: oklch(var(--indigo) / 0.1); border-color: oklch(var(--indigo));">
+                <div style="font-size: 12px; font-weight: 500; color: oklch(var(--indigo)); margin-bottom: 8px;">
+                  Save this key now - it won't be shown again!
+                </div>
+                <code id="settingsNewKeyValue" style="display: block; padding: 12px; background: oklch(var(--background)); border-radius: var(--radius); font-size: 13px; word-break: break-all;"></code>
+                <button class="btn btn-outline btn-sm" style="margin-top: 8px;" onclick="copyNewKey()">Copy to Clipboard</button>
+              </div>
+            </div>
+
+            <div id="settingsApiKeysList">
+              <div style="text-align: center; padding: 24px; color: oklch(var(--muted-foreground));">Loading...</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Appearance Panel -->
+        <div class="settings-panel" id="settingsAppearance">
+          <div class="settings-section">
+            <div class="settings-section-title">Appearance</div>
+            <div class="settings-section-desc">Customize how URLsToGo looks.</div>
+            <div class="settings-card">
+              <div class="settings-row">
+                <div>
+                  <div class="settings-row-label">Dark Mode</div>
+                  <div class="settings-row-desc">Toggle between light and dark theme.</div>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" checked onchange="toggleTheme()">
+                  <span class="switch-slider"></span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Dev Tools FAB -->
@@ -6431,75 +7029,376 @@ function getAdminHTML(userEmail, env) {
     }
 
     // =============================================================================
-    // API KEYS MODAL
+    // SETTINGS VIEW + API KEYS
     // =============================================================================
 
-    async function showApiKeysModal() {
-      document.getElementById('apiKeysModal').classList.add('open');
-      document.getElementById('newKeyDisplay').style.display = 'none';
-      document.getElementById('newApiKeyName').value = '';
-      await loadApiKeys();
+    // Track pending API keys for deploy (raw keys in memory only)
+    const pendingApiKeys = {};
+
+    // Backward-compat wrapper
+    function showApiKeysModal() { showSettingsView('api-keys'); }
+    function closeApiKeysModal() { document.getElementById('apiKeysModal').classList.remove('open'); }
+
+    function showSettingsView(tab) {
+      document.querySelector('.page').style.display = 'none';
+      document.getElementById('settingsView').classList.add('active');
+      closeMobileMenu();
+      document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+      const navTarget = tab === 'profile' ? 'settings' : tab;
+      const navEl = document.querySelector('[data-nav="' + navTarget + '"]');
+      if (navEl) navEl.classList.add('active');
+      switchSettingsTab(tab);
     }
 
-    function closeApiKeysModal() {
-      document.getElementById('apiKeysModal').classList.remove('open');
+    function showLinksView() {
+      document.getElementById('settingsView').classList.remove('active');
+      document.querySelector('.page').style.display = '';
+      document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+      const linksNav = document.querySelector('[data-nav="links"]');
+      if (linksNav) linksNav.classList.add('active');
     }
 
+    function switchSettingsTab(tab) {
+      document.querySelectorAll('.settings-tab').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.settings-panel').forEach(el => el.classList.remove('active'));
+      const tabBtn = document.querySelector('[data-settings-tab="' + tab + '"]');
+      if (tabBtn) tabBtn.classList.add('active');
+      const panelMap = { profile: 'settingsProfile', 'git-sync': 'settingsGitSync', 'api-keys': 'settingsApiKeys', appearance: 'settingsAppearance' };
+      const panel = document.getElementById(panelMap[tab]);
+      if (panel) panel.classList.add('active');
+      if (tab === 'api-keys') loadApiKeys();
+      if (tab === 'git-sync') loadGitSyncSettings();
+      if (tab === 'profile') loadProfile();
+    }
+
+    // --- Profile ---
+    async function loadProfile() {
+      try {
+        const res = await fetch('/api/settings', { credentials: 'include' });
+        if (!res.ok) return;
+        const data = await res.json();
+        const nameInput = document.getElementById('settingsDisplayName');
+        if (nameInput && data.display_name) nameInput.value = data.display_name;
+      } catch (e) { /* ignore */ }
+    }
+
+    async function saveProfile() {
+      const name = document.getElementById('settingsDisplayName').value.trim();
+      try {
+        const res = await fetch('/api/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ display_name: name }),
+          credentials: 'include'
+        });
+        if (res.ok) showToast('Profile saved', 'success');
+        else showToast('Failed to save profile', 'error');
+      } catch (e) { showToast('Failed to save profile', 'error'); }
+    }
+
+    // --- Git Sync ---
+    async function loadGitSyncSettings() {
+      const container = document.getElementById('gitSyncContent');
+      try {
+        const res = await fetch('/api/settings', { credentials: 'include' });
+        if (!res.ok) { container.textContent = 'Failed to load settings'; return; }
+        const data = await res.json();
+        if (!data.has_github_token) {
+          renderGitSyncSetup(container);
+        } else {
+          renderGitSyncConnected(container, data.github_username);
+          await loadRepos();
+        }
+      } catch (e) { container.textContent = 'Network error'; }
+    }
+
+    function renderGitSyncSetup(container) {
+      container.textContent = '';
+      const card = document.createElement('div');
+      card.className = 'settings-card';
+
+      const title = document.createElement('div');
+      title.style.cssText = 'font-weight:500;margin-bottom:8px';
+      title.textContent = 'Connect GitHub';
+      card.appendChild(title);
+
+      const desc = document.createElement('p');
+      desc.style.cssText = 'font-size:13px;color:oklch(var(--muted-foreground));margin-bottom:12px';
+      desc.textContent = 'Connect your GitHub account to automatically update preview links when you push code. You need a Personal Access Token with repo and workflow scopes.';
+      card.appendChild(desc);
+
+      const link = document.createElement('a');
+      link.href = 'https://github.com/settings/tokens/new?scopes=repo,workflow&description=URLsToGo+Git+Sync';
+      link.target = '_blank';
+      link.rel = 'noopener';
+      link.style.cssText = 'color:oklch(var(--indigo));text-decoration:underline;font-size:13px;display:inline-block;margin-bottom:12px';
+      link.textContent = 'Create token on GitHub';
+      card.appendChild(link);
+
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:8px';
+      const input = document.createElement('input');
+      input.type = 'password';
+      input.className = 'input';
+      input.id = 'githubTokenInput';
+      input.placeholder = 'ghp_xxxxxxxxxxxx';
+      input.style.flex = '1';
+      row.appendChild(input);
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-default';
+      btn.textContent = 'Connect';
+      btn.onclick = saveGitHubToken;
+      row.appendChild(btn);
+      card.appendChild(row);
+
+      container.appendChild(card);
+    }
+
+    function renderGitSyncConnected(container, username) {
+      container.textContent = '';
+
+      const status = document.createElement('div');
+      status.className = 'github-status';
+      const dot = document.createElement('div');
+      dot.className = 'github-status-dot';
+      status.appendChild(dot);
+      const text = document.createElement('div');
+      text.className = 'github-status-text';
+      const strong = document.createElement('strong');
+      strong.textContent = '@' + (username || 'unknown');
+      text.appendChild(strong);
+      text.appendChild(document.createTextNode(' Connected'));
+      status.appendChild(text);
+      const dcBtn = document.createElement('button');
+      dcBtn.className = 'btn btn-ghost btn-sm';
+      dcBtn.style.color = 'oklch(var(--destructive))';
+      dcBtn.textContent = 'Disconnect';
+      dcBtn.onclick = disconnectGitHub;
+      status.appendChild(dcBtn);
+      container.appendChild(status);
+
+      const card = document.createElement('div');
+      card.className = 'settings-card';
+      card.style.padding = '0';
+      const header = document.createElement('div');
+      header.style.cssText = 'padding:12px 16px;border-bottom:1px solid oklch(var(--border));font-weight:500;font-size:14px';
+      header.textContent = 'Your Repositories';
+      card.appendChild(header);
+      const list = document.createElement('div');
+      list.id = 'repoList';
+      const loading = document.createElement('div');
+      loading.style.cssText = 'text-align:center;padding:24px;color:oklch(var(--muted-foreground))';
+      loading.textContent = 'Loading repos...';
+      list.appendChild(loading);
+      card.appendChild(list);
+      container.appendChild(card);
+    }
+
+    async function saveGitHubToken() {
+      const input = document.getElementById('githubTokenInput');
+      const token = input.value.trim();
+      if (!token) { showToast('Please enter a token', 'error'); return; }
+      try {
+        const res = await fetch('/api/settings/github-token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token }),
+          credentials: 'include'
+        });
+        const data = await res.json();
+        if (data.error) { showToast(data.error, 'error'); return; }
+        showToast('GitHub connected!', 'success');
+        await loadGitSyncSettings();
+      } catch (e) { showToast('Failed to connect GitHub', 'error'); }
+    }
+
+    function disconnectGitHub() {
+      showConfirmModal('Disconnect GitHub', 'Remove token and deactivate all repo syncs?', 'Disconnect', async () => {
+        try {
+          await fetch('/api/settings/github-token', { method: 'DELETE', credentials: 'include' });
+          showToast('GitHub disconnected', 'success');
+          await loadGitSyncSettings();
+        } catch (e) { showToast('Failed to disconnect', 'error'); }
+      });
+    }
+
+    async function loadRepos() {
+      const container = document.getElementById('repoList');
+      if (!container) return;
+      try {
+        const res = await fetch('/api/github/repos', { credentials: 'include' });
+        if (!res.ok) { container.textContent = 'Failed to load repos'; return; }
+        const data = await res.json();
+        if (!data.repos || data.repos.length === 0) {
+          container.textContent = '';
+          const empty = document.createElement('div');
+          empty.style.cssText = 'text-align:center;padding:24px;color:oklch(var(--muted-foreground))';
+          empty.textContent = 'No repositories found.';
+          container.appendChild(empty);
+          return;
+        }
+        container.textContent = '';
+        data.repos.forEach(repo => {
+          const sync = repo.sync;
+          const isActive = sync && sync.is_active;
+          const isDeployed = sync && sync.workflow_deployed && sync.secret_deployed;
+
+          const card = document.createElement('div');
+          card.className = 'repo-card';
+
+          const info = document.createElement('div');
+          info.className = 'repo-card-info';
+          const nameEl = document.createElement('div');
+          nameEl.className = 'repo-card-name';
+          nameEl.textContent = repo.name;
+          if (repo.private) {
+            const priv = document.createElement('span');
+            priv.style.cssText = 'font-size:11px;color:oklch(var(--muted-foreground));margin-left:6px';
+            priv.textContent = 'private';
+            nameEl.appendChild(priv);
+          }
+          info.appendChild(nameEl);
+          if (repo.description) {
+            const descEl = document.createElement('div');
+            descEl.className = 'repo-card-desc';
+            descEl.textContent = repo.description;
+            info.appendChild(descEl);
+          }
+          card.appendChild(info);
+
+          const actions = document.createElement('div');
+          actions.className = 'repo-card-actions';
+
+          if (isActive) {
+            const badge = document.createElement('span');
+            badge.className = 'status-badge';
+            if (isDeployed) { badge.classList.add('deployed'); badge.textContent = 'Deployed'; }
+            else if (sync.last_error) { badge.classList.add('error'); badge.textContent = 'Error'; badge.title = sync.last_error; }
+            else { badge.classList.add('pending'); badge.textContent = 'Pending'; }
+            actions.appendChild(badge);
+
+            if (!isDeployed) {
+              const deployBtn = document.createElement('button');
+              deployBtn.className = 'btn btn-outline btn-sm';
+              deployBtn.textContent = 'Deploy';
+              deployBtn.onclick = () => deployToRepo(sync.id);
+              actions.appendChild(deployBtn);
+            }
+          }
+
+          const toggle = document.createElement('label');
+          toggle.className = 'switch';
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.checked = !!isActive;
+          checkbox.onchange = function() { toggleRepoSync(repo.full_name, repo.name, repo.owner, sync ? sync.id : null, this.checked); };
+          toggle.appendChild(checkbox);
+          const slider = document.createElement('span');
+          slider.className = 'switch-slider';
+          toggle.appendChild(slider);
+          actions.appendChild(toggle);
+
+          card.appendChild(actions);
+          container.appendChild(card);
+        });
+      } catch (e) { container.textContent = 'Error loading repos'; }
+    }
+
+    async function toggleRepoSync(fullName, name, owner, syncId, enabled) {
+      try {
+        if (enabled) {
+          const res = await fetch('/api/github/repo-syncs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ full_name: fullName, name, owner }),
+            credentials: 'include'
+          });
+          const data = await res.json();
+          if (data.error) { showToast(data.error, 'error'); return; }
+          if (data.api_key && data.sync) pendingApiKeys[data.sync.id] = data.api_key;
+          showToast('Sync enabled for ' + name, 'success');
+        } else {
+          if (!syncId) return;
+          await fetch('/api/github/repo-syncs/' + syncId, { method: 'DELETE', credentials: 'include' });
+          showToast('Sync disabled for ' + name, 'success');
+        }
+        await loadRepos();
+      } catch (e) { showToast('Failed to update sync', 'error'); }
+    }
+
+    async function deployToRepo(syncId) {
+      const apiKey = pendingApiKeys[syncId];
+      if (!apiKey) { showToast('API key not available. Toggle sync off then on.', 'error'); return; }
+      try {
+        const res = await fetch('/api/github/deploy/' + syncId, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ api_key: apiKey }),
+          credentials: 'include'
+        });
+        const data = await res.json();
+        if (data.error) { showToast('Deploy failed: ' + data.error, 'error'); return; }
+        showToast('Deployed! Secret + workflow pushed.', 'success');
+        delete pendingApiKeys[syncId];
+        await loadRepos();
+      } catch (e) { showToast('Deploy failed', 'error'); }
+    }
+
+    // --- API Keys ---
     async function loadApiKeys() {
-      const container = document.getElementById('apiKeysList');
+      const containers = [document.getElementById('settingsApiKeysList'), document.getElementById('apiKeysList')].filter(Boolean);
       try {
         const res = await fetch('/api/keys', { credentials: 'include' });
         if (!res.ok) {
-          const msg = res.status === 401 ? 'Session expired. Please refresh the page.' : 'Failed to load API keys (HTTP ' + res.status + ')';
-          container.textContent = '';
-          const div = document.createElement('div');
-          div.style.cssText = 'text-align:center;padding:24px;color:oklch(var(--destructive))';
-          div.textContent = msg;
-          container.appendChild(div);
+          const msg = res.status === 401 ? 'Session expired. Please refresh.' : 'Failed to load keys';
+          containers.forEach(c => { c.textContent = ''; const d = document.createElement('div'); d.style.cssText = 'text-align:center;padding:24px;color:oklch(var(--destructive))'; d.textContent = msg; c.appendChild(d); });
           return;
         }
         const data = await res.json();
-
-        if (!data.keys || data.keys.length === 0) {
-          container.innerHTML = '<div style="text-align: center; padding: 24px; color: oklch(var(--muted-foreground));">No API keys yet. Create one above.</div>';
-          return;
-        }
-
-        container.innerHTML = data.keys.map(key => \`
-          <div class="card" style="padding: 12px 16px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
-            <div>
-              <div style="font-weight: 500;">\${escapeHtml(key.name)}</div>
-              <div style="font-size: 12px; color: oklch(var(--muted-foreground)); margin-top: 2px;">
-                <code>\${escapeHtml(key.key_prefix)}...</code>
-                \${key.last_used_at ? ' · Last used ' + formatRelativeTime(key.last_used_at) : ' · Never used'}
-              </div>
-            </div>
-            <button class="btn btn-ghost btn-icon sm" onclick="deleteApiKey(\${key.id}, '\${escapeJs(key.name)}')" title="Delete key">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
-                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-              </svg>
-            </button>
-          </div>
-        \`).join('');
+        containers.forEach(c => {
+          c.textContent = '';
+          if (!data.keys || data.keys.length === 0) {
+            const empty = document.createElement('div');
+            empty.style.cssText = 'text-align:center;padding:24px;color:oklch(var(--muted-foreground))';
+            empty.textContent = 'No API keys yet. Create one above.';
+            c.appendChild(empty);
+            return;
+          }
+          data.keys.forEach(key => {
+            const row = document.createElement('div');
+            row.className = 'settings-card';
+            row.style.cssText = 'padding:12px 16px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between';
+            const info = document.createElement('div');
+            const nameEl = document.createElement('div');
+            nameEl.style.fontWeight = '500';
+            nameEl.textContent = key.name;
+            info.appendChild(nameEl);
+            const meta = document.createElement('div');
+            meta.style.cssText = 'font-size:12px;color:oklch(var(--muted-foreground));margin-top:2px';
+            const code = document.createElement('code');
+            code.textContent = key.key_prefix + '...';
+            meta.appendChild(code);
+            meta.appendChild(document.createTextNode(key.last_used_at ? ' · Last used ' + formatRelativeTime(key.last_used_at) : ' · Never used'));
+            info.appendChild(meta);
+            row.appendChild(info);
+            const delBtn = document.createElement('button');
+            delBtn.className = 'btn btn-ghost btn-icon sm';
+            delBtn.title = 'Delete key';
+            delBtn.onclick = () => deleteApiKey(key.id, key.name);
+            delBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>';
+            row.appendChild(delBtn);
+            c.appendChild(row);
+          });
+        });
       } catch (e) {
-        container.textContent = '';
-        const div = document.createElement('div');
-        div.style.cssText = 'text-align:center;padding:24px;color:oklch(var(--destructive))';
-        div.textContent = 'Failed to load API keys: ' + (e.message || 'Network error');
-        container.appendChild(div);
+        containers.forEach(c => { c.textContent = ''; const d = document.createElement('div'); d.style.cssText = 'text-align:center;padding:24px;color:oklch(var(--destructive))'; d.textContent = 'Failed to load API keys'; c.appendChild(d); });
       }
     }
 
     async function createApiKey() {
-      const nameInput = document.getElementById('newApiKeyName');
+      const nameInput = document.getElementById('settingsNewApiKeyName') || document.getElementById('newApiKeyName');
       const name = nameInput.value.trim();
-
-      if (!name) {
-        showToast('Please enter a name for the API key', 'error');
-        return;
-      }
-
+      if (!name) { showToast('Please enter a name', 'error'); return; }
       try {
         const res = await fetch('/api/keys', {
           method: 'POST',
@@ -6507,51 +7406,37 @@ function getAdminHTML(userEmail, env) {
           body: JSON.stringify({ name }),
           credentials: 'include'
         });
-
         const data = await res.json();
-
-        if (data.error) {
-          showToast(data.error, 'error');
-          return;
-        }
-
-        // Show the new key (only shown once!)
-        document.getElementById('newKeyValue').textContent = data.key;
-        document.getElementById('newKeyDisplay').style.display = 'block';
+        if (data.error) { showToast(data.error, 'error'); return; }
+        // Show key in settings panel
+        const skv = document.getElementById('settingsNewKeyValue');
+        const skd = document.getElementById('settingsNewKeyDisplay');
+        if (skv) skv.textContent = data.key;
+        if (skd) skd.style.display = 'block';
+        // Backward compat: also show in modal
+        const mkv = document.getElementById('newKeyValue');
+        const mkd = document.getElementById('newKeyDisplay');
+        if (mkv) mkv.textContent = data.key;
+        if (mkd) mkd.style.display = 'block';
         nameInput.value = '';
-
-        // Refresh the list
         await loadApiKeys();
-        showToast('API key created! Save it now - it won\\'t be shown again.', 'success');
-      } catch (e) {
-        showToast('Failed to create API key', 'error');
-      }
+        showToast('API key created! Save it now.', 'success');
+      } catch (e) { showToast('Failed to create API key', 'error'); }
     }
 
     function copyNewKey() {
-      const key = document.getElementById('newKeyValue').textContent;
-      navigator.clipboard.writeText(key).then(() => {
-        showToast('API key copied to clipboard', 'success');
-      }).catch(() => {
-        showToast('Failed to copy to clipboard', 'error');
-      });
+      const key = (document.getElementById('settingsNewKeyValue') || document.getElementById('newKeyValue')).textContent;
+      navigator.clipboard.writeText(key).then(() => showToast('Copied!', 'success')).catch(() => showToast('Failed to copy', 'error'));
     }
 
     function deleteApiKey(id, name) {
-      showConfirmModal(
-        'Delete API Key',
-        \`Delete API key "\${name}"? This cannot be undone.\`,
-        'Delete',
-        async () => {
-          try {
-            await fetch('/api/keys/' + id, { method: 'DELETE', credentials: 'include' });
-            await loadApiKeys();
-            showToast('API key deleted', 'success');
-          } catch (e) {
-            showToast('Failed to delete API key', 'error');
-          }
-        }
-      );
+      showConfirmModal('Delete API Key', 'Delete "' + name + '"? This cannot be undone.', 'Delete', async () => {
+        try {
+          await fetch('/api/keys/' + id, { method: 'DELETE', credentials: 'include' });
+          await loadApiKeys();
+          showToast('API key deleted', 'success');
+        } catch (e) { showToast('Failed to delete', 'error'); }
+      });
     }
 
     function formatRelativeTime(dateStr) {
@@ -6561,7 +7446,6 @@ function getAdminHTML(userEmail, env) {
       const diffMins = Math.floor(diffMs / 60000);
       const diffHours = Math.floor(diffMs / 3600000);
       const diffDays = Math.floor(diffMs / 86400000);
-
       if (diffMins < 1) return 'just now';
       if (diffMins < 60) return diffMins + 'm ago';
       if (diffHours < 24) return diffHours + 'h ago';
@@ -6569,7 +7453,7 @@ function getAdminHTML(userEmail, env) {
       return date.toLocaleDateString();
     }
 
-    // Close API keys modal on overlay click or Escape
+    // Close API keys modal on overlay click
     document.getElementById('apiKeysModal').addEventListener('click', (e) => {
       if (e.target.id === 'apiKeysModal') closeApiKeysModal();
     });
@@ -7096,6 +7980,13 @@ function getAdminHTML(userEmail, env) {
       const titles = { links: 'Links', stats: 'Analytics', categories: 'Categories', settings: 'Settings' };
       const titleEl = document.querySelector('.mobile-header-title');
       if (titleEl) titleEl.textContent = titles[tab] || 'Links';
+
+      // Show settings view or links view
+      if (tab === 'settings') {
+        showSettingsView('profile');
+      } else {
+        showLinksView();
+      }
     }
 
     // Sheet functions
