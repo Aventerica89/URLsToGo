@@ -132,13 +132,28 @@ function escapeJs(str) {
     .replace(/>/g, '\\x3e');
 }
 
-// CORS headers for mobile app
+// Allowed CORS origins
+const ALLOWED_ORIGINS = [
+  'https://urlstogo.cloud',
+  'https://go.urlstogo.cloud',
+  'https://www.urlstogo.cloud',
+];
+
+// Static CORS headers used on API responses (primary origin)
 const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*', // Allow mobile app from any origin
+  'Access-Control-Allow-Origin': ALLOWED_ORIGINS[0],
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Cf-Access-Jwt-Assertion, Authorization',
   'Access-Control-Max-Age': '86400',
+  'Vary': 'Origin',
 };
+
+// Dynamic CORS headers for preflight — echoes the requesting origin if allowed
+function getCorsHeaders(request) {
+  const origin = request?.headers?.get('Origin') || '';
+  const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return { ...CORS_HEADERS, 'Access-Control-Allow-Origin': allowedOrigin };
+}
 
 // JSON response with CORS headers (for API endpoints)
 function jsonResponse(data, status = 200) {
@@ -167,9 +182,9 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname.slice(1);
 
-    // Handle CORS preflight requests
+    // Handle CORS preflight requests — use dynamic origin matching
     if (request.method === 'OPTIONS') {
-      return new Response(null, { status: 204, headers: CORS_HEADERS });
+      return new Response(null, { status: 204, headers: getCorsHeaders(request) });
     }
 
     // Get user email from Clerk JWT (with Cloudflare Access fallback)
@@ -1752,10 +1767,30 @@ function validateUrl(url) {
       return { valid: false, error: 'Invalid hostname' };
     }
 
-    // Block potentially dangerous patterns
+    // Block private, loopback, and metadata IPs (SSRF prevention)
     const hostname = parsed.hostname.toLowerCase();
-    if (hostname === 'localhost' || hostname.startsWith('127.') || hostname.startsWith('0.')) {
-      return { valid: false, error: 'Local URLs are not allowed' };
+
+    const blocked =
+      hostname === 'localhost' ||
+      // IPv4 loopback (127.0.0.0/8)
+      /^127\./.test(hostname) ||
+      // IPv4 private ranges
+      /^10\./.test(hostname) ||
+      /^192\.168\./.test(hostname) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(hostname) ||
+      // Link-local / cloud metadata (169.254.0.0/16)
+      /^169\.254\./.test(hostname) ||
+      // IPv4 unspecified
+      hostname === '0.0.0.0' ||
+      // IPv6 loopback and private
+      hostname === '[::1]' ||
+      hostname === '::1' ||
+      /^\[?::ffff:127\./.test(hostname) ||
+      /^\[?fc00:/i.test(hostname) ||
+      /^\[?fe80:/i.test(hostname);
+
+    if (blocked) {
+      return { valid: false, error: 'Private and local URLs are not allowed' };
     }
 
     return { valid: true, url: parsed.href };
