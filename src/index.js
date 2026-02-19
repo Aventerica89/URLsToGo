@@ -4567,7 +4567,7 @@ function getAdminHTML(userEmail, env) {
     }
     .dev-tools-menu-item:hover { background: oklch(var(--accent)); }
     .dev-tools-menu-item svg { width: 16px; height: 16px; color: oklch(var(--muted-foreground)); }
-    @media (max-width: 768px) { .dev-tools-fab { bottom: 80px; } }
+    @media (max-width: 768px) { .dev-tools-fab { bottom: calc(56px + env(safe-area-inset-bottom, 20px) + 16px); } }
 
     /* Mobile Menu Button */
     .mobile-menu-btn {
@@ -4958,7 +4958,7 @@ function getAdminHTML(userEmail, env) {
       bottom: 0;
       left: 0;
       right: 0;
-      height: 83px;
+      /* No fixed height — tab items + safe area determine height */
       background: oklch(var(--background) / 0.95);
       backdrop-filter: blur(20px);
       -webkit-backdrop-filter: blur(20px);
@@ -4966,7 +4966,8 @@ function getAdminHTML(userEmail, env) {
       display: none;
       align-items: flex-start;
       padding: 8px 0 0;
-      padding-bottom: env(safe-area-inset-bottom, 25px);
+      padding-bottom: env(safe-area-inset-bottom, 20px);
+      overflow: visible;
       z-index: 100;
     }
 
@@ -5053,8 +5054,8 @@ function getAdminHTML(userEmail, env) {
     .link-card-actions { display: flex; gap: 8px; }
 
     .link-card-action {
-      width: 36px;
-      height: 36px;
+      width: 44px;
+      height: 44px;
       background: oklch(var(--muted));
       border: none;
       border-radius: 10px;
@@ -5135,8 +5136,8 @@ function getAdminHTML(userEmail, env) {
     .mobile-header-actions { display: flex; gap: 8px; }
 
     .header-icon-btn {
-      width: 36px;
-      height: 36px;
+      width: 44px;
+      height: 44px;
       background: oklch(var(--muted));
       border-radius: 50%;
       display: flex;
@@ -5324,7 +5325,8 @@ function getAdminHTML(userEmail, env) {
       .main { margin-left: 0 !important; }
 
       body {
-        padding-bottom: 83px;
+        /* 8px tab-bar top padding + 48px tab items + device safe area */
+        padding-bottom: calc(56px + env(safe-area-inset-bottom, 20px));
         padding-top: env(safe-area-inset-top, 0);
       }
     }
