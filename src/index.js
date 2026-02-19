@@ -260,6 +260,14 @@ export default {
         if (link.password_hash) {
           // Handle POST request with password
           if (request.method === 'POST') {
+            // Strict rate limit for password attempts — separate from general redirect budget
+            const pwLimit = await checkRateLimit(env, clientIP, 'redirect:password');
+            if (!pwLimit.allowed) {
+              return new Response('Too many password attempts. Try again later.', {
+                status: 429,
+                headers: { 'Retry-After': '300' }
+              });
+            }
             const formData = await request.formData();
             const password = formData.get('password') || '';
             const isValid = await verifyPassword(password, link.password_hash);
@@ -323,6 +331,14 @@ export default {
     // === WAITLIST API (public — no auth required) ===
     if (path === 'api/waitlist' && request.method === 'POST') {
       try {
+        const clientIP = request.headers.get('CF-Connecting-IP') || 'unknown';
+        const waitlistLimit = await checkRateLimit(env, clientIP, 'api/waitlist');
+        if (!waitlistLimit.allowed) {
+          return new Response(JSON.stringify({ error: 'Too many requests. Try again later.' }), {
+            status: 429, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS }
+          });
+        }
+
         const body = await request.json();
         const email = (body.email || '').trim().toLowerCase();
         if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -336,7 +352,6 @@ export default {
             headers: { 'Content-Type': 'application/json', ...CORS_HEADERS }
           });
         }
-        const clientIP = request.headers.get('CF-Connecting-IP') || 'unknown';
         const country = request.headers.get('CF-IPCountry') || null;
         await env.DB.prepare(
           'INSERT INTO waitlist (email, ip, country, created_at) VALUES (?, ?, ?, ?)'
@@ -1028,6 +1043,9 @@ export default {
       if (!name || name.length < 1) {
         return jsonResponse({ error: 'Name is required' }, { status: 400 });
       }
+      if (name.length > 100) {
+        return jsonResponse({ error: 'Name must be 100 characters or less' }, { status: 400 });
+      }
 
       // Generate key and hash it
       const apiKey = generateApiKey();
@@ -1665,7 +1683,9 @@ function getRateLimits(env) {
     'api/preview-links:PUT': { limit: parseInt(env?.RATE_LIMIT_PREVIEW) || 30, windowSeconds },
     'api/search': { limit: parseInt(env?.RATE_LIMIT_SEARCH) || 60, windowSeconds },
     'api/import': { limit: parseInt(env?.RATE_LIMIT_IMPORT) || 5, windowSeconds },
+    'api/waitlist': { limit: 5, windowSeconds: 3600 }, // 5 signups per IP per hour
     'redirect': { limit: parseInt(env?.RATE_LIMIT_REDIRECT) || 300, windowSeconds },
+    'redirect:password': { limit: 10, windowSeconds: 300 }, // 10 password attempts per IP per 5 min
     'default': { limit: parseInt(env?.RATE_LIMIT_DEFAULT) || 100, windowSeconds }
   };
 }
