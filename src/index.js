@@ -5526,6 +5526,14 @@ function getAdminHTML(userEmail, env) {
             </span>
             <span>All Settings</span>
           </div>
+          <div class="nav-item" onclick="showSettingsView('about')" data-nav="about">
+            <span class="nav-item-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
+              </svg>
+            </span>
+            <span>About</span>
+          </div>
         </div>
       </div>
 
@@ -5813,6 +5821,10 @@ function getAdminHTML(userEmail, env) {
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
           Appearance
         </button>
+        <button class="settings-tab" onclick="switchSettingsTab('about')" data-settings-tab="about">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+          About
+        </button>
       </nav>
 
       <div class="settings-content">
@@ -5897,6 +5909,110 @@ function getAdminHTML(userEmail, env) {
                   <span class="switch-slider"></span>
                 </label>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- About Panel -->
+        <div class="settings-panel" id="settingsAbout">
+          <div class="settings-section">
+            <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 24px;">
+              <div style="width: 48px; height: 48px; background: linear-gradient(135deg, oklch(var(--indigo)) 0%, oklch(var(--purple)) 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="24" height="24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+              </div>
+              <div>
+                <div style="font-size: 18px; font-weight: 600; letter-spacing: -0.025em;">URLsToGo</div>
+                <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+                  <span style="font-size: 13px; color: oklch(var(--muted-foreground));">Version 1.0.0</span>
+                  <span style="font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 9999px; background: oklch(var(--indigo) / 0.15); color: oklch(var(--indigo));">Beta</span>
+                </div>
+              </div>
+            </div>
+
+            <div style="font-size: 13px; color: oklch(var(--muted-foreground)); margin-bottom: 24px;">
+              Built by <strong style="color: oklch(var(--foreground));">JBMD Creations, LLC</strong> &mdash; Powered by Cloudflare Workers + D1
+            </div>
+
+            <!-- Live Features -->
+            <div class="settings-card" style="margin-bottom: 16px;">
+              <div style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: oklch(var(--muted-foreground)); margin-bottom: 12px;">Core</div>
+              <div style="display: flex; flex-direction: column; gap: 6px;">
+                ${['Custom short links (auto or custom code)', 'Global redirects in &lt;50ms (300+ edge locations)', 'Password-protected links', 'Link expiration dates', 'UTM parameter builder'].map(f => `
+                <div style="display: flex; align-items: center; gap: 10px; font-size: 14px;">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="oklch(0.65 0.18 145)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" style="flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg>
+                  <span>${f}</span>
+                </div>`).join('')}
+              </div>
+            </div>
+
+            <div class="settings-card" style="margin-bottom: 16px;">
+              <div style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: oklch(var(--muted-foreground)); margin-bottom: 12px;">Organization</div>
+              <div style="display: flex; flex-direction: column; gap: 6px;">
+                ${['Categories with custom colors', 'Tags', 'Bulk select, move &amp; delete', 'Real-time search (⌘K)'].map(f => `
+                <div style="display: flex; align-items: center; gap: 10px; font-size: 14px;">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="oklch(0.65 0.18 145)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" style="flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg>
+                  <span>${f}</span>
+                </div>`).join('')}
+              </div>
+            </div>
+
+            <div class="settings-card" style="margin-bottom: 16px;">
+              <div style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: oklch(var(--muted-foreground)); margin-bottom: 12px;">Analytics</div>
+              <div style="display: flex; flex-direction: column; gap: 6px;">
+                ${['Click tracking with timeline chart', 'Device &amp; browser breakdown', 'Country &amp; referrer tracking', 'Per-link analytics'].map(f => `
+                <div style="display: flex; align-items: center; gap: 10px; font-size: 14px;">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="oklch(0.65 0.18 145)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" style="flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg>
+                  <span>${f}</span>
+                </div>`).join('')}
+              </div>
+            </div>
+
+            <div class="settings-card" style="margin-bottom: 16px;">
+              <div style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: oklch(var(--muted-foreground)); margin-bottom: 12px;">Developer</div>
+              <div style="display: flex; flex-direction: column; gap: 6px;">
+                ${['API keys (Bearer token auth)', 'Preview links (auto-update via CI/CD)', 'GitHub secrets deployment via Git Sync', 'JSON export &amp; import'].map(f => `
+                <div style="display: flex; align-items: center; gap: 10px; font-size: 14px;">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="oklch(0.65 0.18 145)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" style="flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg>
+                  <span>${f}</span>
+                </div>`).join('')}
+              </div>
+            </div>
+
+            <div class="settings-card" style="margin-bottom: 16px;">
+              <div style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: oklch(var(--muted-foreground)); margin-bottom: 12px;">Experience</div>
+              <div style="display: flex; flex-direction: column; gap: 6px;">
+                ${['QR code generation', 'Progressive Web App (install on device)', 'Light &amp; dark mode', 'Google OAuth via Clerk', 'Keyboard shortcuts'].map(f => `
+                <div style="display: flex; align-items: center; gap: 10px; font-size: 14px;">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="oklch(0.65 0.18 145)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" style="flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg>
+                  <span>${f}</span>
+                </div>`).join('')}
+              </div>
+            </div>
+
+            <!-- Coming Soon -->
+            <div class="settings-card" style="margin-bottom: 16px; border-color: oklch(var(--indigo) / 0.3); background: oklch(var(--indigo) / 0.04);">
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                <div style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: oklch(var(--indigo));">Closed Beta Roadmap</div>
+                <span style="font-size: 11px; padding: 1px 6px; border-radius: 9999px; background: oklch(var(--indigo) / 0.15); color: oklch(var(--indigo));">Coming Soon</span>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 6px;">
+                ${['Custom domains (bring your own)', 'Stripe billing ($9–$25/mo)', 'Link-in-bio pages', 'Team workspaces', 'Email notifications'].map(f => `
+                <div style="display: flex; align-items: center; gap: 10px; font-size: 14px; color: oklch(var(--muted-foreground));">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="oklch(var(--indigo))" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+                  <span>${f}</span>
+                </div>`).join('')}
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <a href="https://github.com/Aventerica89/URLsToGo" target="_blank" rel="noopener" class="btn btn-outline btn-sm" style="text-decoration: none; font-size: 13px;">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65S8.93 17.38 9 18v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>
+                GitHub
+              </a>
+              <a href="mailto:support@jbmdcreations.com" class="btn btn-outline btn-sm" style="text-decoration: none; font-size: 13px;">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+                Support
+              </a>
             </div>
           </div>
         </div>
@@ -7204,7 +7320,7 @@ function getAdminHTML(userEmail, env) {
       document.querySelectorAll('.settings-panel').forEach(el => el.classList.remove('active'));
       const tabBtn = document.querySelector('[data-settings-tab="' + tab + '"]');
       if (tabBtn) tabBtn.classList.add('active');
-      const panelMap = { profile: 'settingsProfile', 'git-sync': 'settingsGitSync', 'api-keys': 'settingsApiKeys', appearance: 'settingsAppearance' };
+      const panelMap = { profile: 'settingsProfile', 'git-sync': 'settingsGitSync', 'api-keys': 'settingsApiKeys', appearance: 'settingsAppearance', about: 'settingsAbout' };
       const panel = document.getElementById(panelMap[tab]);
       if (panel) panel.classList.add('active');
       if (tab === 'api-keys') loadApiKeys();
