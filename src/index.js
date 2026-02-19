@@ -305,6 +305,37 @@ export default {
       return new Response(getAdminHTML(userEmail, env), { headers: { 'Content-Type': 'text/html' } });
     }
 
+    // === WAITLIST API (public — no auth required) ===
+    if (path === 'api/waitlist' && request.method === 'POST') {
+      try {
+        const body = await request.json();
+        const email = (body.email || '').trim().toLowerCase();
+        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          return new Response(JSON.stringify({ error: 'Valid email required' }), {
+            status: 400, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS }
+          });
+        }
+        const existing = await env.DB.prepare('SELECT id FROM waitlist WHERE email = ?').bind(email).first();
+        if (existing) {
+          return new Response(JSON.stringify({ already_joined: true }), {
+            headers: { 'Content-Type': 'application/json', ...CORS_HEADERS }
+          });
+        }
+        const clientIP = request.headers.get('CF-Connecting-IP') || 'unknown';
+        const country = request.headers.get('CF-IPCountry') || null;
+        await env.DB.prepare(
+          'INSERT INTO waitlist (email, ip, country, created_at) VALUES (?, ?, ?, ?)'
+        ).bind(email, clientIP, country, new Date().toISOString()).run();
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { 'Content-Type': 'application/json', ...CORS_HEADERS }
+        });
+      } catch (err) {
+        return new Response(JSON.stringify({ error: 'Server error' }), {
+          status: 500, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS }
+        });
+      }
+    }
+
     // Protected API routes require auth
     if (!userEmail) {
       return new Response(JSON.stringify({ error: 'Unauthorized - Please login' }), {
@@ -3317,6 +3348,71 @@ function getLandingPageHTML() {
       color: var(--text-muted);
       font-size: 13px;
     }
+
+    /* Waitlist form */
+    .waitlist-form {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    @media (max-width: 520px) {
+      .waitlist-form { flex-direction: column; }
+    }
+
+    .waitlist-input {
+      flex: 1;
+      padding: 14px 18px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 10px;
+      color: var(--text-primary);
+      font-size: 15px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.2s;
+      min-width: 0;
+    }
+
+    .waitlist-input::placeholder { color: var(--text-muted); }
+    .waitlist-input:focus { border-color: var(--accent-violet); }
+
+    .waitlist-btn {
+      padding: 14px 24px;
+      background: var(--gradient-primary);
+      color: white;
+      font-size: 15px;
+      font-weight: 600;
+      font-family: inherit;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      white-space: nowrap;
+      box-shadow: 0 4px 20px rgba(99,102,241,0.3);
+      transition: all 0.2s;
+    }
+
+    .waitlist-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+    .waitlist-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+    .waitlist-meta {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .waitlist-meta a { color: var(--accent-violet); text-decoration: none; }
+    .waitlist-meta a:hover { text-decoration: underline; }
+
+    .waitlist-success {
+      display: none;
+      padding: 16px 20px;
+      background: rgba(139,92,246,0.1);
+      border: 1px solid rgba(139,92,246,0.25);
+      border-radius: 10px;
+      color: var(--text-primary);
+      font-size: 15px;
+      margin-bottom: 16px;
+    }
   </style>
 </head>
 <body>
@@ -3353,17 +3449,61 @@ function getLandingPageHTML() {
             Organize with categories and tags, get real-time analytics, and deploy globally on Cloudflare's edge network.
           </p>
           <div class="hero-actions">
-            <a href="/admin" class="btn btn-primary">
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M5 12h14"/>
-                <path d="m12 5 7 7-7 7"/>
-              </svg>
-              Get Started Free
-            </a>
-            <a href="#features" class="btn btn-secondary">
-              Learn More
-            </a>
+            <div id="waitlist-success" class="waitlist-success">
+              You're on the list! We'll reach out with early access soon.
+            </div>
+            <form id="waitlist-form" class="waitlist-form" onsubmit="submitWaitlist(event)">
+              <input
+                id="waitlist-email"
+                class="waitlist-input"
+                type="email"
+                placeholder="your@email.com"
+                required
+                autocomplete="email"
+              >
+              <button type="submit" class="waitlist-btn" id="waitlist-btn">
+                Join Beta
+              </button>
+            </form>
+            <p class="waitlist-meta">
+              Free during early access &mdash; no credit card needed.
+              Already have access? <a href="/admin">Sign in</a>
+            </p>
           </div>
+          <script>
+            async function submitWaitlist(e) {
+              e.preventDefault();
+              const email = document.getElementById('waitlist-email').value.trim();
+              const btn = document.getElementById('waitlist-btn');
+              const form = document.getElementById('waitlist-form');
+              const success = document.getElementById('waitlist-success');
+              btn.disabled = true;
+              btn.textContent = 'Joining...';
+              try {
+                const res = await fetch('/api/waitlist', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ email })
+                });
+                const data = await res.json();
+                if (res.ok || data.already_joined) {
+                  form.style.display = 'none';
+                  success.style.display = 'block';
+                  success.textContent = data.already_joined
+                    ? "You're already on the list! We'll be in touch soon."
+                    : "You're on the list! We'll reach out with early access soon.";
+                } else {
+                  btn.disabled = false;
+                  btn.textContent = 'Join Beta';
+                  alert(data.error || 'Something went wrong. Please try again.');
+                }
+              } catch {
+                btn.disabled = false;
+                btn.textContent = 'Join Beta';
+                alert('Network error. Please try again.');
+              }
+            }
+          </script>
           <div class="hero-stats">
             <div class="stat">
               <div class="stat-value">&lt;50ms</div>

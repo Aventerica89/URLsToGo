@@ -119,6 +119,18 @@ CREATE INDEX IF NOT EXISTS idx_api_keys_prefix ON api_keys(key_prefix);
 CREATE INDEX IF NOT EXISTS idx_user_settings_email ON user_settings(user_email);
 CREATE INDEX IF NOT EXISTS idx_repo_syncs_user ON repo_syncs(user_email);
 
+-- Waitlist table for beta signups
+CREATE TABLE IF NOT EXISTS waitlist (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email TEXT NOT NULL UNIQUE,
+  ip TEXT,
+  country TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_waitlist_email ON waitlist(email);
+CREATE INDEX IF NOT EXISTS idx_waitlist_created ON waitlist(created_at);
+
 -- =============================================================================
 -- NOTE: The following ALTER TABLE columns already exist in production and
 -- were removed from this file because D1 runs the entire file as a single
