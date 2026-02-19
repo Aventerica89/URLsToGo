@@ -3650,9 +3650,9 @@ function getLandingPageHTML() {
               <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
             </svg>
           </div>
-          <h3 class="feature-name">Enterprise Security</h3>
+          <h3 class="feature-name">Google Sign-In</h3>
           <p class="feature-desc">
-            Protected by Cloudflare Access with SSO integration. Your links and data are always secure.
+            Sign in with Google — no password to manage. Your links are private to your account, protected by Cloudflare's edge.
           </p>
         </div>
         <div class="feature-card">
@@ -3737,6 +3737,32 @@ function getLandingPageHTML() {
             Generate QR codes for any link. Export and import all your data as JSON for full portability.
           </p>
         </div>
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m21 21-6-6m6 6v-4.8m0 4.8h-4.8"/>
+              <path d="M3 16.2V21m0 0h4.8M3 21l6-6"/>
+              <path d="M21 7.8V3m0 0h-4.8M21 3l-6 6"/>
+              <path d="M3 7.8V3m0 0h4.8M3 3l6 6"/>
+            </svg>
+          </div>
+          <h3 class="feature-name">Bulk Operations & Search</h3>
+          <p class="feature-desc">
+            Select multiple links to tag, export, or delete in one action. Command palette search (⌘K) finds any link instantly.
+          </p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect width="14" height="20" x="5" y="2" rx="2" ry="2"/>
+              <path d="M12 18h.01"/>
+            </svg>
+          </div>
+          <h3 class="feature-name">Install as App</h3>
+          <p class="feature-desc">
+            Add URLsToGo to your home screen on any device. Full PWA support — works like a native app on iOS and Android.
+          </p>
+        </div>
       </div>
     </div>
   </section>
@@ -3748,7 +3774,7 @@ function getLandingPageHTML() {
         <div class="how-it-works-badge">Simple & Fast</div>
         <h2 class="how-it-works-title">How It Works</h2>
         <p class="how-it-works-subtitle">
-          Get started in seconds. No signup required, just paste and go.
+          Get started in seconds. Sign in with Google and you're ready to go.
         </p>
       </div>
 
