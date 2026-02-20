@@ -139,6 +139,26 @@ const ALLOWED_ORIGINS = [
   'https://www.urlstogo.cloud',
 ];
 
+// Security headers applied to every HTML response
+const HTML_SECURITY_HEADERS = {
+  'X-Frame-Options': 'DENY',
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'Permissions-Policy': 'geolocation=(), microphone=(), camera=()',
+  'Content-Security-Policy': [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data: https:",
+    "connect-src 'self' https://*.clerk.accounts.dev https://api.clerk.dev",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "object-src 'none'",
+  ].join('; '),
+};
+
 // Static CORS headers used on API responses (primary origin)
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': ALLOWED_ORIGINS[0],
@@ -177,6 +197,17 @@ function errorResponse(message, status = 400) {
   });
 }
 
+// HTML response with full security headers applied
+function htmlResponse(html, status = 200) {
+  return new Response(html, {
+    status,
+    headers: {
+      'Content-Type': 'text/html; charset=UTF-8',
+      ...HTML_SECURITY_HEADERS,
+    },
+  });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -192,28 +223,20 @@ export default {
 
     // Public landing page at root
     if (path === '') {
-      return new Response(getLandingPageHTML(), {
-        headers: { 'Content-Type': 'text/html' }
-      });
+      return htmlResponse(getLandingPageHTML());
     }
 
     // Clerk login/signup pages
     if (path === 'login' || path === 'signup') {
-      return new Response(getAuthPageHTML(env, path), {
-        headers: { 'Content-Type': 'text/html' }
-      });
+      return htmlResponse(getAuthPageHTML(env, path));
     }
 
     // Serve design resource pages (no auth required)
     if (path === 'design-system') {
-      return new Response(getDesignSystemHTML(), {
-        headers: { 'Content-Type': 'text/html' }
-      });
+      return htmlResponse(getDesignSystemHTML());
     }
     if (path === 'mobile-mockup') {
-      return new Response(getMobileMockupHTML(), {
-        headers: { 'Content-Type': 'text/html' }
-      });
+      return htmlResponse(getMobileMockupHTML());
     }
 
     // PWA Assets
@@ -250,10 +273,7 @@ export default {
 
         // Check if link has expired
         if (link.expires_at && new Date(link.expires_at) < new Date()) {
-          return new Response(getExpiredHTML(), {
-            status: 410,
-            headers: { 'Content-Type': 'text/html' }
-          });
+          return htmlResponse(getExpiredHTML(), 410);
         }
 
         // Check if link is password protected
@@ -273,18 +293,12 @@ export default {
             const isValid = await verifyPassword(password, link.password_hash);
 
             if (!isValid) {
-              return new Response(getPasswordHTML(path, true), {
-                status: 401,
-                headers: { 'Content-Type': 'text/html' }
-              });
+              return htmlResponse(getPasswordHTML(path, true), 401);
             }
             // Password correct, continue to redirect
           } else {
             // Show password prompt
-            return new Response(getPasswordHTML(path, false), {
-              status: 401,
-              headers: { 'Content-Type': 'text/html' }
-            });
+            return htmlResponse(getPasswordHTML(path, false), 401);
           }
         }
 
@@ -310,14 +324,12 @@ export default {
           status: 302,
           headers: {
             'Location': link.destination,
-            'Cache-Control': 'private, no-cache, no-store, must-revalidate'
+            'Cache-Control': 'private, no-cache, no-store, must-revalidate',
+            'Referrer-Policy': 'no-referrer',
           }
         });
       }
-      return new Response(get404HTML(path), {
-        status: 404,
-        headers: { 'Content-Type': 'text/html' }
-      });
+      return htmlResponse(get404HTML(path), 404);
     }
 
     // Admin page - redirect to login if not authenticated
@@ -325,7 +337,7 @@ export default {
       if (!userEmail) {
         return Response.redirect(new URL('/login', url.origin).toString(), 302);
       }
-      return new Response(getAdminHTML(userEmail, env), { headers: { 'Content-Type': 'text/html' } });
+      return htmlResponse(getAdminHTML(userEmail, env));
     }
 
     // === WAITLIST API (public — no auth required) ===
