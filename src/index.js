@@ -218,8 +218,23 @@ export default {
       return new Response(null, { status: 204, headers: getCorsHeaders(request) });
     }
 
-    // Get user email from Clerk JWT (with Cloudflare Access fallback)
-    const userEmail = await getUserEmailWithFallback(request, env);
+    // Get user email from Clerk JWT (with Cloudflare Access and API key fallback)
+    const authContext = await getUserEmailWithFallback(request, env);
+    const userEmail = authContext?.email || null;
+    // scopes is null for Clerk/CF auth (full access); string[] for API key auth
+    const apiKeyScopes = authContext?.scopes || null;
+
+    // API key scope gate — enforced for all /api/ routes when authenticated via API key
+    if (userEmail && apiKeyScopes !== null && path.startsWith('api/')) {
+      const isWrite = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(request.method);
+      const required = isWrite ? 'write' : 'read';
+      if (!apiKeyScopes.includes(required)) {
+        return jsonResponse(
+          { error: `API key requires '${required}' scope for this operation` },
+          { status: 403 }
+        );
+      }
+    }
 
     // Public landing page at root
     if (path === '') {
@@ -297,8 +312,8 @@ export default {
             }
             // Password correct, continue to redirect
           } else {
-            // Show password prompt
-            return htmlResponse(getPasswordHTML(path, false), 401);
+            // Show password prompt — use 200 to avoid revealing link existence via status code
+            return htmlResponse(getPasswordHTML(path, false), 200);
           }
         }
 
@@ -1417,14 +1432,16 @@ async function getUserEmail(request, env) {
 }
 
 // Legacy support: Also check Cloudflare Access JWT and API keys
+// Returns { email, scopes } where scopes is null for Clerk/CF auth (full access)
+// or string[] for API key auth (enforced at gateway)
 async function getUserEmailWithFallback(request, env) {
   // First try Clerk
   const clerkEmail = await getUserEmail(request, env);
-  if (clerkEmail) return clerkEmail;
+  if (clerkEmail) return { email: clerkEmail, scopes: null };
 
   // Try API key authentication (for programmatic access)
-  const apiKeyEmail = await validateApiKey(request, env);
-  if (apiKeyEmail) return apiKeyEmail;
+  const apiKeyResult = await validateApiKey(request, env);
+  if (apiKeyResult) return { email: apiKeyResult.email, scopes: apiKeyResult.scopes };
 
   // Fallback to Cloudflare Access for backwards compatibility
   const cfJwt = request.headers.get('Cf-Access-Jwt-Assertion');
@@ -1433,7 +1450,7 @@ async function getUserEmailWithFallback(request, env) {
       const parts = cfJwt.split('.');
       if (parts.length === 3) {
         const payload = JSON.parse(base64UrlDecode(parts[1]));
-        return payload.email || null;
+        if (payload.email) return { email: payload.email, scopes: null };
       }
     } catch (e) {
       // Ignore errors
@@ -1448,7 +1465,7 @@ async function getUserEmailWithFallback(request, env) {
       const parts = cfAuthCookie[1].split('.');
       if (parts.length === 3) {
         const payload = JSON.parse(base64UrlDecode(parts[1]));
-        return payload.email || null;
+        if (payload.email) return { email: payload.email, scopes: null };
       }
     } catch (e) {
       // Ignore errors
@@ -1479,7 +1496,7 @@ async function hashApiKey(key) {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// Validate API key from request and return user email
+// Validate API key from request and return { email, scopes } or null
 async function validateApiKey(request, env) {
   const authHeader = request.headers.get('Authorization') || '';
   const apiKeyHeader = request.headers.get('X-API-Key') || '';
@@ -1502,7 +1519,7 @@ async function validateApiKey(request, env) {
     const keyPrefix = apiKey.slice(0, 11); // utg_ + first 7 chars
 
     const result = await env.DB.prepare(`
-      SELECT user_email, expires_at FROM api_keys
+      SELECT user_email, expires_at, scopes FROM api_keys
       WHERE key_hash = ? AND key_prefix = ?
     `).bind(keyHash, keyPrefix).first();
 
@@ -1518,7 +1535,8 @@ async function validateApiKey(request, env) {
       UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE key_hash = ?
     `).bind(keyHash).run();
 
-    return result.user_email;
+    const scopes = (result.scopes || 'read,write').split(',').map(s => s.trim()).filter(Boolean);
+    return { email: result.user_email, scopes };
   } catch (e) {
     console.error('API key validation error:', e.message);
     return null;
