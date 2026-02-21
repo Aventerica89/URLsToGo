@@ -4860,6 +4860,8 @@ function getAdminHTML(userEmail, env) {
     .settings-content { flex: 1; min-width: 0; max-width: 640px; }
     .settings-panel { display: none; }
     .settings-panel.active { display: block; }
+    .help-panel { display: none; }
+    .help-panel.active { display: block; }
     .settings-section { margin-bottom: 32px; }
     .settings-section-title {
       font-size: 18px; font-weight: 600; margin-bottom: 4px;
@@ -5572,6 +5574,19 @@ function getAdminHTML(userEmail, env) {
       </div>
 
       <div class="sidebar-content">
+        <div style="margin-bottom: 8px;">
+          <div class="nav-item" onclick="showHelpView('getting-started')" data-nav="help">
+            <span class="nav-item-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+                <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+              </svg>
+            </span>
+            <span>Getting Started</span>
+          </div>
+        </div>
+        <div style="margin-bottom: 12px; border-top: 1px solid oklch(var(--border));"></div>
+
         <div class="nav-group">
           <div class="nav-item active" onclick="showLinksView(); filterByCategory(null)" data-nav="links">
             <span class="nav-item-icon">
@@ -6126,6 +6141,134 @@ function getAdminHTML(userEmail, env) {
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
                 Support
               </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Help View -->
+  <div class="settings-view" id="helpView">
+    <nav class="settings-nav">
+      <button class="settings-tab active" onclick="switchHelpTab('getting-started')" data-help-tab="getting-started">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        Getting Started
+      </button>
+      <button class="settings-tab" onclick="switchHelpTab('feature-guide')" data-help-tab="feature-guide">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        Feature Guide
+      </button>
+      <button class="settings-tab" onclick="switchHelpTab('connections')" data-help-tab="connections">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        Connections
+      </button>
+    </nav>
+
+    <div class="settings-content">
+      <!-- Getting Started Panel -->
+      <div class="help-panel active" id="helpGettingStarted">
+        <div class="settings-section">
+          <div class="settings-section-title">Getting Started</div>
+          <div class="settings-section-desc">Everything you need to start shortening URLs at the edge.</div>
+          ${[
+            { n: 1, title: 'Sign in with Google', desc: 'Use Google OAuth via Clerk — no password needed. Your account is isolated from all other users.', badge: 'Recommended' },
+            { n: 2, title: 'Create your first link', desc: 'Click the + button (bottom center on mobile, top-right on desktop). Paste a URL, optionally set a custom code.', badge: 'Recommended' },
+            { n: 3, title: 'Copy and share', desc: 'Click any link card to copy the short URL (go.urlstogo.cloud/your-code). All redirects resolve in &lt;50ms globally.', badge: 'Recommended' },
+            { n: 4, title: 'Organize with Categories', desc: 'Create categories from the sidebar to group links by project, client, or topic. Filter with one click.' },
+            { n: 5, title: 'Track performance', desc: 'Open Analytics from the sidebar or Stats tab on mobile. See click timelines, device types, countries, and referrers per link.' },
+            { n: 6, title: 'Automate with API Keys', desc: 'Go to Settings &rarr; API Keys to generate a Bearer token. Use it with PUT /api/preview-links or the full REST API.' },
+          ].map(s => `
+          <div class="settings-card" style="margin-bottom: 12px; display: flex; gap: 16px; align-items: flex-start;">
+            <div style="width: 28px; height: 28px; border-radius: 50%; background: oklch(var(--indigo) / 0.15); color: oklch(var(--indigo)); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; flex-shrink: 0;">${s.n}</div>
+            <div style="flex: 1;">
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                <div style="font-size: 14px; font-weight: 500;">${s.title}</div>
+                ${s.badge ? `<span style="font-size: 11px; padding: 1px 6px; border-radius: 9999px; background: oklch(var(--indigo) / 0.15); color: oklch(var(--indigo));">${s.badge}</span>` : ''}
+              </div>
+              <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.5;">${s.desc}</div>
+            </div>
+          </div>`).join('')}
+        </div>
+      </div>
+
+      <!-- Feature Guide Panel -->
+      <div class="help-panel" id="helpFeatureGuide">
+        <div class="settings-section">
+          <div class="settings-section-title">Feature Guide</div>
+          <div class="settings-section-desc">What URLsToGo can do for you.</div>
+          ${[
+            { icon: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>', title: 'Short Links', detail: 'Auto-generate or set a custom code. Short URLs resolve at Cloudflare\'s 300+ edge locations in &lt;50ms.' },
+            { icon: '<path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/>', title: 'Analytics', detail: 'Click tracking with timeline, device type, browser, country, city, and referrer — per link and globally.' },
+            { icon: '<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>', title: 'Categories & Tags', detail: 'Color-coded categories in the sidebar. Tags for cross-category grouping. Filter links with one click.' },
+            { icon: '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>', title: 'Password Protection', detail: 'Lock any link with a password. Visitors see a prompt before redirecting. No brute-force (rate-limited).' },
+            { icon: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>', title: 'Link Expiration', detail: 'Set an auto-expire date on time-sensitive links. Expired links show a clean expiry page (410 Gone).' },
+            { icon: '<path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>', title: 'API Keys', detail: 'Create Bearer tokens with read or write scopes. Use with CI/CD workflows to auto-update preview links.' },
+            { icon: '<rect width="5" height="5" x="3" y="3" rx="1"/><rect width="5" height="5" x="16" y="3" rx="1"/><rect width="5" height="5" x="3" y="16" rx="1"/><path d="M21 16h-3a2 2 0 0 0-2 2v3"/><path d="M21 21v.01"/>', title: 'QR Codes', detail: 'Every link has a downloadable QR code. Perfect for printed materials, signage, or presentations.' },
+            { icon: '<rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/>', title: 'PWA Support', detail: 'Install URLsToGo on your phone or desktop like a native app. Works offline for browsing saved links.' },
+          ].map(f => `
+          <div class="settings-card" style="margin-bottom: 12px; display: flex; gap: 14px; align-items: flex-start;">
+            <div style="width: 36px; height: 36px; background: oklch(var(--secondary)); border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">${f.icon}</svg>
+            </div>
+            <div>
+              <div style="font-size: 14px; font-weight: 500; margin-bottom: 3px;">${f.title}</div>
+              <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.5;">${f.detail}</div>
+            </div>
+          </div>`).join('')}
+        </div>
+      </div>
+
+      <!-- Connections Guide Panel -->
+      <div class="help-panel" id="helpConnections">
+        <div class="settings-section">
+          <div class="settings-section-title">Connections Guide</div>
+          <div class="settings-section-desc">How the integration layers work together.</div>
+
+          <div class="settings-card" style="margin-bottom: 16px;">
+            <div style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: oklch(var(--muted-foreground)); margin-bottom: 12px;">Web App</div>
+            <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.6; margin-bottom: 12px;">Your browser authenticates via Clerk (Google OAuth). Sessions are JWT-verified on every admin request. The entire UI is a single Cloudflare Worker — no separate backend needed.</div>
+            <div style="display: flex; gap: 8px; font-size: 12px;">
+              <span style="padding: 2px 8px; border-radius: 9999px; background: oklch(var(--indigo) / 0.15); color: oklch(var(--indigo));">Required</span>
+              <span style="color: oklch(var(--muted-foreground));">Google account via Clerk</span>
+            </div>
+          </div>
+
+          <div class="settings-card" style="margin-bottom: 16px;">
+            <div style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: oklch(var(--muted-foreground)); margin-bottom: 12px;">REST API</div>
+            <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.6; margin-bottom: 10px;">All data operations go through a versioned REST API. Endpoints require a Bearer token (utg_...) or a valid Clerk session. Use /api/links, /api/categories, /api/tags, and /api/preview-links.</div>
+            <div style="display: flex; gap: 8px; font-size: 12px;">
+              <span style="padding: 2px 8px; border-radius: 9999px; background: oklch(var(--secondary)); color: oklch(var(--secondary-foreground));">Recommended</span>
+              <span style="color: oklch(var(--muted-foreground));">Create an API key in Settings</span>
+            </div>
+          </div>
+
+          <div class="settings-card" style="margin-bottom: 16px;">
+            <div style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: oklch(var(--muted-foreground)); margin-bottom: 12px;">CI/CD Preview Links</div>
+            <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.6; margin-bottom: 10px;">Copy the workflow template from <code style="font-size: 12px; background: oklch(var(--secondary)); padding: 1px 5px; border-radius: 4px;">templates/update-preview-link.yml</code> to any repo. Add a URLSTOGO_API_KEY secret and every deployment auto-updates your {repo}--preview short link.</div>
+            <div style="display: flex; gap: 8px; font-size: 12px;">
+              <span style="padding: 2px 8px; border-radius: 9999px; background: oklch(var(--secondary)); color: oklch(var(--secondary-foreground));">Optional</span>
+              <span style="color: oklch(var(--muted-foreground));">Supports Vercel, Cloudflare Pages, GitHub Pages</span>
+            </div>
+          </div>
+
+          <div class="settings-card">
+            <div style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: oklch(var(--muted-foreground)); margin-bottom: 12px;">Summary</div>
+            <div style="display: grid; grid-template-columns: auto 1fr 1fr; gap: 8px; font-size: 12px;">
+              <div style="font-weight: 600; color: oklch(var(--muted-foreground));">Layer</div>
+              <div style="font-weight: 600; color: oklch(var(--muted-foreground));">What</div>
+              <div style="font-weight: 600; color: oklch(var(--muted-foreground));">Status</div>
+              ${[
+                ['Web App', 'Google OAuth admin UI', 'Required'],
+                ['API', 'Bearer token REST calls', 'Recommended'],
+                ['CI/CD', 'Preview link auto-update', 'Optional'],
+                ['Database', 'Cloudflare D1 (SQLite edge)', 'Built-in'],
+              ].map(([layer, what, status]) => `
+              <div style="padding: 6px 0; border-top: 1px solid oklch(var(--border));">${layer}</div>
+              <div style="padding: 6px 0; border-top: 1px solid oklch(var(--border)); color: oklch(var(--muted-foreground));">${what}</div>
+              <div style="padding: 6px 0; border-top: 1px solid oklch(var(--border));">
+                <span style="font-size: 11px; padding: 1px 6px; border-radius: 9999px; background: oklch(var(--secondary)); color: oklch(var(--secondary-foreground));">${status}</span>
+              </div>`).join('')}
             </div>
           </div>
         </div>
@@ -7422,6 +7565,7 @@ function getAdminHTML(userEmail, env) {
 
     function showLinksView() {
       document.getElementById('settingsView').classList.remove('active');
+      document.getElementById('helpView').classList.remove('active');
       document.querySelector('.main').style.display = '';
       document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
       const linksNav = document.querySelector('[data-nav="links"]');
@@ -7439,6 +7583,31 @@ function getAdminHTML(userEmail, env) {
       if (tab === 'api-keys') loadApiKeys();
       if (tab === 'git-sync') loadGitSyncSettings();
       if (tab === 'profile') loadProfile();
+    }
+
+    function showHelpView(tab) {
+      document.querySelector('.main').style.display = 'none';
+      document.getElementById('settingsView').classList.remove('active');
+      document.getElementById('helpView').classList.add('active');
+      closeMobileMenu();
+      document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+      const navEl = document.querySelector('[data-nav="help"]');
+      if (navEl) navEl.classList.add('active');
+      switchHelpTab(tab || 'getting-started');
+    }
+
+    function switchHelpTab(tab) {
+      document.querySelectorAll('[data-help-tab]').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.help-panel').forEach(el => el.classList.remove('active'));
+      const tabBtn = document.querySelector('[data-help-tab="' + tab + '"]');
+      if (tabBtn) tabBtn.classList.add('active');
+      const panelMap = {
+        'getting-started': 'helpGettingStarted',
+        'feature-guide': 'helpFeatureGuide',
+        'connections': 'helpConnections'
+      };
+      const panel = document.getElementById(panelMap[tab]);
+      if (panel) panel.classList.add('active');
     }
 
     // --- Profile ---
@@ -8351,9 +8520,11 @@ function getAdminHTML(userEmail, env) {
       const titleEl = document.querySelector('.mobile-header-title');
       if (titleEl) titleEl.textContent = titles[tab] || 'Links';
 
-      // Show settings view or links view
+      // Show appropriate view
       if (tab === 'settings') {
         showSettingsView('profile');
+      } else if (tab === 'help') {
+        showHelpView('getting-started');
       } else {
         showLinksView();
       }
