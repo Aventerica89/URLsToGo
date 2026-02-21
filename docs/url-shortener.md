@@ -23,6 +23,7 @@ A fast, multi-user URL shortener running on Cloudflare Workers with D1 database.
 | **Categories** | Color-coded folders (violet, pink, cyan, orange, green, gray) |
 | **Tags** | Flexible many-to-many tagging |
 | **Search** | Instant search with Cmd+K shortcut |
+| **Favorites** | Star/unstar links for quick access |
 | **Sorting** | By newest, oldest, alphabetical, clicks |
 
 ### Analytics
@@ -83,11 +84,23 @@ Tags provide flexible cross-cutting organization:
 - Searches code, destination URL, and tags
 - Results update as you type
 
+### Help Hub
+
+Access onboarding and documentation at `#help` or the Help nav item:
+
+- **Getting Started** — numbered steps for first-time setup
+- **Feature Guide** — cards for each major feature
+- **Connections Guide** — integration tier table (Required / Recommended / Optional)
+
+Deep links: `#help/feature-guide`, `#help/connections`
+
 ---
 
 ## API Reference
 
-All API endpoints require authentication via Cloudflare Access (except redirects).
+All API endpoints require authentication via Clerk session or API key (except redirects).
+
+API key auth: pass `Authorization: Bearer utg_xxxxx` header. Keys support `read` and `write` scopes.
 
 ### Links
 
@@ -327,6 +340,8 @@ CREATE TABLE links (
   category_id INTEGER,
   password_hash TEXT,
   expires_at DATETIME,
+  is_favorite INTEGER DEFAULT 0,
+  is_preview_link INTEGER DEFAULT 0,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

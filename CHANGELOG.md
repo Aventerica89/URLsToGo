@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased - February 19-21, 2026
+
+### New Features
+
+- Added favorites (star/unstar) for individual links
+- Added help hub with Getting Started, Feature Guide, and Connections Guide tabs
+- Added URL hash deep linking for navigation state (`#settings/api-keys`, `#help/connections`, etc.)
+- Added copy-for-Claude prompt cards to Git Sync and API Keys settings panels
+- Added repo search and pagination in Git Sync panel for large GitHub accounts
+
+### Improvements
+
+- Added plain-English instructions to API Keys and Git Sync settings panels
+- Connections Guide includes integration tier summary table (Required/Recommended/Optional)
+
+### Bug Fixes
+
+- Fixed help view rendering outside app-layout flex container (was breaking layout)
+- Fixed CSP to allow Cloudflare beacon script and Clerk Web Workers
+
+### Security
+
+- CORS origin-locked with dynamic preflight via `getCorsHeaders(request)` helper
+- SSRF blocklist covers RFC 1918, IPv6 loopback/link-local, and cloud metadata (169.254.169.254)
+- HTTP security headers applied universally via `htmlResponse()` helper on all HTML routes
+- API key scope enforcement (`read`/`write`) enforced at API gateway level
+- Rate limits: password brute-force (10/5min), waitlist (5/hr), API key name max 100 chars
+- Referrer-Policy: no-referrer on all 302 redirects
+- Enumeration fix: password-protected links return 200 (not 401)
+
+---
+
 ## Unreleased - February 9, 2026
 
 ### New Features

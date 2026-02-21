@@ -30,7 +30,7 @@ This project consists of three integrated components:
 ┌─────────────────────────────────────────────────────────┐
 │                    Cloudflare Edge                       │
 ├─────────────────────────────────────────────────────────┤
-│  Workers (Serverless)  │  D1 (SQLite)  │  Access (Auth) │
+│  Workers (Serverless)  │  D1 (SQLite)  │  Clerk (Auth)  │
 ├─────────────────────────────────────────────────────────┤
 │                   GitHub Actions CI/CD                   │
 └─────────────────────────────────────────────────────────┘
@@ -38,7 +38,7 @@ This project consists of three integrated components:
 
 - **Cloudflare Workers** - Serverless compute at the edge (<50ms latency globally)
 - **Cloudflare D1** - SQLite database with automatic replication
-- **Cloudflare Access** - Zero-trust authentication (Google, GitHub, Email OTP)
+- **Clerk** - Authentication with Google OAuth and custom-branded login UI
 - **GitHub Actions** - Automatic deployment on every push to main
 
 ---

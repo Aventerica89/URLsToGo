@@ -98,7 +98,7 @@ Replace `NEW_EMAIL` with the user's Clerk/Google email.
 The UI uses Shadcn-style CSS variables. To test UI changes:
 1. Edit `design-system.html`
 2. Open in browser to preview
-3. Copy styles to `worker-multiuser.js` when ready
+3. Copy styles to `src/index.js` when ready
 4. Push to main to deploy
 
 ### Database
@@ -112,6 +112,80 @@ The UI uses Shadcn-style CSS variables. To test UI changes:
 - Merging to `main` = automatic deploy
 - Schema changes go in `migrations.sql`
 - Never ask user to run wrangler commands or edit Cloudflare dashboard
+
+---
+
+## HELP HUB (February 2026)
+
+### Overview
+
+Three-tab help/onboarding section added to the admin dashboard: Getting Started, Feature Guide, Connections Guide.
+
+### Navigation
+
+- **URL hash:** `#help` opens the help view; `#help/feature-guide`, `#help/connections` deep-link to specific tabs
+- **Nav:** Help link added to sidebar and mobile bottom nav
+- **Behavior:** `history.replaceState` used (not `location.hash =`) to avoid triggering `hashchange` feedback loops
+
+### Key Code Locations
+
+| Location | Purpose |
+|----------|---------|
+| `src/index.js` | `showHelpView()` function — renders the three-tab help panel |
+| `src/index.js` | `handleHashChange()` — routes `#help/*` and `#settings/*` hash patterns |
+| `src/index.js` | `initDeepLinks()` — called on page load to handle initial hash state |
+
+### Layout Fix
+
+Help view is a sibling to `<main class="main">` inside `.app-layout` (flex container). Needs same flex props as settings view: `flex: 1; margin-left: 256px`. Hiding `.main` when help is open (same pattern as settings).
+
+---
+
+## URL HASH DEEP LINKING (February 2026)
+
+### Pattern
+
+SPA navigation state stored in URL hash. Pattern: `#section/subsection`
+
+Examples:
+- `#settings/api-keys` — opens settings, API Keys tab active
+- `#settings/git-sync` — opens settings, Git Sync tab active
+- `#help/feature-guide` — opens help, Feature Guide tab active
+- `#help/connections` — opens help, Connections Guide tab active
+
+### Implementation Notes
+
+- Use `history.replaceState(null, '', '#hash')` NOT `location.hash = '#hash'`
+- `location.hash =` triggers `hashchange` event → infinite loop if handler re-navigates
+- `replaceState` updates URL bar silently without firing events
+- `hashchange` listener handles browser back/forward navigation
+
+---
+
+## FAVORITES (February 2026)
+
+### Overview
+
+Users can star/unstar individual links. Favorites persist in D1.
+
+### Database
+
+`is_favorite` column (INTEGER DEFAULT 0) on `links` table — added in `migrations.sql`.
+
+### API
+
+```
+POST /api/links/:code/favorite    { favorite: true|false }
+GET  /api/links?favorite=true     # filter to favorites only
+```
+
+### Key Code Locations
+
+| Location | Purpose |
+|----------|---------|
+| `migrations.sql` | `ALTER TABLE links ADD COLUMN is_favorite INTEGER DEFAULT 0` |
+| `src/index.js` | Favorite toggle endpoint, links query filter |
+| `src/index.js` | Star icon render in links table row |
 
 ---
 
