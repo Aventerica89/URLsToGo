@@ -6189,7 +6189,6 @@ function getAdminHTML(userEmail, env) {
         </div>
       </div>
     </div>
-  </div>
 
   <!-- Help View -->
   <div class="settings-view" id="helpView">
@@ -6317,6 +6316,7 @@ function getAdminHTML(userEmail, env) {
         </div>
       </div>
     </div>
+  </div>
   </div>
 
   <!-- Dev Tools FAB -->
