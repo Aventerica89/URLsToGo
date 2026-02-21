@@ -5989,9 +5989,53 @@ function getAdminHTML(userEmail, env) {
         <div class="settings-panel" id="settingsGitSync">
           <div class="settings-section">
             <div class="settings-section-title">Git Sync</div>
-            <div class="settings-section-desc">Automatically update preview links when you push to GitHub.</div>
+            <div class="settings-section-desc">Automatically update a preview short link every time you push code to GitHub.</div>
             <div id="gitSyncContent">
               <div style="text-align: center; padding: 24px; color: oklch(var(--muted-foreground));">Loading...</div>
+            </div>
+          </div>
+
+          <div class="settings-section" style="margin-top: 8px;">
+            <div class="settings-section-title" style="font-size: 15px;">How does this work?</div>
+            <div class="settings-section-desc">Once connected, URLsToGo adds a workflow file to your GitHub repo. Every time you push code, that workflow runs and updates a short link to point at your latest deployment. No more manually updating links.</div>
+
+            <div class="settings-card" style="margin-bottom: 12px;">
+              <div style="font-weight: 500; margin-bottom: 10px;">Setup — 3 steps, one time per repo</div>
+              <div style="display: flex; flex-direction: column; gap: 12px;">
+                ${[
+                  { n: 1, t: 'Connect GitHub above', d: 'Click "Create token on GitHub", copy the token it generates, paste it into the box, and hit Connect. You only do this once.' },
+                  { n: 2, t: 'Pick a repo', d: 'Your GitHub repos will appear in a list. Find the one you want (e.g. my-app) and click Deploy.' },
+                  { n: 3, t: "That's it", d: 'URLsToGo drops a workflow file in your repo and saves your API key as a GitHub secret. From now on, every push auto-updates go.urlstogo.cloud/my-app--preview.' },
+                ].map(s => `
+                <div style="display: flex; gap: 12px; align-items: flex-start;">
+                  <div style="width: 24px; height: 24px; border-radius: 50%; background: oklch(var(--indigo) / 0.15); color: oklch(var(--indigo)); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; flex-shrink: 0;">${s.n}</div>
+                  <div>
+                    <div style="font-size: 13px; font-weight: 500; margin-bottom: 2px;">${s.t}</div>
+                    <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.5;">${s.d}</div>
+                  </div>
+                </div>`).join('')}
+              </div>
+            </div>
+
+            <div class="settings-card" style="margin-bottom: 12px;">
+              <div style="font-weight: 500; margin-bottom: 6px;">What is a GitHub token?</div>
+              <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.6;">A GitHub Personal Access Token is like a password that lets URLsToGo talk to GitHub on your behalf — specifically to add the workflow file and save your API key as a secret. It needs two permissions: <strong style="color: oklch(var(--foreground));">repo</strong> (to write files) and <strong style="color: oklch(var(--foreground));">workflow</strong> (to add workflow files). The "Create token on GitHub" link above pre-selects both.</div>
+            </div>
+
+            <div class="settings-card">
+              <div style="font-weight: 500; margin-bottom: 6px;">Which platforms does it support?</div>
+              <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.6; margin-bottom: 10px;">The workflow auto-detects your platform by looking at your repo's config files:</div>
+              <div style="display: flex; flex-direction: column; gap: 6px; font-size: 13px;">
+                ${[
+                  ['Vercel', 'vercel.json or .vercel/project.json'],
+                  ['Cloudflare Pages', 'wrangler.toml (Pages only — not Workers)'],
+                  ['GitHub Pages', '.github/workflows/pages.yml'],
+                ].map(([p, f]) => `
+                <div style="display: flex; gap: 8px;">
+                  <strong style="color: oklch(var(--foreground)); min-width: 140px;">${p}</strong>
+                  <span style="color: oklch(var(--muted-foreground));">${f}</span>
+                </div>`).join('')}
+              </div>
             </div>
           </div>
         </div>
@@ -6028,37 +6072,34 @@ function getAdminHTML(userEmail, env) {
 
             <!-- Usage Instructions -->
             <div class="settings-section" style="margin-top: 32px;">
-              <div class="settings-section-title" style="font-size: 15px;">How to use API Keys</div>
+              <div class="settings-section-title" style="font-size: 15px;">What is an API key?</div>
+              <div class="settings-section-desc">An API key lets a script or GitHub Action do things in URLsToGo on your behalf — like creating links or updating a preview link — without you having to be logged in. Think of it like a spare key you hand to a robot.</div>
 
               <div class="settings-card" style="margin-bottom: 12px;">
-                <div style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: oklch(var(--muted-foreground)); margin-bottom: 10px;">Authentication</div>
-                <div style="font-size: 13px; color: oklch(var(--muted-foreground)); margin-bottom: 10px;">Pass your key as a Bearer token on any <code style="font-size: 12px; background: oklch(var(--secondary)); padding: 1px 5px; border-radius: 4px;">/api/</code> request:</div>
-                <code style="display: block; padding: 12px; background: oklch(var(--background)); border-radius: var(--radius); font-size: 12px; line-height: 1.6; word-break: break-all;">Authorization: Bearer utg_your_key_here</code>
+                <div style="font-weight: 500; margin-bottom: 6px;">Read vs. Write — which do I pick?</div>
+                <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.6; margin-bottom: 12px;">When you create a key you choose what it's allowed to do:</div>
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                  <div style="display: flex; gap: 12px; align-items: flex-start;">
+                    <div style="width: 44px; text-align: center; padding: 3px 0; border-radius: 6px; background: oklch(var(--secondary)); font-size: 12px; font-weight: 600; flex-shrink: 0;">Read</div>
+                    <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.5;">Can only <strong style="color: oklch(var(--foreground));">look</strong> at your links — good for dashboards or read-only scripts that need to fetch your link list.</div>
+                  </div>
+                  <div style="display: flex; gap: 12px; align-items: flex-start;">
+                    <div style="width: 44px; text-align: center; padding: 3px 0; border-radius: 6px; background: oklch(var(--indigo) / 0.15); color: oklch(var(--indigo)); font-size: 12px; font-weight: 600; flex-shrink: 0;">Write</div>
+                    <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.5;">Can <strong style="color: oklch(var(--foreground));">create and update</strong> links — use this for GitHub Actions that auto-update a preview link on every deployment.</div>
+                  </div>
+                </div>
               </div>
 
               <div class="settings-card" style="margin-bottom: 12px;">
-                <div style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: oklch(var(--muted-foreground)); margin-bottom: 10px;">Preview Links (CI/CD)</div>
-                <div style="font-size: 13px; color: oklch(var(--muted-foreground)); margin-bottom: 10px;">Auto-update a short link after each deployment. Code must end with <code style="font-size: 12px; background: oklch(var(--secondary)); padding: 1px 5px; border-radius: 4px;">--preview</code>:</div>
-                <code style="display: block; padding: 12px; background: oklch(var(--background)); border-radius: var(--radius); font-size: 12px; line-height: 1.8; word-break: break-all;">curl -X PUT https://go.urlstogo.cloud/api/preview-links/my-app--preview \\<br>&nbsp;&nbsp;-H "Authorization: Bearer utg_..." \\<br>&nbsp;&nbsp;-H "Content-Type: application/json" \\<br>&nbsp;&nbsp;-d '{"destination":"https://my-app.vercel.app"}'</code>
-              </div>
-
-              <div class="settings-card" style="margin-bottom: 12px;">
-                <div style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: oklch(var(--muted-foreground)); margin-bottom: 10px;">List &amp; Create Links</div>
-                <code style="display: block; padding: 12px; background: oklch(var(--background)); border-radius: var(--radius); font-size: 12px; line-height: 1.8; word-break: break-all;"># List your links<br>GET /api/links<br><br># Create a link<br>POST /api/links<br>{"code":"my-link","destination":"https://example.com"}</code>
+                <div style="font-weight: 500; margin-bottom: 6px;">Most common use: auto-updating a preview link</div>
+                <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.6; margin-bottom: 10px;">Every time your app deploys to Vercel or Cloudflare, a GitHub Action can call URLsToGo to update a short link like <code style="font-size: 12px; background: oklch(var(--secondary)); padding: 1px 5px; border-radius: 4px;">go.urlstogo.cloud/my-app--preview</code> to point at the new deployment. The link code must end in <code style="font-size: 12px; background: oklch(var(--secondary)); padding: 1px 5px; border-radius: 4px;">--preview</code>.</div>
+                <div style="font-size: 12px; color: oklch(var(--muted-foreground)); margin-bottom: 6px;">The GitHub Action sends this (your key goes in the Authorization line):</div>
+                <code style="display: block; padding: 12px; background: oklch(var(--background)); border-radius: var(--radius); font-size: 12px; line-height: 1.8; word-break: break-all;">PUT /api/preview-links/my-app--preview<br>Authorization: Bearer utg_...<br>{"destination": "https://my-app.vercel.app"}</code>
               </div>
 
               <div class="settings-card">
-                <div style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: oklch(var(--muted-foreground)); margin-bottom: 10px;">Scopes</div>
-                <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
-                  <div style="display: flex; gap: 10px; align-items: flex-start;">
-                    <code style="font-size: 11px; padding: 2px 7px; border-radius: 4px; background: oklch(var(--indigo) / 0.15); color: oklch(var(--indigo)); flex-shrink: 0; margin-top: 1px;">read</code>
-                    <span style="color: oklch(var(--muted-foreground));">GET requests — list links, categories, tags, analytics</span>
-                  </div>
-                  <div style="display: flex; gap: 10px; align-items: flex-start;">
-                    <code style="font-size: 11px; padding: 2px 7px; border-radius: 4px; background: oklch(var(--secondary)); color: oklch(var(--secondary-foreground)); flex-shrink: 0; margin-top: 1px;">write</code>
-                    <span style="color: oklch(var(--muted-foreground));">POST, PUT, DELETE — create, update, delete links and preview links</span>
-                  </div>
-                </div>
+                <div style="font-weight: 500; margin-bottom: 6px;">Need the Git Sync workflow file?</div>
+                <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.6;">Go to <strong style="color: oklch(var(--foreground));">Settings &rarr; Git Sync</strong> to connect GitHub and automatically deploy the workflow file and this API key to any of your repos in one click.</div>
               </div>
             </div>
           </div>
