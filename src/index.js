@@ -1329,7 +1329,13 @@ export default {
           headers: { ...ghHeaders, 'Content-Type': 'application/json' },
           body: JSON.stringify(fileBody)
         });
-        if (!wfRes.ok) throw new Error(`Failed to deploy workflow: ${wfRes.status}`);
+        if (!wfRes.ok) {
+          const wfStatus = wfRes.status;
+          if (wfStatus === 404) {
+            throw new Error('GitHub token is missing the "workflow" scope. Go to github.com/settings/tokens, delete the old token, and reconnect with repo + workflow scopes.');
+          }
+          throw new Error(`Failed to deploy workflow: ${wfStatus}`);
+        }
 
         // Update sync status
         await env.DB.prepare(`
@@ -6017,6 +6023,42 @@ function getAdminHTML(userEmail, env) {
 
             <div id="settingsApiKeysList">
               <div style="text-align: center; padding: 24px; color: oklch(var(--muted-foreground));">Loading...</div>
+            </div>
+
+            <!-- Usage Instructions -->
+            <div class="settings-section" style="margin-top: 32px;">
+              <div class="settings-section-title" style="font-size: 15px;">How to use API Keys</div>
+
+              <div class="settings-card" style="margin-bottom: 12px;">
+                <div style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: oklch(var(--muted-foreground)); margin-bottom: 10px;">Authentication</div>
+                <div style="font-size: 13px; color: oklch(var(--muted-foreground)); margin-bottom: 10px;">Pass your key as a Bearer token on any <code style="font-size: 12px; background: oklch(var(--secondary)); padding: 1px 5px; border-radius: 4px;">/api/</code> request:</div>
+                <code style="display: block; padding: 12px; background: oklch(var(--background)); border-radius: var(--radius); font-size: 12px; line-height: 1.6; word-break: break-all;">Authorization: Bearer utg_your_key_here</code>
+              </div>
+
+              <div class="settings-card" style="margin-bottom: 12px;">
+                <div style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: oklch(var(--muted-foreground)); margin-bottom: 10px;">Preview Links (CI/CD)</div>
+                <div style="font-size: 13px; color: oklch(var(--muted-foreground)); margin-bottom: 10px;">Auto-update a short link after each deployment. Code must end with <code style="font-size: 12px; background: oklch(var(--secondary)); padding: 1px 5px; border-radius: 4px;">--preview</code>:</div>
+                <code style="display: block; padding: 12px; background: oklch(var(--background)); border-radius: var(--radius); font-size: 12px; line-height: 1.8; word-break: break-all;">curl -X PUT https://go.urlstogo.cloud/api/preview-links/my-app--preview \\<br>&nbsp;&nbsp;-H "Authorization: Bearer utg_..." \\<br>&nbsp;&nbsp;-H "Content-Type: application/json" \\<br>&nbsp;&nbsp;-d '{"destination":"https://my-app.vercel.app"}'</code>
+              </div>
+
+              <div class="settings-card" style="margin-bottom: 12px;">
+                <div style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: oklch(var(--muted-foreground)); margin-bottom: 10px;">List &amp; Create Links</div>
+                <code style="display: block; padding: 12px; background: oklch(var(--background)); border-radius: var(--radius); font-size: 12px; line-height: 1.8; word-break: break-all;"># List your links<br>GET /api/links<br><br># Create a link<br>POST /api/links<br>{"code":"my-link","destination":"https://example.com"}</code>
+              </div>
+
+              <div class="settings-card">
+                <div style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: oklch(var(--muted-foreground)); margin-bottom: 10px;">Scopes</div>
+                <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
+                  <div style="display: flex; gap: 10px; align-items: flex-start;">
+                    <code style="font-size: 11px; padding: 2px 7px; border-radius: 4px; background: oklch(var(--indigo) / 0.15); color: oklch(var(--indigo)); flex-shrink: 0; margin-top: 1px;">read</code>
+                    <span style="color: oklch(var(--muted-foreground));">GET requests — list links, categories, tags, analytics</span>
+                  </div>
+                  <div style="display: flex; gap: 10px; align-items: flex-start;">
+                    <code style="font-size: 11px; padding: 2px 7px; border-radius: 4px; background: oklch(var(--secondary)); color: oklch(var(--secondary-foreground)); flex-shrink: 0; margin-top: 1px;">write</code>
+                    <span style="color: oklch(var(--muted-foreground));">POST, PUT, DELETE — create, update, delete links and preview links</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
