@@ -6326,7 +6326,7 @@ Create .github/workflows/update-preview-link.yml that:
             { n: 3, title: 'Copy and share', desc: 'Click any link card to copy the short URL (go.urlstogo.cloud/your-code). All redirects resolve in &lt;50ms globally.', badge: 'Recommended' },
             { n: 4, title: 'Organize with Categories', desc: 'Create categories from the sidebar to group links by project, client, or topic. Filter with one click.' },
             { n: 5, title: 'Track performance', desc: 'Open Analytics from the sidebar or Stats tab on mobile. See click timelines, device types, countries, and referrers per link.' },
-            { n: 6, title: 'Automate with API Keys', desc: 'Go to Settings &rarr; API Keys to generate a Bearer token. Use it with PUT /api/preview-links or the full REST API.' },
+            { n: 6, title: 'Automate with API Keys', desc: 'Go to <a href="/admin#settings/api-keys" style="color:oklch(var(--indigo));text-decoration:underline;">Settings &rarr; API Keys</a> to generate a Bearer token. Use it with PUT /api/preview-links or the full REST API.' },
           ].map(s => `
           <div class="settings-card" style="margin-bottom: 12px; display: flex; gap: 16px; align-items: flex-start;">
             <div style="width: 28px; height: 28px; border-radius: 50%; background: oklch(var(--indigo) / 0.15); color: oklch(var(--indigo)); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; flex-shrink: 0;">${s.n}</div>
@@ -6388,7 +6388,7 @@ Create .github/workflows/update-preview-link.yml that:
             <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.6; margin-bottom: 10px;">All data operations go through a versioned REST API. Endpoints require a Bearer token (utg_...) or a valid Clerk session. Use /api/links, /api/categories, /api/tags, and /api/preview-links.</div>
             <div style="display: flex; gap: 8px; font-size: 12px;">
               <span style="padding: 2px 8px; border-radius: 9999px; background: oklch(var(--secondary)); color: oklch(var(--secondary-foreground));">Recommended</span>
-              <span style="color: oklch(var(--muted-foreground));">Create an API key in Settings</span>
+              <a href="/admin#settings/api-keys" style="color: oklch(var(--indigo)); text-decoration: underline;">Create an API key in Settings</a>
             </div>
           </div>
 
@@ -6397,7 +6397,7 @@ Create .github/workflows/update-preview-link.yml that:
             <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.6; margin-bottom: 10px;">Copy the workflow template from <code style="font-size: 12px; background: oklch(var(--secondary)); padding: 1px 5px; border-radius: 4px;">templates/update-preview-link.yml</code> to any repo. Add a URLSTOGO_API_KEY secret and every deployment auto-updates your {repo}--preview short link.</div>
             <div style="display: flex; gap: 8px; font-size: 12px;">
               <span style="padding: 2px 8px; border-radius: 9999px; background: oklch(var(--secondary)); color: oklch(var(--secondary-foreground));">Optional</span>
-              <span style="color: oklch(var(--muted-foreground));">Supports Vercel, Cloudflare Pages, GitHub Pages</span>
+              <a href="/admin#settings/git-sync" style="color: oklch(var(--indigo)); text-decoration: underline;">Set up in Git Sync</a>
             </div>
           </div>
 
@@ -6757,6 +6757,12 @@ Create .github/workflows/update-preview-link.yml that:
     const perPage = 10;
     let currentCategory = null;
 
+    // Git Sync repo list state
+    let allRepos = [];
+    let repoPage = 1;
+    let repoSearch = '';
+    const REPOS_PER_PAGE = 10;
+
     // Global Clerk instance for session management
     let clerkInstance = null;
 
@@ -6803,7 +6809,26 @@ Create .github/workflows/update-preview-link.yml that:
         await fetch('/api/init-categories', { method: 'POST' });
         await loadCategories();
       }
+      // Deep link routing via URL hash
+      const hash = window.location.hash.slice(1);
+      if (hash.startsWith('settings/')) {
+        showSettingsView(hash.slice('settings/'.length) || 'profile');
+      } else if (hash.startsWith('help/')) {
+        showHelpView(hash.slice('help/'.length) || 'getting-started');
+      }
     }
+
+    // Handle hash-based navigation from <a href="/admin#..."> links
+    window.addEventListener('hashchange', () => {
+      const hash = window.location.hash.slice(1);
+      if (hash.startsWith('settings/')) {
+        showSettingsView(hash.slice('settings/'.length) || 'profile');
+      } else if (hash.startsWith('help/')) {
+        showHelpView(hash.slice('help/'.length) || 'getting-started');
+      } else if (!hash) {
+        showLinksView();
+      }
+    });
 
     // Mobile menu functions
     // Dev Tools FAB
@@ -7705,11 +7730,13 @@ Create .github/workflows/update-preview-link.yml that:
     function showSettingsView(tab) {
       document.querySelector('.main').style.display = 'none';
       document.getElementById('settingsView').classList.add('active');
+      document.getElementById('helpView').classList.remove('active');
       closeMobileMenu();
       document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
       const navTarget = tab === 'profile' ? 'settings' : tab;
       const navEl = document.querySelector('[data-nav="' + navTarget + '"]');
       if (navEl) navEl.classList.add('active');
+      history.replaceState(null, '', '/admin#settings/' + tab);
       switchSettingsTab(tab);
     }
 
@@ -7720,6 +7747,7 @@ Create .github/workflows/update-preview-link.yml that:
       document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
       const linksNav = document.querySelector('[data-nav="links"]');
       if (linksNav) linksNav.classList.add('active');
+      history.replaceState(null, '', '/admin');
     }
 
     function switchSettingsTab(tab) {
@@ -7743,6 +7771,7 @@ Create .github/workflows/update-preview-link.yml that:
       document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
       const navEl = document.querySelector('[data-nav="help"]');
       if (navEl) navEl.classList.add('active');
+      history.replaceState(null, '', '/admin#help/' + (tab || 'getting-started'));
       switchHelpTab(tab || 'getting-started');
     }
 
@@ -7870,8 +7899,23 @@ Create .github/workflows/update-preview-link.yml that:
       card.className = 'settings-card';
       card.style.padding = '0';
       const header = document.createElement('div');
-      header.style.cssText = 'padding:12px 16px;border-bottom:1px solid oklch(var(--border));font-weight:500;font-size:14px';
-      header.textContent = 'Your Repositories';
+      header.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid oklch(var(--border));';
+      const headerTitle = document.createElement('span');
+      headerTitle.style.cssText = 'font-weight:500;font-size:14px;flex:1';
+      headerTitle.textContent = 'Your Repositories';
+      header.appendChild(headerTitle);
+      const searchInput = document.createElement('input');
+      searchInput.type = 'text';
+      searchInput.className = 'input';
+      searchInput.placeholder = 'Search...';
+      searchInput.id = 'repoSearchInput';
+      searchInput.style.cssText = 'width:150px;height:28px;font-size:12px;padding:3px 10px;';
+      searchInput.oninput = function() {
+        repoSearch = this.value.toLowerCase().trim();
+        repoPage = 1;
+        renderRepoList();
+      };
+      header.appendChild(searchInput);
       card.appendChild(header);
       const list = document.createElement('div');
       list.id = 'repoList';
@@ -7926,71 +7970,158 @@ Create .github/workflows/update-preview-link.yml that:
           container.appendChild(empty);
           return;
         }
-        container.textContent = '';
-        data.repos.forEach(repo => {
-          const sync = repo.sync;
-          const isActive = sync && sync.is_active;
-          const isDeployed = sync && sync.workflow_deployed && sync.secret_deployed;
-
-          const card = document.createElement('div');
-          card.className = 'repo-card';
-
-          const info = document.createElement('div');
-          info.className = 'repo-card-info';
-          const nameEl = document.createElement('div');
-          nameEl.className = 'repo-card-name';
-          nameEl.textContent = repo.name;
-          if (repo.private) {
-            const priv = document.createElement('span');
-            priv.style.cssText = 'font-size:11px;color:oklch(var(--muted-foreground));margin-left:6px';
-            priv.textContent = 'private';
-            nameEl.appendChild(priv);
-          }
-          info.appendChild(nameEl);
-          if (repo.description) {
-            const descEl = document.createElement('div');
-            descEl.className = 'repo-card-desc';
-            descEl.textContent = repo.description;
-            info.appendChild(descEl);
-          }
-          card.appendChild(info);
-
-          const actions = document.createElement('div');
-          actions.className = 'repo-card-actions';
-
-          if (isActive) {
-            const badge = document.createElement('span');
-            badge.className = 'status-badge';
-            if (isDeployed) { badge.classList.add('deployed'); badge.textContent = 'Deployed'; }
-            else if (sync.last_error) { badge.classList.add('error'); badge.textContent = 'Error'; badge.title = sync.last_error; }
-            else { badge.classList.add('pending'); badge.textContent = 'Pending'; }
-            actions.appendChild(badge);
-
-            if (!isDeployed) {
-              const deployBtn = document.createElement('button');
-              deployBtn.className = 'btn btn-outline btn-sm';
-              deployBtn.textContent = 'Deploy';
-              deployBtn.onclick = () => deployToRepo(sync.id);
-              actions.appendChild(deployBtn);
-            }
-          }
-
-          const toggle = document.createElement('label');
-          toggle.className = 'switch';
-          const checkbox = document.createElement('input');
-          checkbox.type = 'checkbox';
-          checkbox.checked = !!isActive;
-          checkbox.onchange = function() { toggleRepoSync(repo.full_name, repo.name, repo.owner, sync ? sync.id : null, this.checked); };
-          toggle.appendChild(checkbox);
-          const slider = document.createElement('span');
-          slider.className = 'switch-slider';
-          toggle.appendChild(slider);
-          actions.appendChild(toggle);
-
-          card.appendChild(actions);
-          container.appendChild(card);
-        });
+        allRepos = data.repos;
+        repoPage = 1;
+        repoSearch = '';
+        const searchEl = document.getElementById('repoSearchInput');
+        if (searchEl) searchEl.value = '';
+        renderRepoList();
       } catch (e) { container.textContent = 'Error loading repos'; }
+    }
+
+    function getRepoFavorites() {
+      try { return new Set(JSON.parse(localStorage.getItem('gitSyncFavorites') || '[]')); }
+      catch(e) { return new Set(); }
+    }
+
+    function toggleRepoFavorite(fullName) {
+      const favs = getRepoFavorites();
+      if (favs.has(fullName)) favs.delete(fullName); else favs.add(fullName);
+      localStorage.setItem('gitSyncFavorites', JSON.stringify([...favs]));
+    }
+
+    function renderRepoList() {
+      const container = document.getElementById('repoList');
+      if (!container) return;
+      const favs = getRepoFavorites();
+      const filtered = allRepos.filter(r =>
+        !repoSearch ||
+        r.name.toLowerCase().includes(repoSearch) ||
+        (r.description || '').toLowerCase().includes(repoSearch)
+      );
+      const favorites = filtered.filter(r => favs.has(r.full_name));
+      const rest = filtered.filter(r => !favs.has(r.full_name));
+      const sorted = [...favorites, ...rest];
+      const total = sorted.length;
+      const totalPages = Math.max(1, Math.ceil(total / REPOS_PER_PAGE));
+      if (repoPage > totalPages) repoPage = totalPages;
+      const start = (repoPage - 1) * REPOS_PER_PAGE;
+      const page = sorted.slice(start, start + REPOS_PER_PAGE);
+      container.textContent = '';
+      if (total === 0) {
+        const empty = document.createElement('div');
+        empty.style.cssText = 'text-align:center;padding:24px;color:oklch(var(--muted-foreground))';
+        empty.textContent = repoSearch ? 'No repos match your search.' : 'No repositories found.';
+        container.appendChild(empty);
+        return;
+      }
+      let lastWasFav = null;
+      page.forEach(repo => {
+        const isFav = favs.has(repo.full_name);
+        if (favorites.length > 0 && rest.length > 0) {
+          if (lastWasFav === null && isFav) {
+            const label = document.createElement('div');
+            label.style.cssText = 'padding:6px 16px 2px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:oklch(var(--muted-foreground) / 0.6)';
+            label.textContent = 'Pinned';
+            container.appendChild(label);
+          } else if (lastWasFav === true && !isFav) {
+            const divider = document.createElement('div');
+            divider.style.cssText = 'height:1px;background:oklch(var(--border));margin:4px 0';
+            container.appendChild(divider);
+          }
+        }
+        renderRepoCard(container, repo, isFav);
+        lastWasFav = isFav;
+      });
+      if (totalPages > 1) {
+        const pager = document.createElement('div');
+        pager.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-top:1px solid oklch(var(--border));font-size:13px;';
+        const info = document.createElement('span');
+        info.style.cssText = 'color:oklch(var(--muted-foreground))';
+        info.textContent = (start + 1) + '\u2013' + Math.min(start + REPOS_PER_PAGE, total) + ' of ' + total;
+        pager.appendChild(info);
+        const btns = document.createElement('div');
+        btns.style.cssText = 'display:flex;gap:8px';
+        const prev = document.createElement('button');
+        prev.className = 'btn btn-outline btn-sm';
+        prev.textContent = 'Previous';
+        prev.disabled = repoPage <= 1;
+        prev.onclick = () => { repoPage--; renderRepoList(); };
+        btns.appendChild(prev);
+        const next = document.createElement('button');
+        next.className = 'btn btn-outline btn-sm';
+        next.textContent = 'Next';
+        next.disabled = repoPage >= totalPages;
+        next.onclick = () => { repoPage++; renderRepoList(); };
+        btns.appendChild(next);
+        pager.appendChild(btns);
+        container.appendChild(pager);
+      }
+    }
+
+    function renderRepoCard(container, repo, isFav) {
+      const sync = repo.sync;
+      const isActive = sync && sync.is_active;
+      const isDeployed = sync && sync.workflow_deployed && sync.secret_deployed;
+      const card = document.createElement('div');
+      card.className = 'repo-card';
+      const starBtn = document.createElement('button');
+      starBtn.title = isFav ? 'Unpin' : 'Pin to top';
+      starBtn.textContent = isFav ? '\u2605' : '\u2606';
+      starBtn.style.cssText = 'background:none;border:none;cursor:pointer;padding:0;margin-right:4px;flex-shrink:0;font-size:15px;line-height:1;color:' + (isFav ? 'oklch(0.82 0.15 85)' : 'oklch(var(--muted-foreground) / 0.3)') + ';transition:color 150ms;';
+      starBtn.onmouseenter = function() { if (!isFav) this.style.color = 'oklch(var(--muted-foreground))'; };
+      starBtn.onmouseleave = function() { if (!isFav) this.style.color = 'oklch(var(--muted-foreground) / 0.3)'; };
+      starBtn.onclick = (e) => { e.stopPropagation(); toggleRepoFavorite(repo.full_name); repoPage = 1; renderRepoList(); };
+      card.appendChild(starBtn);
+      const info = document.createElement('div');
+      info.className = 'repo-card-info';
+      const nameEl = document.createElement('div');
+      nameEl.className = 'repo-card-name';
+      nameEl.textContent = repo.name;
+      if (repo.private) {
+        const priv = document.createElement('span');
+        priv.style.cssText = 'font-size:11px;color:oklch(var(--muted-foreground));margin-left:6px';
+        priv.textContent = 'private';
+        nameEl.appendChild(priv);
+      }
+      info.appendChild(nameEl);
+      if (repo.description) {
+        const descEl = document.createElement('div');
+        descEl.className = 'repo-card-desc';
+        descEl.textContent = repo.description;
+        info.appendChild(descEl);
+      }
+      card.appendChild(info);
+      const actions = document.createElement('div');
+      actions.className = 'repo-card-actions';
+      if (isActive) {
+        const badge = document.createElement('span');
+        badge.className = 'status-badge';
+        if (isDeployed) { badge.classList.add('deployed'); badge.textContent = 'Deployed'; }
+        else if (sync.last_error) { badge.classList.add('error'); badge.textContent = 'Error'; badge.title = sync.last_error; }
+        else { badge.classList.add('pending'); badge.textContent = 'Pending'; }
+        actions.appendChild(badge);
+        if (!isDeployed) {
+          const deployBtn = document.createElement('button');
+          deployBtn.className = 'btn btn-outline btn-sm';
+          deployBtn.textContent = 'Deploy';
+          deployBtn.onclick = () => deployToRepo(sync.id);
+          actions.appendChild(deployBtn);
+        }
+      }
+      const toggle = document.createElement('label');
+      toggle.className = 'switch';
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = !!isActive;
+      checkbox.onchange = function() { toggleRepoSync(repo.full_name, repo.name, repo.owner, sync ? sync.id : null, this.checked); };
+      toggle.appendChild(checkbox);
+      const slider = document.createElement('span');
+      slider.className = 'switch-slider';
+      toggle.appendChild(slider);
+      actions.appendChild(toggle);
+      card.appendChild(actions);
+      container.appendChild(card);
     }
 
     async function toggleRepoSync(fullName, name, owner, syncId, enabled) {
