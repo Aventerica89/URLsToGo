@@ -6022,20 +6022,56 @@ function getAdminHTML(userEmail, env) {
               <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.6;">A GitHub Personal Access Token is like a password that lets URLsToGo talk to GitHub on your behalf — specifically to add the workflow file and save your API key as a secret. It needs two permissions: <strong style="color: oklch(var(--foreground));">repo</strong> (to write files) and <strong style="color: oklch(var(--foreground));">workflow</strong> (to add workflow files). The "Create token on GitHub" link above pre-selects both.</div>
             </div>
 
-            <div class="settings-card">
+            <div class="settings-card" style="margin-bottom: 12px;">
               <div style="font-weight: 500; margin-bottom: 6px;">Which platforms does it support?</div>
               <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.6; margin-bottom: 10px;">The workflow auto-detects your platform by looking at your repo's config files:</div>
               <div style="display: flex; flex-direction: column; gap: 6px; font-size: 13px;">
                 ${[
-                  ['Vercel', 'vercel.json or .vercel/project.json'],
-                  ['Cloudflare Pages', 'wrangler.toml (Pages only — not Workers)'],
-                  ['GitHub Pages', '.github/workflows/pages.yml'],
-                ].map(([p, f]) => `
-                <div style="display: flex; gap: 8px;">
-                  <strong style="color: oklch(var(--foreground)); min-width: 140px;">${p}</strong>
-                  <span style="color: oklch(var(--muted-foreground));">${f}</span>
+                  ['Vercel', 'vercel.json or .vercel/project.json', 'https://{repo}-git-{branch}-{org}.vercel.app'],
+                  ['Cloudflare Pages', 'wrangler.toml (Pages only — not Workers)', 'https://{branch}.{project}.pages.dev'],
+                  ['GitHub Pages', '.github/workflows/pages.yml', 'https://{owner}.github.io/{repo}'],
+                ].map(([p, f, u]) => `
+                <div style="margin-bottom: 4px;">
+                  <div style="display: flex; gap: 8px; margin-bottom: 2px;">
+                    <strong style="color: oklch(var(--foreground)); min-width: 140px;">${p}</strong>
+                    <span style="color: oklch(var(--muted-foreground));">${f}</span>
+                  </div>
+                  <div style="padding-left: 148px; font-size: 12px; color: oklch(var(--muted-foreground) / 0.7); font-family: monospace;">${u}</div>
                 </div>`).join('')}
               </div>
+              <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid oklch(var(--border)); font-size: 13px; color: oklch(var(--muted-foreground));">
+                The resulting short link will be: <code style="font-size: 12px; background: oklch(var(--secondary)); padding: 1px 5px; border-radius: 4px;">go.urlstogo.cloud/{repo-name}--preview</code>
+              </div>
+            </div>
+
+            <div class="settings-card">
+              <div style="font-weight: 500; margin-bottom: 6px;">Set this up with Claude</div>
+              <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.6; margin-bottom: 10px;">Copy this prompt and paste it into Claude Code inside your project's folder. Fill in your API key from Settings &rarr; API Keys.</div>
+              <pre id="gitSyncClaudePrompt" style="padding: 12px; background: oklch(var(--background)); border-radius: var(--radius); font-size: 12px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; color: oklch(var(--foreground)); margin: 0 0 8px; border: 1px solid oklch(var(--border));">Add a GitHub Actions workflow to this project that auto-updates a URLsToGo preview link on every deployment.
+
+API call to make after each deploy:
+  PUT https://go.urlstogo.cloud/api/preview-links/{repo-name}--preview
+  Authorization: Bearer [YOUR_URLSTOGO_API_KEY]
+  Content-Type: application/json
+  {"destination": "[DEPLOYMENT_URL]"}
+
+Replace {repo-name} with this repo's actual name. The short link
+go.urlstogo.cloud/{repo-name}--preview will always redirect to the latest build.
+
+Deployment URL format by platform:
+  Vercel          -> https://{repo}-git-{branch}-{org}.vercel.app
+  Cloudflare Pages -> https://{branch}.{project}.pages.dev
+  GitHub Pages    -> https://{owner}.github.io/{repo}
+
+Create .github/workflows/update-preview-link.yml that:
+1. Detects the platform from config files (vercel.json, wrangler.toml, pages.yml)
+2. Grabs the correct deployment URL for this platform
+3. Calls the URLsToGo API with the right URL
+4. Stores the API key as a GitHub Actions secret named URLSTOGO_API_KEY</pre>
+              <button class="btn btn-outline btn-sm" onclick="
+                navigator.clipboard.writeText(document.getElementById('gitSyncClaudePrompt').innerText)
+                  .then(() => showToast('Copied', 'Prompt copied to clipboard'));
+              ">Copy prompt</button>
             </div>
           </div>
         </div>
@@ -6097,9 +6133,39 @@ function getAdminHTML(userEmail, env) {
                 <code style="display: block; padding: 12px; background: oklch(var(--background)); border-radius: var(--radius); font-size: 12px; line-height: 1.8; word-break: break-all;">PUT /api/preview-links/my-app--preview<br>Authorization: Bearer utg_...<br>{"destination": "https://my-app.vercel.app"}</code>
               </div>
 
-              <div class="settings-card">
+              <div class="settings-card" style="margin-bottom: 12px;">
                 <div style="font-weight: 500; margin-bottom: 6px;">Need the Git Sync workflow file?</div>
                 <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.6;">Go to <strong style="color: oklch(var(--foreground));">Settings &rarr; Git Sync</strong> to connect GitHub and automatically deploy the workflow file and this API key to any of your repos in one click.</div>
+              </div>
+
+              <div class="settings-card">
+                <div style="font-weight: 500; margin-bottom: 6px;">Set this up with Claude</div>
+                <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.6; margin-bottom: 10px;">Copy this prompt, fill in your API key, and paste it into Claude Code inside your project's folder:</div>
+                <pre id="apiKeyClaudePrompt" style="padding: 12px; background: oklch(var(--background)); border-radius: var(--radius); font-size: 12px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; color: oklch(var(--foreground)); margin: 0 0 8px; border: 1px solid oklch(var(--border));">Add a GitHub Actions workflow to this project that auto-updates a URLsToGo preview link on every deployment.
+
+API call to make after each deploy:
+  PUT https://go.urlstogo.cloud/api/preview-links/{repo-name}--preview
+  Authorization: Bearer [YOUR_URLSTOGO_API_KEY]
+  Content-Type: application/json
+  {"destination": "[DEPLOYMENT_URL]"}
+
+Replace {repo-name} with this repo's actual name. The short link
+go.urlstogo.cloud/{repo-name}--preview will always redirect to the latest build.
+
+Deployment URL format by platform:
+  Vercel          -> https://{repo}-git-{branch}-{org}.vercel.app
+  Cloudflare Pages -> https://{branch}.{project}.pages.dev
+  GitHub Pages    -> https://{owner}.github.io/{repo}
+
+Create .github/workflows/update-preview-link.yml that:
+1. Detects the platform from config files (vercel.json, wrangler.toml, pages.yml)
+2. Grabs the correct deployment URL for this platform
+3. Calls the URLsToGo API with the right URL
+4. Stores the API key as a GitHub Actions secret named URLSTOGO_API_KEY</pre>
+                <button class="btn btn-outline btn-sm" onclick="
+                  navigator.clipboard.writeText(document.getElementById('apiKeyClaudePrompt').innerText)
+                    .then(() => showToast('Copied', 'Prompt copied to clipboard'));
+                ">Copy prompt</button>
               </div>
             </div>
           </div>
