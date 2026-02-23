@@ -402,3 +402,87 @@ const CORS_HEADERS = {
 - Claude.ai UI changes may require content script updates
 - User must be logged into Cloudflare Access first
 - Artifact detection is heuristic-based (may miss some artifacts)
+
+---
+
+## SHARED COLLECTIONS (February 2026)
+
+### Overview
+
+Owner can share a category as a public read-only dashboard. Clients get a styled page showing all links in that category. Owner can edit and curate the page inline without going back to admin.
+
+### How It Works
+
+1. Hover a category in the sidebar — share icon appears
+2. Click it → share modal generates a `category_shares` token → URL: `go.urlstogo.cloud/share/{token}`
+3. Share the URL with clients — no auth required to view
+4. Owner visits the same URL while logged in → sees editing controls
+
+### Routes
+
+```
+GET  /share/:token                    — Public share page (HTML)
+GET  /api/shares/:token               — Public share data (JSON, no auth)
+POST /api/categories/:slug/share      — Create share token (auth required)
+GET  /api/categories/:slug/share      — Get existing token (auth required)
+DELETE /api/categories/:slug/share    — Remove share (auth required)
+PATCH /api/links/:code                — Partial update: title, description, is_featured, is_archived (auth required)
+```
+
+### Database
+
+```
+category_shares: id, token (UNIQUE), user_email, category_id, created_at
+links.title:        TEXT DEFAULT NULL — display name shown above /shortcode
+links.is_featured:  INTEGER DEFAULT 0 — jumps to Featured group at top (amber star)
+links.is_archived:  INTEGER DEFAULT 0 — removed from client view, shown in owner-only table at bottom
+```
+
+### Share Page Features
+
+| Feature | Owner | Client |
+|---------|-------|--------|
+| View Featured + All Links cards | Yes | Yes |
+| View archived table | Yes | No |
+| Edit title & description inline | Yes | No |
+| Toggle Featured (star) | Yes | No |
+| Archive / Restore links | Yes | No |
+| Hero link count | Excludes archived | Excludes archived |
+
+### Owner Editing
+
+Owner is detected server-side: `userEmail === share.user_email`. Owner gets:
+- Purple "Owner editing mode" bar at top with `← Admin` link
+- Per-card controls (top-right): star (Featured), pencil (Edit), box (Archive)
+- Inline edit form expands in-card (title input + description textarea)
+- All saves use `PATCH /api/links/:code` with `credentials: 'include'` (session cookie auth)
+- Page reloads after star/archive toggles; edit saves patch DOM in place
+
+### Key Code Locations
+
+| Location | Purpose |
+|----------|---------|
+| `src/index.js:~277` | `GET /share/:token` route — queries links with title, is_featured, is_archived |
+| `src/index.js:~647` | `PATCH /api/links/:code` — partial update endpoint |
+| `src/index.js:~9087` | `getSharePageHTML(share, links, isOwner)` — full share page renderer |
+| `migrations.sql` | `category_shares` table + `is_featured`, `is_archived`, `title` ALTER TABLEs |
+
+### Routing Guard
+
+Short-code redirect handler excludes share paths:
+```javascript
+if (path && !path.startsWith('admin') && !path.startsWith('api/') && !path.startsWith('share/')) {
+```
+
+Category DELETE handler guards against eating share DELETE requests:
+```javascript
+if (path.startsWith('api/categories/') && !path.endsWith('/share') && request.method === 'DELETE') {
+```
+
+### CSS / Design
+
+- Dark page: `#09090b` bg, `#111113` cards, `#8b5cf6` purple accent
+- Featured section: amber (`#f59e0b`) star icon, amber border on cards
+- Archived section: owner-only compact table, `#0d0d0f` row bg, muted zinc palette
+- Restore button: zinc default → purple hover
+- All inline CSS (no external stylesheets) — standalone page, no CSS variable dependencies
