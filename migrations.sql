@@ -152,10 +152,9 @@ CREATE INDEX IF NOT EXISTS idx_category_shares_user ON category_shares(user_emai
 --   expires_at, password_hash, description, is_preview_link
 -- =============================================================================
 
--- New columns for share page: title (display name) and is_featured (client focus grouping)
--- These will succeed on first deploy; on subsequent deploys the ALTER will fail and
--- roll back the transaction, but all idempotent CREATE TABLE IF NOT EXISTS above will
--- already exist from the first deploy. Safe to add here since columns are new.
-ALTER TABLE links ADD COLUMN is_featured INTEGER DEFAULT 0;
-ALTER TABLE links ADD COLUMN title TEXT DEFAULT NULL;
-ALTER TABLE links ADD COLUMN is_archived INTEGER DEFAULT 0;
+-- =============================================================================
+-- Applied ALTER TABLE columns (already in production — do NOT re-add):
+--   is_featured INTEGER DEFAULT 0  (share page featured grouping)
+--   title TEXT DEFAULT NULL        (share page display name)
+--   is_archived INTEGER DEFAULT 0  (share page archive)
+-- =============================================================================
