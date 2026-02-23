@@ -151,3 +151,10 @@ CREATE INDEX IF NOT EXISTS idx_category_shares_user ON category_shares(user_emai
 -- CREATE TABLE IF NOT EXISTS above. Columns present on links table:
 --   expires_at, password_hash, description, is_preview_link
 -- =============================================================================
+
+-- New columns for share page: title (display name) and is_featured (client focus grouping)
+-- These will succeed on first deploy; on subsequent deploys the ALTER will fail and
+-- roll back the transaction, but all idempotent CREATE TABLE IF NOT EXISTS above will
+-- already exist from the first deploy. Safe to add here since columns are new.
+ALTER TABLE links ADD COLUMN is_featured INTEGER DEFAULT 0;
+ALTER TABLE links ADD COLUMN title TEXT DEFAULT NULL;

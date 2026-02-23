@@ -285,17 +285,18 @@ export default {
       if (!share) return htmlResponse(get404HTML(token), 404);
 
       const { results: links } = await env.DB.prepare(`
-        SELECT l.code, l.destination, l.description, l.clicks, l.created_at,
-               GROUP_CONCAT(t.name) as tags
+        SELECT l.code, l.destination, l.title, l.description, l.clicks, l.created_at,
+               l.is_featured, GROUP_CONCAT(t.name) as tags
         FROM links l
         LEFT JOIN link_tags lt ON l.id = lt.link_id
         LEFT JOIN tags t ON lt.tag_id = t.id
         WHERE l.category_id = ? AND l.user_email = ?
         GROUP BY l.id
-        ORDER BY l.created_at DESC
+        ORDER BY l.is_featured DESC, l.created_at DESC
       `).bind(share.category_id, share.user_email).all();
 
-      return htmlResponse(getSharePageHTML(share, links));
+      const isOwner = userEmail === share.user_email;
+      return htmlResponse(getSharePageHTML(share, links, isOwner));
     }
 
     // Public API - shared collection data (JSON)
@@ -640,6 +641,27 @@ export default {
         }
       }
 
+      return jsonResponse({ success: true });
+    }
+
+    // Partial update — title, description, is_featured only (no URL validation needed)
+    if (path.startsWith('api/links/') && request.method === 'PATCH') {
+      const code = path.replace('api/links/', '');
+      const link = await env.DB.prepare('SELECT id FROM links WHERE code = ? AND user_email = ?').bind(code, userEmail).first();
+      if (!link) return jsonResponse({ error: 'Link not found' }, { status: 404 });
+
+      const body = await request.json();
+      const updates = [];
+      const params = [];
+
+      if ('title' in body) { updates.push('title = ?'); params.push(body.title || null); }
+      if ('description' in body) { updates.push('description = ?'); params.push(body.description || null); }
+      if ('is_featured' in body) { updates.push('is_featured = ?'); params.push(body.is_featured ? 1 : 0); }
+
+      if (updates.length === 0) return jsonResponse({ error: 'No fields to update' }, { status: 400 });
+
+      params.push(link.id);
+      await env.DB.prepare(`UPDATE links SET ${updates.join(', ')} WHERE id = ?`).bind(...params).run();
       return jsonResponse({ success: true });
     }
 
@@ -9062,17 +9084,19 @@ Create .github/workflows/update-preview-link.yml that:
 }
 
 // Public Shared Collection Page
-function getSharePageHTML(share, links) {
+function getSharePageHTML(share, links, isOwner = false) {
   const totalLinks = links.length;
   const categoryName = escapeHtml(share.category_name);
+  const featured = links.filter(l => l.is_featured);
+  const rest = links.filter(l => !l.is_featured);
 
-  const linkCards = links.map(link => {
+  function renderCard(link, ownerMode) {
     const code = escapeHtml(link.code);
     const dest = escapeHtml(link.destination);
     const safeDestAttr = escapeAttr(link.destination);
-    const desc = link.description
-      ? `<p class="card-desc">${escapeHtml(link.description)}</p>`
-      : '';
+    const safeCode = escapeAttr(link.code);
+    const title = link.title ? escapeHtml(link.title) : '';
+    const desc = link.description ? escapeHtml(link.description) : '';
     const tagList = link.tags
       ? link.tags.split(',').filter(t => t.trim()).map(t =>
           `<span class="tag">${escapeHtml(t.trim())}</span>`
@@ -9082,24 +9106,130 @@ function getSharePageHTML(share, links) {
     const clicks = link.clicks > 0
       ? `<span class="click-count">${link.clicks} click${link.clicks !== 1 ? 's' : ''}</span>`
       : '';
-    return `<div class="card">
-      <div class="card-top">
-        <div class="card-meta">
-          <span class="card-code">/${code}</span>
-          <span class="card-dest" title="${safeDestAttr}">${dest}</span>
+    const isFeaturedClass = link.is_featured ? ' featured' : '';
+    const starFill = link.is_featured ? '#f59e0b' : 'none';
+    const starStroke = link.is_featured ? '#f59e0b' : 'currentColor';
+
+    const ownerControls = ownerMode ? `
+      <div class="owner-controls">
+        <button class="star-btn${link.is_featured ? ' starred' : ''}" onclick="toggleFeatured('${safeCode}', this)" title="${link.is_featured ? 'Remove from Featured' : 'Add to Featured'}">
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="${starFill}" stroke="${starStroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        </button>
+        <button class="edit-btn" onclick="openEdit('${safeCode}', this)" title="Edit">
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </button>
+      </div>` : '';
+
+    return `<div class="card${isFeaturedClass}" data-code="${safeCode}">
+      ${ownerControls}
+      <div class="card-static">
+        ${title ? `<div class="card-title">${title}</div>` : (ownerMode ? `<div class="card-title-placeholder">Add title…</div>` : '')}
+        <div class="card-top">
+          <div class="card-meta">
+            <span class="card-code">/${code}</span>
+            <span class="card-dest" title="${safeDestAttr}">${dest}</span>
+          </div>
+          ${clicks}
         </div>
-        ${clicks}
+        ${desc ? `<p class="card-desc">${desc}</p>` : (ownerMode ? `<p class="card-desc-placeholder">Add description…</p>` : '')}
+        ${tags}
       </div>
-      ${desc}
-      ${tags}
+      <div class="card-edit" style="display:none;">
+        <label class="edit-label">Title</label>
+        <input class="edit-input" type="text" placeholder="e.g. Main Website" data-field="title" value="${escapeAttr(link.title || '')}">
+        <label class="edit-label" style="margin-top:8px;">Description</label>
+        <textarea class="edit-textarea" placeholder="Brief description of this link…" data-field="description">${escapeHtml(link.description || '')}</textarea>
+        <div class="edit-actions">
+          <button class="save-btn" onclick="saveEdit('${safeCode}', this)">Save</button>
+          <button class="cancel-btn" onclick="cancelEdit(this)">Cancel</button>
+        </div>
+      </div>
       <a class="card-btn" href="https://go.urlstogo.cloud/${code}" target="_blank" rel="noopener noreferrer">
         Visit Link
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg>
       </a>
     </div>`;
-  }).join('');
+  }
 
-  const emptyState = `<div class="empty">No links in this collection yet.</div>`;
+  const featuredSection = featured.length > 0 ? `
+    <div class="section">
+      <div class="section-head">
+        <span class="section-name">
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="#f59e0b" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:6px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          Featured
+        </span>
+        <span class="section-n">${featured.length} link${featured.length !== 1 ? 's' : ''}</span>
+      </div>
+      <div class="grid">${featured.map(l => renderCard(l, isOwner)).join('')}</div>
+    </div>` : '';
+
+  const restSection = rest.length > 0 ? `
+    <div class="section" style="${featured.length > 0 ? 'margin-top:48px;' : ''}">
+      <div class="section-head">
+        <span class="section-name">${featured.length > 0 ? 'All Links' : categoryName}</span>
+        <span class="section-n">${rest.length} item${rest.length !== 1 ? 's' : ''}</span>
+      </div>
+      <div class="grid">${rest.map(l => renderCard(l, isOwner)).join('')}</div>
+    </div>` : '';
+
+  const ownerBar = isOwner ? `
+    <div class="owner-bar">
+      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      Owner editing mode — changes save instantly
+      <a href="/admin" style="color:#a78bfa;text-decoration:none;margin-left:12px;font-weight:600;">← Admin</a>
+    </div>` : '';
+
+  const ownerJS = isOwner ? `
+  <script>
+    function openEdit(code, btn) {
+      const card = btn.closest('.card');
+      card.querySelector('.card-static').style.display = 'none';
+      card.querySelector('.card-edit').style.display = 'flex';
+      card.querySelector('.card-btn').style.display = 'none';
+    }
+    function cancelEdit(btn) {
+      const card = btn.closest('.card');
+      card.querySelector('.card-static').style.display = 'block';
+      card.querySelector('.card-edit').style.display = 'none';
+      card.querySelector('.card-btn').style.display = 'flex';
+    }
+    async function saveEdit(code, btn) {
+      const card = btn.closest('.card');
+      const title = card.querySelector('[data-field="title"]').value.trim();
+      const description = card.querySelector('[data-field="description"]').value.trim();
+      btn.textContent = 'Saving…';
+      btn.disabled = true;
+      const res = await fetch('/api/links/' + code, {
+        method: 'PATCH', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: title || null, description: description || null })
+      });
+      if (res.ok) {
+        card.querySelector('.card-title') && (card.querySelector('.card-title').textContent = title);
+        const titleEl = card.querySelector('.card-title') || card.querySelector('.card-title-placeholder');
+        if (titleEl) {
+          titleEl.className = title ? 'card-title' : 'card-title-placeholder';
+          titleEl.textContent = title || 'Add title…';
+        }
+        const descEl = card.querySelector('.card-desc') || card.querySelector('.card-desc-placeholder');
+        if (descEl) {
+          descEl.className = description ? 'card-desc' : 'card-desc-placeholder';
+          descEl.textContent = description || 'Add description…';
+        }
+        cancelEdit(btn);
+      } else { btn.textContent = 'Save'; btn.disabled = false; alert('Save failed'); }
+    }
+    async function toggleFeatured(code, btn) {
+      const card = btn.closest('.card');
+      const nowFeatured = !btn.classList.contains('starred');
+      const res = await fetch('/api/links/' + code, {
+        method: 'PATCH', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_featured: nowFeatured })
+      });
+      if (res.ok) { location.reload(); }
+    }
+  <\/script>` : '';
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -9109,186 +9239,55 @@ function getSharePageHTML(share, links) {
   <title>${categoryName} — URLsToGo</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      background: #09090b;
-      color: #fafafa;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      min-height: 100vh;
-    }
-    /* Hero */
-    .hero {
-      position: relative;
-      text-align: center;
-      padding: 72px 24px 48px;
-      overflow: hidden;
-    }
-    .hero::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: radial-gradient(ellipse 60% 50% at 50% 0%, rgba(139,92,246,.18) 0%, transparent 70%);
-      pointer-events: none;
-    }
-    .shared-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 5px 14px;
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: .08em;
-      text-transform: uppercase;
-      background: rgba(139,92,246,.12);
-      border: 1px solid rgba(139,92,246,.35);
-      border-radius: 100px;
-      color: #a78bfa;
-      margin-bottom: 24px;
-    }
-    .hero h1 {
-      font-size: clamp(2.2rem, 6vw, 4rem);
-      font-weight: 800;
-      letter-spacing: -.03em;
-      line-height: 1.05;
-      margin-bottom: 20px;
-      background: linear-gradient(135deg, #fff 40%, #a78bfa);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-    .count-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      padding: 7px 18px;
-      background: rgba(255,255,255,.05);
-      border: 1px solid rgba(255,255,255,.1);
-      border-radius: 100px;
-      font-size: 14px;
-      color: #a1a1aa;
-    }
+    body { background: #09090b; color: #fafafa; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; }
+    .owner-bar { display: flex; align-items: center; gap: 8px; padding: 10px 24px; background: rgba(139,92,246,.12); border-bottom: 1px solid rgba(139,92,246,.25); font-size: 12px; color: #a78bfa; font-weight: 500; }
+    .hero { position: relative; text-align: center; padding: 72px 24px 48px; overflow: hidden; }
+    .hero::before { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse 60% 50% at 50% 0%, rgba(139,92,246,.18) 0%, transparent 70%); pointer-events: none; }
+    .shared-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 14px; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; background: rgba(139,92,246,.12); border: 1px solid rgba(139,92,246,.35); border-radius: 100px; color: #a78bfa; margin-bottom: 24px; }
+    .hero h1 { font-size: clamp(2.2rem, 6vw, 4rem); font-weight: 800; letter-spacing: -.03em; line-height: 1.05; margin-bottom: 20px; background: linear-gradient(135deg, #fff 40%, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .count-pill { display: inline-flex; align-items: center; gap: 7px; padding: 7px 18px; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.1); border-radius: 100px; font-size: 14px; color: #a1a1aa; }
     .count-pill svg { color: #8b5cf6; }
-    /* Section */
-    .section {
-      max-width: 1140px;
-      margin: 0 auto;
-      padding: 0 24px 80px;
-    }
-    .section-head {
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      padding-bottom: 16px;
-      margin-bottom: 24px;
-      border-bottom: 1px solid #27272a;
-    }
-    .section-name { font-size: 17px; font-weight: 700; color: #fafafa; }
+    .section { max-width: 1140px; margin: 0 auto; padding: 0 24px 80px; }
+    .section-head { display: flex; align-items: baseline; justify-content: space-between; padding-bottom: 16px; margin-bottom: 24px; border-bottom: 1px solid #27272a; }
+    .section-name { font-size: 17px; font-weight: 700; color: #fafafa; display: flex; align-items: center; }
     .section-n { font-size: 13px; color: #71717a; }
-    /* Grid */
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-      gap: 16px;
-    }
-    /* Card */
-    .card {
-      background: #111113;
-      border: 1px solid #27272a;
-      border-radius: 12px;
-      padding: 18px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      transition: border-color .15s, transform .15s, box-shadow .15s;
-    }
-    .card:hover {
-      border-color: rgba(139,92,246,.5);
-      transform: translateY(-2px);
-      box-shadow: 0 8px 30px rgba(139,92,246,.12);
-    }
-    .card-top {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: 8px;
-    }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+    .card { background: #111113; border: 1px solid #27272a; border-radius: 12px; padding: 18px; display: flex; flex-direction: column; gap: 10px; transition: border-color .15s, transform .15s, box-shadow .15s; position: relative; }
+    .card:hover { border-color: rgba(139,92,246,.5); transform: translateY(-2px); box-shadow: 0 8px 30px rgba(139,92,246,.12); }
+    .card.featured { border-color: rgba(245,158,11,.3); }
+    .card.featured:hover { border-color: rgba(245,158,11,.6); box-shadow: 0 8px 30px rgba(245,158,11,.1); }
+    .card-title { font-size: 15px; font-weight: 700; color: #fafafa; line-height: 1.3; }
+    .card-title-placeholder { font-size: 13px; color: #52525b; font-style: italic; cursor: pointer; }
+    .card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
     .card-meta { min-width: 0; flex: 1; }
-    .card-code {
-      display: block;
-      font-size: 15px;
-      font-weight: 700;
-      color: #fafafa;
-      font-family: ui-monospace, 'SF Mono', monospace;
-      margin-bottom: 4px;
-    }
-    .card-dest {
-      display: block;
-      font-size: 12px;
-      color: #71717a;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .click-count {
-      flex-shrink: 0;
-      font-size: 11px;
-      color: #52525b;
-      white-space: nowrap;
-      padding: 3px 8px;
-      background: #1c1c1f;
-      border: 1px solid #27272a;
-      border-radius: 100px;
-    }
-    .card-desc {
-      font-size: 13px;
-      color: #a1a1aa;
-      line-height: 1.55;
-    }
+    .card-code { display: block; font-size: 13px; font-weight: 600; color: #a78bfa; font-family: ui-monospace, 'SF Mono', monospace; margin-bottom: 3px; }
+    .card-dest { display: block; font-size: 12px; color: #52525b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .click-count { flex-shrink: 0; font-size: 11px; color: #52525b; white-space: nowrap; padding: 3px 8px; background: #1c1c1f; border: 1px solid #27272a; border-radius: 100px; }
+    .card-desc { font-size: 13px; color: #a1a1aa; line-height: 1.55; }
+    .card-desc-placeholder { font-size: 13px; color: #3f3f46; font-style: italic; cursor: pointer; }
     .tag-row { display: flex; flex-wrap: wrap; gap: 5px; }
-    .tag {
-      padding: 2px 9px;
-      font-size: 11px;
-      font-weight: 500;
-      border-radius: 100px;
-      background: rgba(139,92,246,.1);
-      color: #a78bfa;
-      border: 1px solid rgba(139,92,246,.2);
-    }
-    .card-btn {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      margin-top: 4px;
-      padding: 9px 16px;
-      background: #8b5cf6;
-      color: #fff;
-      font-size: 13px;
-      font-weight: 600;
-      border-radius: 8px;
-      text-decoration: none;
-      transition: background .15s, opacity .15s;
-    }
+    .tag { padding: 2px 9px; font-size: 11px; font-weight: 500; border-radius: 100px; background: rgba(139,92,246,.1); color: #a78bfa; border: 1px solid rgba(139,92,246,.2); }
+    .card-btn { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 4px; padding: 9px 16px; background: #8b5cf6; color: #fff; font-size: 13px; font-weight: 600; border-radius: 8px; text-decoration: none; transition: background .15s; }
     .card-btn:hover { background: #7c3aed; }
-    /* Empty */
-    .empty {
-      text-align: center;
-      padding: 80px 24px;
-      color: #52525b;
-      font-size: 15px;
-    }
-    /* Footer */
-    .footer {
-      text-align: center;
-      padding: 28px 24px;
-      border-top: 1px solid #18181b;
-      color: #52525b;
-      font-size: 13px;
-    }
-    .footer a {
-      color: #8b5cf6;
-      text-decoration: none;
-      font-weight: 500;
-    }
+    .owner-controls { position: absolute; top: 12px; right: 12px; display: flex; gap: 4px; }
+    .star-btn, .edit-btn { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 6px; border: 1px solid #27272a; background: #1c1c1f; color: #71717a; cursor: pointer; transition: all .15s; }
+    .star-btn:hover { border-color: #f59e0b; color: #f59e0b; background: rgba(245,158,11,.1); }
+    .star-btn.starred { color: #f59e0b; border-color: rgba(245,158,11,.4); background: rgba(245,158,11,.1); }
+    .edit-btn:hover { border-color: #8b5cf6; color: #a78bfa; background: rgba(139,92,246,.1); }
+    .card-edit { flex-direction: column; gap: 4px; }
+    .edit-label { font-size: 11px; font-weight: 600; color: #71717a; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 2px; }
+    .edit-input { width: 100%; padding: 8px 10px; background: #1c1c1f; border: 1px solid #3f3f46; border-radius: 6px; color: #fafafa; font-size: 13px; font-family: inherit; }
+    .edit-input:focus { outline: none; border-color: #8b5cf6; }
+    .edit-textarea { width: 100%; padding: 8px 10px; background: #1c1c1f; border: 1px solid #3f3f46; border-radius: 6px; color: #fafafa; font-size: 13px; font-family: inherit; resize: vertical; min-height: 72px; }
+    .edit-textarea:focus { outline: none; border-color: #8b5cf6; }
+    .edit-actions { display: flex; gap: 8px; margin-top: 8px; }
+    .save-btn { flex: 1; padding: 8px; background: #8b5cf6; color: #fff; font-size: 13px; font-weight: 600; border: none; border-radius: 6px; cursor: pointer; }
+    .save-btn:hover { background: #7c3aed; }
+    .cancel-btn { padding: 8px 16px; background: #1c1c1f; color: #a1a1aa; font-size: 13px; border: 1px solid #27272a; border-radius: 6px; cursor: pointer; }
+    .cancel-btn:hover { color: #fafafa; }
+    .empty { text-align: center; padding: 80px 24px; color: #52525b; font-size: 15px; }
+    .footer { text-align: center; padding: 28px 24px; border-top: 1px solid #18181b; color: #52525b; font-size: 13px; }
+    .footer a { color: #8b5cf6; text-decoration: none; font-weight: 500; }
     .footer a:hover { color: #a78bfa; }
     @media (max-width: 640px) {
       .grid { grid-template-columns: 1fr; }
@@ -9297,6 +9296,7 @@ function getSharePageHTML(share, links) {
   </style>
 </head>
 <body>
+  ${ownerBar}
   <div class="hero">
     <div class="shared-badge">
       <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg>
@@ -9308,18 +9308,9 @@ function getSharePageHTML(share, links) {
       ${totalLinks} link${totalLinks !== 1 ? 's' : ''}
     </div>
   </div>
-
-  <div class="section">
-    ${totalLinks > 0 ? `
-    <div class="section-head">
-      <span class="section-name">${categoryName}</span>
-      <span class="section-n">${totalLinks} item${totalLinks !== 1 ? 's' : ''}</span>
-    </div>
-    <div class="grid">${linkCards}</div>
-    ` : emptyState}
-  </div>
-
+  ${totalLinks > 0 ? featuredSection + restSection : '<div class="empty">No links in this collection yet.</div>'}
   <div class="footer">Powered by <a href="https://urlstogo.cloud" target="_blank" rel="noopener noreferrer">URLsToGo</a></div>
+  ${ownerJS}
 </body>
 </html>`;
 }
