@@ -286,13 +286,13 @@ export default {
 
       const { results: links } = await env.DB.prepare(`
         SELECT l.code, l.destination, l.title, l.description, l.clicks, l.created_at,
-               l.is_featured, GROUP_CONCAT(t.name) as tags
+               l.is_featured, l.is_archived, GROUP_CONCAT(t.name) as tags
         FROM links l
         LEFT JOIN link_tags lt ON l.id = lt.link_id
         LEFT JOIN tags t ON lt.tag_id = t.id
         WHERE l.category_id = ? AND l.user_email = ?
         GROUP BY l.id
-        ORDER BY l.is_featured DESC, l.created_at DESC
+        ORDER BY l.is_featured DESC, l.is_archived ASC, l.created_at DESC
       `).bind(share.category_id, share.user_email).all();
 
       const isOwner = userEmail === share.user_email;
@@ -657,6 +657,7 @@ export default {
       if ('title' in body) { updates.push('title = ?'); params.push(body.title || null); }
       if ('description' in body) { updates.push('description = ?'); params.push(body.description || null); }
       if ('is_featured' in body) { updates.push('is_featured = ?'); params.push(body.is_featured ? 1 : 0); }
+      if ('is_archived' in body) { updates.push('is_archived = ?'); params.push(body.is_archived ? 1 : 0); }
 
       if (updates.length === 0) return jsonResponse({ error: 'No fields to update' }, { status: 400 });
 
@@ -9085,10 +9086,11 @@ Create .github/workflows/update-preview-link.yml that:
 
 // Public Shared Collection Page
 function getSharePageHTML(share, links, isOwner = false) {
-  const totalLinks = links.length;
+  const totalLinks = links.filter(l => !l.is_archived).length;
   const categoryName = escapeHtml(share.category_name);
-  const featured = links.filter(l => l.is_featured);
-  const rest = links.filter(l => !l.is_featured);
+  const featured = links.filter(l => l.is_featured && !l.is_archived);
+  const rest = links.filter(l => !l.is_featured && !l.is_archived);
+  const archived = links.filter(l => l.is_archived);
 
   function renderCard(link, ownerMode) {
     const code = escapeHtml(link.code);
@@ -9117,6 +9119,9 @@ function getSharePageHTML(share, links, isOwner = false) {
         </button>
         <button class="edit-btn" onclick="openEdit('${safeCode}', this)" title="Edit">
           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </button>
+        <button class="archive-btn" onclick="toggleArchived('${safeCode}', false)" title="Archive">
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect width="22" height="5" x="1" y="3"/><line x1="10" x2="14" y1="12" y2="12"/></svg>
         </button>
       </div>` : '';
 
@@ -9172,6 +9177,51 @@ function getSharePageHTML(share, links, isOwner = false) {
       <div class="grid">${rest.map(l => renderCard(l, isOwner)).join('')}</div>
     </div>` : '';
 
+  const archiveSection = (archived.length > 0 && isOwner) ? (() => {
+    const rows = archived.map(l => {
+      const code = escapeHtml(l.code);
+      const safeCode = escapeAttr(l.code);
+      const dest = escapeHtml(l.destination);
+      const safeDestAttr = escapeAttr(l.destination);
+      const title = l.title ? escapeHtml(l.title) : '';
+      const clicks = l.clicks || 0;
+      return `<tr>
+        <td class="at-cell at-title">
+          ${title ? `<span class="at-name">${title}</span>` : ''}
+          <span class="at-code">/${code}</span>
+        </td>
+        <td class="at-cell at-dest"><span title="${safeDestAttr}">${dest}</span></td>
+        <td class="at-cell at-clicks-cell">${clicks}</td>
+        <td class="at-cell at-actions-cell">
+          <button class="restore-btn" onclick="toggleArchived('${safeCode}', true)">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/></svg>
+            Restore
+          </button>
+        </td>
+      </tr>`;
+    }).join('');
+    return `<div class="section archive-section">
+      <div class="section-head">
+        <span class="section-name" style="color:#52525b;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:6px;"><polyline points="21 8 21 21 3 21 3 8"/><rect width="22" height="5" x="1" y="3"/><line x1="10" x2="14" y1="12" y2="12"/></svg>
+          Archived
+        </span>
+        <span class="section-n">${archived.length} item${archived.length !== 1 ? 's' : ''}</span>
+      </div>
+      <div class="archive-table-wrap">
+        <table class="archive-table">
+          <thead><tr>
+            <th class="at-head">Link</th>
+            <th class="at-head">Destination</th>
+            <th class="at-head at-clicks-head">Clicks</th>
+            <th class="at-head at-actions-head"></th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+  })() : '';
+
   const ownerBar = isOwner ? `
     <div class="owner-bar">
       <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -9218,6 +9268,14 @@ function getSharePageHTML(share, links, isOwner = false) {
         }
         cancelEdit(btn);
       } else { btn.textContent = 'Save'; btn.disabled = false; alert('Save failed'); }
+    }
+    async function toggleArchived(code, restore) {
+      const res = await fetch('/api/links/' + code, {
+        method: 'PATCH', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_archived: !restore })
+      });
+      if (res.ok) { location.reload(); }
     }
     async function toggleFeatured(code, btn) {
       const card = btn.closest('.card');
@@ -9285,6 +9343,24 @@ function getSharePageHTML(share, links, isOwner = false) {
     .save-btn:hover { background: #7c3aed; }
     .cancel-btn { padding: 8px 16px; background: #1c1c1f; color: #a1a1aa; font-size: 13px; border: 1px solid #27272a; border-radius: 6px; cursor: pointer; }
     .cancel-btn:hover { color: #fafafa; }
+    .archive-btn { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 6px; border: 1px solid #27272a; background: #1c1c1f; color: #71717a; cursor: pointer; transition: all .15s; }
+    .archive-btn:hover { border-color: #52525b; color: #a1a1aa; background: rgba(255,255,255,.05); }
+    .archive-section { margin-top: 60px; }
+    .archive-table-wrap { overflow-x: auto; border: 1px solid #27272a; border-radius: 10px; }
+    .archive-table { width: 100%; border-collapse: collapse; }
+    .at-head { padding: 10px 14px; font-size: 11px; font-weight: 600; color: #52525b; text-transform: uppercase; letter-spacing: .06em; text-align: left; border-bottom: 1px solid #27272a; background: #111113; }
+    .at-cell { padding: 11px 14px; font-size: 13px; border-bottom: 1px solid #1c1c1f; vertical-align: middle; background: #0d0d0f; }
+    .archive-table tbody tr:last-child td { border-bottom: none; }
+    .archive-table tbody tr:hover td { background: #111113; }
+    .at-name { display: block; font-weight: 600; color: #71717a; margin-bottom: 2px; }
+    .at-code { display: block; font-size: 12px; color: #3f3f46; font-family: ui-monospace, 'SF Mono', monospace; }
+    .at-dest { color: #3f3f46; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+    .at-clicks-cell { color: #3f3f46; white-space: nowrap; }
+    .at-clicks-head { width: 60px; }
+    .at-actions-cell { white-space: nowrap; text-align: right; }
+    .at-actions-head { width: 100px; }
+    .restore-btn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; font-size: 12px; font-weight: 600; color: #71717a; background: #1c1c1f; border: 1px solid #27272a; border-radius: 6px; cursor: pointer; transition: all .15s; }
+    .restore-btn:hover { color: #a78bfa; border-color: rgba(139,92,246,.4); background: rgba(139,92,246,.08); }
     .empty { text-align: center; padding: 80px 24px; color: #52525b; font-size: 15px; }
     .footer { text-align: center; padding: 28px 24px; border-top: 1px solid #18181b; color: #52525b; font-size: 13px; }
     .footer a { color: #8b5cf6; text-decoration: none; font-weight: 500; }
@@ -9309,6 +9385,7 @@ function getSharePageHTML(share, links, isOwner = false) {
     </div>
   </div>
   ${totalLinks > 0 ? featuredSection + restSection : '<div class="empty">No links in this collection yet.</div>'}
+  ${archiveSection}
   <div class="footer">Powered by <a href="https://urlstogo.cloud" target="_blank" rel="noopener noreferrer">URLsToGo</a></div>
   ${ownerJS}
 </body>

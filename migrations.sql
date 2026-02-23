@@ -158,3 +158,4 @@ CREATE INDEX IF NOT EXISTS idx_category_shares_user ON category_shares(user_emai
 -- already exist from the first deploy. Safe to add here since columns are new.
 ALTER TABLE links ADD COLUMN is_featured INTEGER DEFAULT 0;
 ALTER TABLE links ADD COLUMN title TEXT DEFAULT NULL;
+ALTER TABLE links ADD COLUMN is_archived INTEGER DEFAULT 0;
