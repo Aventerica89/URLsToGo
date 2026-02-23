@@ -131,6 +131,19 @@ CREATE TABLE IF NOT EXISTS waitlist (
 CREATE INDEX IF NOT EXISTS idx_waitlist_email ON waitlist(email);
 CREATE INDEX IF NOT EXISTS idx_waitlist_created ON waitlist(created_at);
 
+-- Shared category collections (public link to view all links in a category)
+CREATE TABLE IF NOT EXISTS category_shares (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  token TEXT NOT NULL UNIQUE,
+  user_email TEXT NOT NULL,
+  category_id INTEGER NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_category_shares_token ON category_shares(token);
+CREATE INDEX IF NOT EXISTS idx_category_shares_user ON category_shares(user_email);
+
 -- =============================================================================
 -- NOTE: The following ALTER TABLE columns already exist in production and
 -- were removed from this file because D1 runs the entire file as a single

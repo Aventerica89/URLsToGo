@@ -273,8 +273,58 @@ export default {
       });
     }
 
+    // Public shared collection page
+    if (path.startsWith('share/') && request.method === 'GET') {
+      const token = path.slice('share/'.length);
+      const share = await env.DB.prepare(`
+        SELECT cs.token, cs.user_email, c.name as category_name, c.color as category_color, c.id as category_id
+        FROM category_shares cs
+        JOIN categories c ON cs.category_id = c.id
+        WHERE cs.token = ?
+      `).bind(token).first();
+      if (!share) return htmlResponse(get404HTML(token), 404);
+
+      const { results: links } = await env.DB.prepare(`
+        SELECT l.code, l.destination, l.description, l.clicks, l.created_at,
+               GROUP_CONCAT(t.name) as tags
+        FROM links l
+        LEFT JOIN link_tags lt ON l.id = lt.link_id
+        LEFT JOIN tags t ON lt.tag_id = t.id
+        WHERE l.category_id = ? AND l.user_email = ?
+        GROUP BY l.id
+        ORDER BY l.created_at DESC
+      `).bind(share.category_id, share.user_email).all();
+
+      return htmlResponse(getSharePageHTML(share, links));
+    }
+
+    // Public API - shared collection data (JSON)
+    if (path.startsWith('api/shares/') && request.method === 'GET') {
+      const token = path.slice('api/shares/'.length);
+      const share = await env.DB.prepare(`
+        SELECT cs.token, cs.user_email, c.name as category_name, c.color as category_color, c.id as category_id
+        FROM category_shares cs
+        JOIN categories c ON cs.category_id = c.id
+        WHERE cs.token = ?
+      `).bind(token).first();
+      if (!share) return jsonResponse({ error: 'Not found' }, { status: 404 });
+
+      const { results: links } = await env.DB.prepare(`
+        SELECT l.code, l.destination, l.description, l.clicks, l.created_at,
+               GROUP_CONCAT(t.name) as tags
+        FROM links l
+        LEFT JOIN link_tags lt ON l.id = lt.link_id
+        LEFT JOIN tags t ON lt.tag_id = t.id
+        WHERE l.category_id = ? AND l.user_email = ?
+        GROUP BY l.id
+        ORDER BY l.created_at DESC
+      `).bind(share.category_id, share.user_email).all();
+
+      return jsonResponse({ category: share, links, total: links.length }, { headers: { ...CORS_HEADERS } });
+    }
+
     // Public redirect - no auth needed
-    if (path && !path.startsWith('admin') && !path.startsWith('api/')) {
+    if (path && !path.startsWith('admin') && !path.startsWith('api/') && !path.startsWith('share/')) {
       const link = await env.DB.prepare('SELECT id, destination, expires_at, password_hash FROM links WHERE code = ?').bind(path).first();
       if (link) {
         // Rate limit check for redirects (by IP)
@@ -775,9 +825,47 @@ export default {
     }
 
     // Delete category
-    if (path.startsWith('api/categories/') && request.method === 'DELETE') {
+    if (path.startsWith('api/categories/') && !path.endsWith('/share') && request.method === 'DELETE') {
       const slug = path.replace('api/categories/', '');
       await env.DB.prepare('DELETE FROM categories WHERE slug = ? AND user_email = ?').bind(slug, userEmail).run();
+      return jsonResponse({ success: true });
+    }
+
+    // === CATEGORY SHARE API ===
+
+    // Create or retrieve share token for a category
+    if (path.match(/^api\/categories\/[^/]+\/share$/) && request.method === 'POST') {
+      const slug = path.replace('api/categories/', '').replace('/share', '');
+      const category = await env.DB.prepare('SELECT id FROM categories WHERE slug = ? AND user_email = ?').bind(slug, userEmail).first();
+      if (!category) return jsonResponse({ error: 'Category not found' }, { status: 404 });
+
+      const existing = await env.DB.prepare('SELECT token FROM category_shares WHERE category_id = ? AND user_email = ?').bind(category.id, userEmail).first();
+      if (existing) {
+        return jsonResponse({ token: existing.token });
+      }
+
+      const token = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+      await env.DB.prepare('INSERT INTO category_shares (token, user_email, category_id) VALUES (?, ?, ?)').bind(token, userEmail, category.id).run();
+      return jsonResponse({ token });
+    }
+
+    // Get existing share token for a category (to check if already shared)
+    if (path.match(/^api\/categories\/[^/]+\/share$/) && request.method === 'GET') {
+      const slug = path.replace('api/categories/', '').replace('/share', '');
+      const category = await env.DB.prepare('SELECT id FROM categories WHERE slug = ? AND user_email = ?').bind(slug, userEmail).first();
+      if (!category) return jsonResponse({ error: 'Category not found' }, { status: 404 });
+
+      const share = await env.DB.prepare('SELECT token FROM category_shares WHERE category_id = ? AND user_email = ?').bind(category.id, userEmail).first();
+      return jsonResponse({ token: share?.token || null });
+    }
+
+    // Stop sharing a category (delete share token)
+    if (path.match(/^api\/categories\/[^/]+\/share$/) && request.method === 'DELETE') {
+      const slug = path.replace('api/categories/', '').replace('/share', '');
+      const category = await env.DB.prepare('SELECT id FROM categories WHERE slug = ? AND user_email = ?').bind(slug, userEmail).first();
+      if (!category) return jsonResponse({ error: 'Category not found' }, { status: 404 });
+
+      await env.DB.prepare('DELETE FROM category_shares WHERE category_id = ? AND user_email = ?').bind(category.id, userEmail).run();
       return jsonResponse({ success: true });
     }
 
@@ -6692,6 +6780,35 @@ Create .github/workflows/update-preview-link.yml that:
     </div>
   </div>
 
+  <!-- Share Collection Modal -->
+  <div class="modal-overlay" id="shareModal">
+    <div class="modal" style="max-width: 480px;">
+      <div class="modal-header">
+        <h3 class="modal-title">Share Collection</h3>
+        <button class="btn btn-ghost btn-icon sm" onclick="closeShareModal()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 14px; color: oklch(var(--muted-foreground)); margin-bottom: 20px;">
+          Share <strong id="shareModalCategoryName" style="color: oklch(var(--foreground));"></strong> publicly. Anyone with the link will be able to view this collection.
+        </p>
+        <div style="margin-bottom: 8px;">
+          <div style="font-size: 12px; font-weight: 500; color: oklch(var(--muted-foreground)); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em;">Public URL</div>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <code id="shareModalUrl" style="flex: 1; display: block; padding: 10px 12px; background: oklch(var(--muted) / 0.5); border: 1px solid oklch(var(--border)); border-radius: var(--radius); font-size: 13px; word-break: break-all; color: oklch(var(--foreground));"></code>
+            <button class="btn btn-outline" style="flex-shrink: 0;" onclick="copyShareUrl()">Copy</button>
+          </div>
+        </div>
+        <p style="font-size: 13px; color: oklch(var(--muted-foreground)); margin-top: 12px;">This link allows anyone to view your collection without signing in.</p>
+        <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 24px;">
+          <button class="btn btn-outline" onclick="closeShareModal()">Close</button>
+          <button class="btn btn-destructive" onclick="stopSharingCategory()">Stop Sharing</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     // XSS Prevention - Escape functions for safe HTML rendering
     function escapeHtml(str) {
@@ -6724,6 +6841,43 @@ Create .github/workflows/update-preview-link.yml that:
         confirmModalCallback();
       }
       closeConfirmModal();
+    }
+
+    // Share modal state
+    let currentShareSlug = null;
+
+    async function openShareModal(slug, name) {
+      currentShareSlug = slug;
+      document.getElementById('shareModalCategoryName').textContent = '"' + name + '"';
+      document.getElementById('shareModalUrl').textContent = 'Loading...';
+      document.getElementById('shareModal').classList.add('open');
+
+      // Create or retrieve share token
+      const res = await fetch('/api/categories/' + slug + '/share', { method: 'POST' });
+      const data = await res.json();
+      if (data.token) {
+        const shareUrl = window.location.origin + '/share/' + data.token;
+        document.getElementById('shareModalUrl').textContent = shareUrl;
+      } else {
+        document.getElementById('shareModalUrl').textContent = 'Error generating link';
+      }
+    }
+
+    function closeShareModal() {
+      document.getElementById('shareModal').classList.remove('open');
+      currentShareSlug = null;
+    }
+
+    function copyShareUrl() {
+      const url = document.getElementById('shareModalUrl').textContent;
+      navigator.clipboard.writeText(url).then(() => showToast('Copied', 'Share link copied to clipboard'));
+    }
+
+    async function stopSharingCategory() {
+      if (!currentShareSlug) return;
+      await fetch('/api/categories/' + currentShareSlug + '/share', { method: 'DELETE' });
+      closeShareModal();
+      showToast('Sharing stopped', 'Collection is no longer public');
     }
 
     const baseUrl = window.location.origin;
@@ -6878,12 +7032,27 @@ Create .github/workflows/update-preview-link.yml that:
       // Update sidebar (escape user-controlled data)
       const nav = document.getElementById('categoriesNav');
       nav.innerHTML = allCategories.map(cat => \`
-        <div class="nav-item" onclick="filterByCategory('\${escapeAttr(cat.slug)}')">
+        <div class="nav-item" style="position: relative;" onclick="filterByCategory('\${escapeAttr(cat.slug)}')">
           <span class="cat-dot \${escapeAttr(cat.color)}"></span>
-          <span>\${escapeHtml(cat.name)}</span>
+          <span style="flex: 1;">\${escapeHtml(cat.name)}</span>
           <span class="nav-item-badge">\${parseInt(cat.link_count) || 0}</span>
+          <button class="share-cat-btn" title="Share collection" onclick="event.stopPropagation(); openShareModal('\${escapeAttr(cat.slug)}', '\${escapeAttr(cat.name)}')" style="display: none; padding: 2px 4px; margin-left: 4px; background: none; border: none; cursor: pointer; color: oklch(var(--muted-foreground)); border-radius: 4px;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg>
+          </button>
         </div>
       \`).join('');
+
+      // Show/hide share button on hover
+      nav.querySelectorAll('.nav-item').forEach(item => {
+        item.addEventListener('mouseenter', () => {
+          const btn = item.querySelector('.share-cat-btn');
+          if (btn) btn.style.display = 'inline-flex';
+        });
+        item.addEventListener('mouseleave', () => {
+          const btn = item.querySelector('.share-cat-btn');
+          if (btn) btn.style.display = 'none';
+        });
+      });
 
       // Update form selects (escape user-controlled data)
       const options = '<option value="">No category</option>' + allCategories.map(cat => \`<option value="\${escapeAttr(cat.id)}">\${escapeHtml(cat.name)}</option>\`).join('');
@@ -8888,6 +9057,85 @@ Create .github/workflows/update-preview-link.yml that:
       navigator.serviceWorker.register('/sw.js').catch(() => {});
     }
   </script>
+</body>
+</html>`;
+}
+
+// Public Shared Collection Page
+function getSharePageHTML(share, links) {
+  const totalLinks = links.length;
+  const categoryName = escapeHtml(share.category_name);
+  const colorDotClass = escapeHtml(share.category_color || 'gray');
+
+  const linkCards = links.map(link => {
+    const code = escapeHtml(link.code);
+    const dest = escapeHtml(link.destination);
+    const desc = link.description ? `<p style="font-size: 13px; color: oklch(var(--muted-foreground)); margin: 4px 0 0 0; line-height: 1.5;">${escapeHtml(link.description)}</p>` : '';
+    const tagList = link.tags ? link.tags.split(',').map(t => `<span style="display: inline-block; padding: 2px 8px; font-size: 11px; border-radius: 100px; background: oklch(var(--muted)); color: oklch(var(--muted-foreground)); border: 1px solid oklch(var(--border));">${escapeHtml(t.trim())}</span>`).join('') : '';
+    const tags = tagList ? `<div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px;">${tagList}</div>` : '';
+    const clickCount = link.clicks > 0 ? `<span style="font-size: 11px; color: oklch(var(--muted-foreground));">${link.clicks} click${link.clicks !== 1 ? 's' : ''}</span>` : '';
+    return `<div style="background: oklch(var(--card)); border: 1px solid oklch(var(--border)); border-radius: calc(var(--radius) + 2px); padding: 16px; display: flex; flex-direction: column; gap: 4px;">
+      <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;">
+        <div style="min-width: 0;">
+          <div style="font-weight: 600; font-size: 14px; color: oklch(var(--foreground));">/${code}</div>
+          <div style="font-size: 12px; color: oklch(var(--muted-foreground)); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeAttr(link.destination)}">${dest}</div>
+        </div>
+        ${clickCount}
+      </div>
+      ${desc}
+      ${tags}
+      <a href="https://go.urlstogo.cloud/${code}" target="_blank" rel="noopener noreferrer" style="display: block; margin-top: 12px; padding: 8px; text-align: center; background: oklch(var(--indigo)); color: white; border-radius: var(--radius); font-size: 13px; font-weight: 500; text-decoration: none;">Visit Link</a>
+    </div>`;
+  }).join('');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${categoryName} - Shared Collection</title>
+  <style>
+    :root {
+      --background: 0 0% 3.9%;
+      --foreground: 0 0% 98%;
+      --card: 0 0% 7%;
+      --border: 0 0% 14.9%;
+      --muted: 0 0% 14.9%;
+      --muted-foreground: 0 0% 63.9%;
+      --indigo: 239 84% 67%;
+      --radius: 8px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: oklch(var(--background)); color: oklch(var(--foreground)); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; }
+    .hero { text-align: center; padding: 60px 24px 40px; }
+    .badge { display: inline-block; padding: 4px 12px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; background: oklch(var(--muted)); border: 1px solid oklch(var(--border)); border-radius: 100px; color: oklch(var(--muted-foreground)); margin-bottom: 20px; }
+    .hero h1 { font-size: clamp(2rem, 5vw, 3.5rem); font-weight: 800; letter-spacing: -0.02em; margin-bottom: 16px; }
+    .count-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 16px; background: oklch(var(--card)); border: 1px solid oklch(var(--border)); border-radius: 100px; font-size: 14px; color: oklch(var(--muted-foreground)); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; max-width: 1100px; margin: 0 auto; padding: 0 24px 60px; }
+    .section-header { max-width: 1100px; margin: 0 auto 20px; padding: 0 24px; display: flex; align-items: baseline; justify-content: space-between; }
+    .section-title { font-size: 18px; font-weight: 700; }
+    .section-count { font-size: 13px; color: oklch(var(--muted-foreground)); }
+    .footer { text-align: center; padding: 32px 24px; border-top: 1px solid oklch(var(--border)); color: oklch(var(--muted-foreground)); font-size: 13px; }
+    .footer a { color: oklch(var(--indigo)); text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="hero">
+    <div class="badge">Shared Collection</div>
+    <h1>${categoryName}</h1>
+    <div class="count-badge">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+      ${totalLinks} link${totalLinks !== 1 ? 's' : ''}
+    </div>
+  </div>
+  ${totalLinks > 0 ? `
+  <div class="section-header">
+    <span class="section-title">${categoryName}</span>
+    <span class="section-count">${totalLinks} item${totalLinks !== 1 ? 's' : ''}</span>
+  </div>
+  <div class="grid">${linkCards}</div>
+  ` : `<div style="text-align: center; padding: 60px 24px; color: oklch(var(--muted-foreground));">No links in this collection yet.</div>`}
+  <div class="footer">Powered by <a href="https://urlstogo.cloud" target="_blank" rel="noopener noreferrer">URLsToGo</a></div>
 </body>
 </html>`;
 }
