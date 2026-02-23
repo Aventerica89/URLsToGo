@@ -9065,80 +9065,265 @@ Create .github/workflows/update-preview-link.yml that:
 function getSharePageHTML(share, links) {
   const totalLinks = links.length;
   const categoryName = escapeHtml(share.category_name);
-  const colorDotClass = escapeHtml(share.category_color || 'gray');
 
   const linkCards = links.map(link => {
     const code = escapeHtml(link.code);
     const dest = escapeHtml(link.destination);
-    const desc = link.description ? `<p style="font-size: 13px; color: oklch(var(--muted-foreground)); margin: 4px 0 0 0; line-height: 1.5;">${escapeHtml(link.description)}</p>` : '';
-    const tagList = link.tags ? link.tags.split(',').map(t => `<span style="display: inline-block; padding: 2px 8px; font-size: 11px; border-radius: 100px; background: oklch(var(--muted)); color: oklch(var(--muted-foreground)); border: 1px solid oklch(var(--border));">${escapeHtml(t.trim())}</span>`).join('') : '';
-    const tags = tagList ? `<div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px;">${tagList}</div>` : '';
-    const clickCount = link.clicks > 0 ? `<span style="font-size: 11px; color: oklch(var(--muted-foreground));">${link.clicks} click${link.clicks !== 1 ? 's' : ''}</span>` : '';
-    return `<div style="background: oklch(var(--card)); border: 1px solid oklch(var(--border)); border-radius: calc(var(--radius) + 2px); padding: 16px; display: flex; flex-direction: column; gap: 4px;">
-      <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;">
-        <div style="min-width: 0;">
-          <div style="font-weight: 600; font-size: 14px; color: oklch(var(--foreground));">/${code}</div>
-          <div style="font-size: 12px; color: oklch(var(--muted-foreground)); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeAttr(link.destination)}">${dest}</div>
+    const safeDestAttr = escapeAttr(link.destination);
+    const desc = link.description
+      ? `<p class="card-desc">${escapeHtml(link.description)}</p>`
+      : '';
+    const tagList = link.tags
+      ? link.tags.split(',').filter(t => t.trim()).map(t =>
+          `<span class="tag">${escapeHtml(t.trim())}</span>`
+        ).join('')
+      : '';
+    const tags = tagList ? `<div class="tag-row">${tagList}</div>` : '';
+    const clicks = link.clicks > 0
+      ? `<span class="click-count">${link.clicks} click${link.clicks !== 1 ? 's' : ''}</span>`
+      : '';
+    return `<div class="card">
+      <div class="card-top">
+        <div class="card-meta">
+          <span class="card-code">/${code}</span>
+          <span class="card-dest" title="${safeDestAttr}">${dest}</span>
         </div>
-        ${clickCount}
+        ${clicks}
       </div>
       ${desc}
       ${tags}
-      <a href="https://go.urlstogo.cloud/${code}" target="_blank" rel="noopener noreferrer" style="display: block; margin-top: 12px; padding: 8px; text-align: center; background: oklch(var(--indigo)); color: white; border-radius: var(--radius); font-size: 13px; font-weight: 500; text-decoration: none;">Visit Link</a>
+      <a class="card-btn" href="https://go.urlstogo.cloud/${code}" target="_blank" rel="noopener noreferrer">
+        Visit Link
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg>
+      </a>
     </div>`;
   }).join('');
+
+  const emptyState = `<div class="empty">No links in this collection yet.</div>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${categoryName} - Shared Collection</title>
+  <title>${categoryName} — URLsToGo</title>
   <style>
-    :root {
-      --background: 0 0% 3.9%;
-      --foreground: 0 0% 98%;
-      --card: 0 0% 7%;
-      --border: 0 0% 14.9%;
-      --muted: 0 0% 14.9%;
-      --muted-foreground: 0 0% 63.9%;
-      --indigo: 239 84% 67%;
-      --radius: 8px;
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #09090b;
+      color: #fafafa;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      min-height: 100vh;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: oklch(var(--background)); color: oklch(var(--foreground)); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; }
-    .hero { text-align: center; padding: 60px 24px 40px; }
-    .badge { display: inline-block; padding: 4px 12px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; background: oklch(var(--muted)); border: 1px solid oklch(var(--border)); border-radius: 100px; color: oklch(var(--muted-foreground)); margin-bottom: 20px; }
-    .hero h1 { font-size: clamp(2rem, 5vw, 3.5rem); font-weight: 800; letter-spacing: -0.02em; margin-bottom: 16px; }
-    .count-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 16px; background: oklch(var(--card)); border: 1px solid oklch(var(--border)); border-radius: 100px; font-size: 14px; color: oklch(var(--muted-foreground)); }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; max-width: 1100px; margin: 0 auto; padding: 0 24px 60px; }
-    .section-header { max-width: 1100px; margin: 0 auto 20px; padding: 0 24px; display: flex; align-items: baseline; justify-content: space-between; }
-    .section-title { font-size: 18px; font-weight: 700; }
-    .section-count { font-size: 13px; color: oklch(var(--muted-foreground)); }
-    .footer { text-align: center; padding: 32px 24px; border-top: 1px solid oklch(var(--border)); color: oklch(var(--muted-foreground)); font-size: 13px; }
-    .footer a { color: oklch(var(--indigo)); text-decoration: none; }
+    /* Hero */
+    .hero {
+      position: relative;
+      text-align: center;
+      padding: 72px 24px 48px;
+      overflow: hidden;
+    }
+    .hero::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse 60% 50% at 50% 0%, rgba(139,92,246,.18) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .shared-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 14px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      background: rgba(139,92,246,.12);
+      border: 1px solid rgba(139,92,246,.35);
+      border-radius: 100px;
+      color: #a78bfa;
+      margin-bottom: 24px;
+    }
+    .hero h1 {
+      font-size: clamp(2.2rem, 6vw, 4rem);
+      font-weight: 800;
+      letter-spacing: -.03em;
+      line-height: 1.05;
+      margin-bottom: 20px;
+      background: linear-gradient(135deg, #fff 40%, #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .count-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 18px;
+      background: rgba(255,255,255,.05);
+      border: 1px solid rgba(255,255,255,.1);
+      border-radius: 100px;
+      font-size: 14px;
+      color: #a1a1aa;
+    }
+    .count-pill svg { color: #8b5cf6; }
+    /* Section */
+    .section {
+      max-width: 1140px;
+      margin: 0 auto;
+      padding: 0 24px 80px;
+    }
+    .section-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      padding-bottom: 16px;
+      margin-bottom: 24px;
+      border-bottom: 1px solid #27272a;
+    }
+    .section-name { font-size: 17px; font-weight: 700; color: #fafafa; }
+    .section-n { font-size: 13px; color: #71717a; }
+    /* Grid */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 16px;
+    }
+    /* Card */
+    .card {
+      background: #111113;
+      border: 1px solid #27272a;
+      border-radius: 12px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transition: border-color .15s, transform .15s, box-shadow .15s;
+    }
+    .card:hover {
+      border-color: rgba(139,92,246,.5);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(139,92,246,.12);
+    }
+    .card-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .card-meta { min-width: 0; flex: 1; }
+    .card-code {
+      display: block;
+      font-size: 15px;
+      font-weight: 700;
+      color: #fafafa;
+      font-family: ui-monospace, 'SF Mono', monospace;
+      margin-bottom: 4px;
+    }
+    .card-dest {
+      display: block;
+      font-size: 12px;
+      color: #71717a;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .click-count {
+      flex-shrink: 0;
+      font-size: 11px;
+      color: #52525b;
+      white-space: nowrap;
+      padding: 3px 8px;
+      background: #1c1c1f;
+      border: 1px solid #27272a;
+      border-radius: 100px;
+    }
+    .card-desc {
+      font-size: 13px;
+      color: #a1a1aa;
+      line-height: 1.55;
+    }
+    .tag-row { display: flex; flex-wrap: wrap; gap: 5px; }
+    .tag {
+      padding: 2px 9px;
+      font-size: 11px;
+      font-weight: 500;
+      border-radius: 100px;
+      background: rgba(139,92,246,.1);
+      color: #a78bfa;
+      border: 1px solid rgba(139,92,246,.2);
+    }
+    .card-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      margin-top: 4px;
+      padding: 9px 16px;
+      background: #8b5cf6;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      border-radius: 8px;
+      text-decoration: none;
+      transition: background .15s, opacity .15s;
+    }
+    .card-btn:hover { background: #7c3aed; }
+    /* Empty */
+    .empty {
+      text-align: center;
+      padding: 80px 24px;
+      color: #52525b;
+      font-size: 15px;
+    }
+    /* Footer */
+    .footer {
+      text-align: center;
+      padding: 28px 24px;
+      border-top: 1px solid #18181b;
+      color: #52525b;
+      font-size: 13px;
+    }
+    .footer a {
+      color: #8b5cf6;
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .footer a:hover { color: #a78bfa; }
+    @media (max-width: 640px) {
+      .grid { grid-template-columns: 1fr; }
+      .hero { padding: 52px 20px 36px; }
+    }
   </style>
 </head>
 <body>
   <div class="hero">
-    <div class="badge">Shared Collection</div>
+    <div class="shared-badge">
+      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg>
+      Shared Collection
+    </div>
     <h1>${categoryName}</h1>
-    <div class="count-badge">
+    <div class="count-pill">
       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
       ${totalLinks} link${totalLinks !== 1 ? 's' : ''}
     </div>
   </div>
-  ${totalLinks > 0 ? `
-  <div class="section-header">
-    <span class="section-title">${categoryName}</span>
-    <span class="section-count">${totalLinks} item${totalLinks !== 1 ? 's' : ''}</span>
+
+  <div class="section">
+    ${totalLinks > 0 ? `
+    <div class="section-head">
+      <span class="section-name">${categoryName}</span>
+      <span class="section-n">${totalLinks} item${totalLinks !== 1 ? 's' : ''}</span>
+    </div>
+    <div class="grid">${linkCards}</div>
+    ` : emptyState}
   </div>
-  <div class="grid">${linkCards}</div>
-  ` : `<div style="text-align: center; padding: 60px 24px; color: oklch(var(--muted-foreground));">No links in this collection yet.</div>`}
+
   <div class="footer">Powered by <a href="https://urlstogo.cloud" target="_blank" rel="noopener noreferrer">URLsToGo</a></div>
 </body>
 </html>`;
 }
+
 
 // Design System Reference Page
 function getDesignSystemHTML() {
