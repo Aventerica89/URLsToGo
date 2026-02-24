@@ -8160,8 +8160,8 @@ Create .github/workflows/update-preview-link.yml that:
         sections.push('### Bugs (' + openBugs.length + ' open)');
         openBugs.forEach(function(b) {
           var line = '- [ ] [' + (b.severity || 'medium').toUpperCase() + '] ' + b.title;
-          if (b.pageUrl) line += '\n      Page: ' + b.pageUrl;
-          if (b.stackTrace) line += '\n      Stack: ' + b.stackTrace.slice(0, 120) + '...';
+          if (b.pageUrl) line += '\\n      Page: ' + b.pageUrl;
+          if (b.stackTrace) line += '\\n      Stack: ' + b.stackTrace.slice(0, 120) + '...';
           sections.push(line);
         });
       }
@@ -8175,7 +8175,7 @@ Create .github/workflows/update-preview-link.yml that:
         });
       }
 
-      return '## Project: ' + DEVTOOLS_PROJECT_ID + ' \u2014 Open Items (' + date + ')\n\n' + sections.join('\n');
+      return '## Project: ' + DEVTOOLS_PROJECT_ID + ' \\u2014 Open Items (' + date + ')\\n\\n' + sections.join('\\n');
     }
 
     function copyDevtoolsContext(scope) {
