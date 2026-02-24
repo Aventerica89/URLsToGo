@@ -4219,6 +4219,7 @@ function getExpiredHTML() {
 
 function getAdminHTML(userEmail, env) {
   const clerkPublishableKey = env?.CLERK_PUBLISHABLE_KEY || '';
+  const devtoolsApiKey = env?.DEVTOOLS_API_KEY || '';
 
   return `<!DOCTYPE html>
 <html lang="en" class="dark">
@@ -5780,6 +5781,14 @@ function getAdminHTML(userEmail, env) {
             </span>
             <span>About</span>
           </div>
+          <div class="nav-item" onclick="showSettingsView('devtools')" data-nav="devtools">
+            <span class="nav-item-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="m9 12 2 2 4-4"/>
+              </svg>
+            </span>
+            <span>DevTools</span>
+          </div>
         </div>
       </div>
 
@@ -6070,6 +6079,10 @@ function getAdminHTML(userEmail, env) {
         <button class="settings-tab" onclick="switchSettingsTab('about')" data-settings-tab="about">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
           About
+        </button>
+        <button class="settings-tab" onclick="switchSettingsTab('devtools')" data-settings-tab="devtools">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="m9 12 2 2 4-4"/></svg>
+          DevTools
         </button>
       </nav>
 
@@ -6402,6 +6415,40 @@ Create .github/workflows/update-preview-link.yml that:
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
                 Support
               </a>
+            </div>
+          </div>
+        </div>
+
+        <!-- DevTools Panel -->
+        <div class="settings-panel" id="settingsDevtools">
+          <div class="settings-section">
+            <div class="settings-section-title">DevTools</div>
+            <div class="settings-section-desc">Open bugs and active ideas from <a href="https://devtools.jbcloud.app" target="_blank" rel="noopener" style="color: oklch(var(--indigo)); text-decoration: underline;">devtools.jbcloud.app</a></div>
+
+            <div id="devtoolsLoading" style="padding: 24px 0; text-align: center; color: oklch(var(--muted-foreground)); font-size: 14px;">Loading...</div>
+            <div id="devtoolsError" style="display: none; padding: 16px; border-radius: 8px; background: oklch(0.25 0.05 25 / 0.3); border: 1px solid oklch(0.5 0.15 25 / 0.4); color: oklch(0.75 0.12 25); font-size: 13px; margin-bottom: 16px;"></div>
+
+            <div id="devtoolsContent" style="display: none;">
+              <!-- Bugs Section -->
+              <div style="margin-bottom: 24px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                  <div style="font-size: 13px; font-weight: 500;">Bugs <span id="devtoolsBugCount" style="color: oklch(var(--muted-foreground));"></span></div>
+                  <button onclick="copyDevtoolsContext('bugs')" class="btn btn-outline btn-sm" style="font-size: 11px; padding: 2px 8px;" id="devtoolsCopyBugs">Copy bugs for Claude</button>
+                </div>
+                <div id="devtoolsBugsList" style="display: flex; flex-direction: column; gap: 8px;"></div>
+              </div>
+
+              <!-- Ideas Section -->
+              <div style="margin-bottom: 24px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                  <div style="font-size: 13px; font-weight: 500;">Ideas <span id="devtoolsIdeaCount" style="color: oklch(var(--muted-foreground));"></span></div>
+                  <button onclick="copyDevtoolsContext('ideas')" class="btn btn-outline btn-sm" style="font-size: 11px; padding: 2px 8px;" id="devtoolsCopyIdeas">Copy ideas for Claude</button>
+                </div>
+                <div id="devtoolsIdeasList" style="display: flex; flex-direction: column; gap: 4px;"></div>
+              </div>
+
+              <!-- Copy All -->
+              <button onclick="copyDevtoolsContext('all')" class="btn btn-outline" style="width: 100%; font-size: 13px;" id="devtoolsCopyAll">Copy all for Claude</button>
             </div>
           </div>
         </div>
@@ -6906,6 +6953,9 @@ Create .github/workflows/update-preview-link.yml that:
     const baseUrl = window.location.origin;
     const shortlinkBase = 'https://go.urlstogo.cloud';
     const CLERK_PUBLISHABLE_KEY = '${clerkPublishableKey}';
+    const DEVTOOLS_API_KEY = '${devtoolsApiKey}';
+    const DEVTOOLS_PROJECT_ID = 'urlstogo';
+    const DEVTOOLS_API_BASE = 'https://devtools.jbcloud.app';
     let allLinks = [];
     let allCategories = [];
     let allTags = [];
@@ -7947,12 +7997,197 @@ Create .github/workflows/update-preview-link.yml that:
       document.querySelectorAll('.settings-panel').forEach(el => el.classList.remove('active'));
       const tabBtn = document.querySelector('[data-settings-tab="' + tab + '"]');
       if (tabBtn) tabBtn.classList.add('active');
-      const panelMap = { profile: 'settingsProfile', 'git-sync': 'settingsGitSync', 'api-keys': 'settingsApiKeys', appearance: 'settingsAppearance', about: 'settingsAbout' };
+      const panelMap = { profile: 'settingsProfile', 'git-sync': 'settingsGitSync', 'api-keys': 'settingsApiKeys', appearance: 'settingsAppearance', about: 'settingsAbout', devtools: 'settingsDevtools' };
       const panel = document.getElementById(panelMap[tab]);
       if (panel) panel.classList.add('active');
       if (tab === 'api-keys') loadApiKeys();
       if (tab === 'git-sync') loadGitSyncSettings();
       if (tab === 'profile') loadProfile();
+      if (tab === 'devtools') loadDevtools();
+    }
+
+    // =========================================================================
+    // DevTools Panel
+    // =========================================================================
+    let devtoolsBugs = [];
+    let devtoolsIdeas = [];
+
+    const SEVERITY_ORDER = { critical: 0, high: 1, medium: 2, low: 3 };
+    const SEVERITY_COLORS = {
+      critical: { bg: 'oklch(0.25 0.08 25)', border: 'oklch(0.45 0.15 25)', text: 'oklch(0.75 0.12 25)' },
+      high: { bg: 'oklch(0.28 0.07 55)', border: 'oklch(0.5 0.13 55)', text: 'oklch(0.78 0.11 55)' },
+      medium: { bg: 'oklch(0.28 0.06 85)', border: 'oklch(0.5 0.12 85)', text: 'oklch(0.78 0.1 85)' },
+      low: { bg: 'oklch(0.25 0.06 250)', border: 'oklch(0.45 0.12 250)', text: 'oklch(0.75 0.1 250)' },
+    };
+
+    async function loadDevtools() {
+      const loading = document.getElementById('devtoolsLoading');
+      const errorEl = document.getElementById('devtoolsError');
+      const content = document.getElementById('devtoolsContent');
+
+      if (!DEVTOOLS_API_KEY) {
+        loading.style.display = 'none';
+        errorEl.style.display = 'block';
+        errorEl.textContent = 'DEVTOOLS_API_KEY not configured. Add it in the Cloudflare dashboard.';
+        content.style.display = 'none';
+        return;
+      }
+
+      loading.style.display = '';
+      errorEl.style.display = 'none';
+      content.style.display = 'none';
+
+      const headers = { 'x-devtools-api-key': DEVTOOLS_API_KEY };
+
+      try {
+        const [bugsRes, ideasRes] = await Promise.all([
+          fetch(DEVTOOLS_API_BASE + '/api/bugs?project=' + DEVTOOLS_PROJECT_ID + '&status=open', { headers }),
+          fetch(DEVTOOLS_API_BASE + '/api/ideas?projectId=' + DEVTOOLS_PROJECT_ID, { headers }),
+        ]);
+
+        devtoolsBugs = bugsRes.ok ? (await bugsRes.json()) || [] : [];
+        devtoolsIdeas = ideasRes.ok ? (await ideasRes.json()) || [] : [];
+      } catch (err) {
+        loading.style.display = 'none';
+        errorEl.style.display = 'block';
+        errorEl.textContent = 'Failed to load DevTools data: ' + (err.message || 'Unknown error');
+        return;
+      }
+
+      loading.style.display = 'none';
+      content.style.display = '';
+      renderDevtoolsBugs();
+      renderDevtoolsIdeas();
+    }
+
+    function renderDevtoolsBugs() {
+      const openBugs = devtoolsBugs
+        .filter(function(b) { return b.status === 'open' || b.status === 'in-progress'; })
+        .sort(function(a, b) { return (SEVERITY_ORDER[a.severity || 'medium'] || 2) - (SEVERITY_ORDER[b.severity || 'medium'] || 2); });
+
+      document.getElementById('devtoolsBugCount').textContent = '(' + openBugs.length + ' open)';
+      const list = document.getElementById('devtoolsBugsList');
+
+      if (openBugs.length === 0) {
+        list.textContent = '';
+        const empty = document.createElement('div');
+        empty.style.cssText = 'font-size: 13px; color: oklch(var(--muted-foreground)); padding: 8px 0;';
+        empty.textContent = 'No open bugs.';
+        list.appendChild(empty);
+        return;
+      }
+
+      list.textContent = '';
+      openBugs.forEach(function(bug) {
+        const sev = bug.severity || 'medium';
+        const colors = SEVERITY_COLORS[sev] || SEVERITY_COLORS.medium;
+
+        const card = document.createElement('div');
+        card.className = 'settings-card';
+        card.style.padding = '12px';
+
+        const row = document.createElement('div');
+        row.style.cssText = 'display: flex; align-items: flex-start; gap: 8px;';
+
+        const badge = document.createElement('span');
+        badge.style.cssText = 'font-size: 11px; padding: 1px 6px; border-radius: 4px; text-transform: capitalize; flex-shrink: 0; border: 1px solid ' + colors.border + '; background: ' + colors.bg + '; color: ' + colors.text + ';';
+        badge.textContent = sev;
+
+        const title = document.createElement('span');
+        title.style.cssText = 'flex: 1; font-size: 13px;';
+        title.textContent = bug.title;
+
+        row.appendChild(badge);
+        row.appendChild(title);
+        card.appendChild(row);
+
+        if (bug.pageUrl) {
+          const url = document.createElement('div');
+          url.style.cssText = 'font-size: 12px; color: oklch(var(--muted-foreground)); margin-top: 4px;';
+          url.textContent = bug.pageUrl;
+          card.appendChild(url);
+        }
+
+        list.appendChild(card);
+      });
+    }
+
+    function renderDevtoolsIdeas() {
+      const openIdeas = devtoolsIdeas.filter(function(i) { return i.status !== 'done'; });
+      document.getElementById('devtoolsIdeaCount').textContent = '(' + openIdeas.length + ' active)';
+      const list = document.getElementById('devtoolsIdeasList');
+
+      if (openIdeas.length === 0) {
+        list.textContent = '';
+        const empty = document.createElement('div');
+        empty.style.cssText = 'font-size: 13px; color: oklch(var(--muted-foreground)); padding: 8px 0;';
+        empty.textContent = 'No active ideas.';
+        list.appendChild(empty);
+        return;
+      }
+
+      list.textContent = '';
+      openIdeas.forEach(function(idea) {
+        const statusColor = idea.status === 'in-progress' ? 'oklch(var(--indigo))' : 'oklch(var(--muted-foreground))';
+
+        const row = document.createElement('div');
+        row.className = 'settings-card';
+        row.style.cssText = 'display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: default;';
+        row.onmouseover = function() { this.style.background = 'oklch(var(--accent))'; };
+        row.onmouseout = function() { this.style.background = ''; };
+
+        const status = document.createElement('span');
+        status.style.cssText = 'font-size: 12px; width: 80px; flex-shrink: 0; color: ' + statusColor + ';';
+        status.textContent = idea.status || 'backlog';
+
+        const title = document.createElement('span');
+        title.style.cssText = 'flex: 1; font-size: 13px;';
+        title.textContent = idea.title;
+
+        row.appendChild(status);
+        row.appendChild(title);
+        list.appendChild(row);
+      });
+    }
+
+    function buildDevtoolsContext(scope) {
+      const date = new Date().toISOString().slice(0, 10);
+      const openBugs = devtoolsBugs.filter(function(b) { return b.status === 'open' || b.status === 'in-progress'; });
+      const openIdeas = devtoolsIdeas.filter(function(i) { return i.status !== 'done'; });
+      const sections = [];
+
+      if (scope === 'bugs' || scope === 'all') {
+        sections.push('### Bugs (' + openBugs.length + ' open)');
+        openBugs.forEach(function(b) {
+          var line = '- [ ] [' + (b.severity || 'medium').toUpperCase() + '] ' + b.title;
+          if (b.pageUrl) line += '\n      Page: ' + b.pageUrl;
+          if (b.stackTrace) line += '\n      Stack: ' + b.stackTrace.slice(0, 120) + '...';
+          sections.push(line);
+        });
+      }
+
+      if (scope === 'ideas' || scope === 'all') {
+        if (sections.length) sections.push('');
+        sections.push('### Ideas (' + openIdeas.length + ')');
+        openIdeas.forEach(function(i) {
+          var prefix = i.status === 'in-progress' ? '- [ ] (in-progress)' : '- [ ]';
+          sections.push(prefix + ' ' + i.title);
+        });
+      }
+
+      return '## Project: ' + DEVTOOLS_PROJECT_ID + ' \u2014 Open Items (' + date + ')\n\n' + sections.join('\n');
+    }
+
+    function copyDevtoolsContext(scope) {
+      var text = buildDevtoolsContext(scope);
+      var btnId = scope === 'bugs' ? 'devtoolsCopyBugs' : scope === 'ideas' ? 'devtoolsCopyIdeas' : 'devtoolsCopyAll';
+      var btn = document.getElementById(btnId);
+      var original = btn.textContent;
+
+      navigator.clipboard.writeText(text).then(function() {
+        btn.textContent = 'Copied!';
+        setTimeout(function() { btn.textContent = original; }, 2000);
+      }).catch(function() {});
     }
 
     function showHelpView(tab) {
