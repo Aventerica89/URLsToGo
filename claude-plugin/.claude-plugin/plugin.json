@@ -1,0 +1,13 @@
+{
+  "name": "urlstogo",
+  "description": "URLsToGo CLI tools — create shortlinks, set up preview links, import from competitors, and view analytics from Claude Code.",
+  "version": "1.0.0",
+  "author": {
+    "name": "JBMD Creations",
+    "email": "jb@jbcloud.app"
+  },
+  "homepage": "https://urlstogo.cloud",
+  "repository": "https://github.com/Aventerica89/URLsToGo",
+  "license": "MIT",
+  "keywords": ["url-shortener", "shortlinks", "preview-links", "analytics", "developer-tools"]
+}

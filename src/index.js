@@ -5069,6 +5069,28 @@ function getAdminHTML(userEmail, env) {
     }
     .github-status-text { flex: 1; font-size: 14px; }
 
+    /* Sub-tabs (within settings panels) */
+    .panel-tabs {
+      display: flex; gap: 0;
+      border-bottom: 1px solid oklch(var(--border));
+      margin-bottom: 20px;
+    }
+    .panel-tab {
+      padding: 8px 16px;
+      font-size: 13px; font-weight: 500;
+      color: oklch(var(--muted-foreground));
+      background: none; border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer; transition: color 150ms, border-color 150ms;
+    }
+    .panel-tab:hover { color: oklch(var(--foreground)); }
+    .panel-tab.active {
+      color: oklch(var(--indigo));
+      border-bottom-color: oklch(var(--indigo));
+    }
+    .panel-tab-content { display: none; }
+    .panel-tab-content.active { display: block; }
+
     /* Settings responsive */
     @media (max-width: 768px) {
       .settings-view { margin-left: 0; }
@@ -6111,67 +6133,79 @@ function getAdminHTML(userEmail, env) {
 
         <!-- Git Sync Panel -->
         <div class="settings-panel" id="settingsGitSync">
-          <div class="settings-section">
-            <div class="settings-section-title">Git Sync</div>
-            <div class="settings-section-desc">Automatically update a preview short link every time you push code to GitHub.</div>
+          <div class="settings-section-title">Git Sync</div>
+          <div class="settings-section-desc">Automatically update a preview short link every time you push code to GitHub.</div>
+
+          <div class="panel-tabs">
+            <button class="panel-tab active" data-ptab="git-sync-repos" onclick="switchPanelTab('git-sync','repos')">Repositories</button>
+            <button class="panel-tab" data-ptab="git-sync-guide" onclick="switchPanelTab('git-sync','guide')">Guide</button>
+            <button class="panel-tab" data-ptab="git-sync-reference" onclick="switchPanelTab('git-sync','reference')">Reference</button>
+          </div>
+
+          <div class="panel-tab-content active" data-panel-tab="git-sync-repos">
             <div id="gitSyncContent">
               <div style="text-align: center; padding: 24px; color: oklch(var(--muted-foreground));">Loading...</div>
             </div>
           </div>
 
-          <div class="settings-section" style="margin-top: 8px;">
-            <div class="settings-section-title" style="font-size: 15px;">How does this work?</div>
-            <div class="settings-section-desc">Once connected, URLsToGo adds a workflow file to your GitHub repo. Every time you push code, that workflow runs and updates a short link to point at your latest deployment. No more manually updating links.</div>
+          <div class="panel-tab-content" data-panel-tab="git-sync-guide">
+            <div class="settings-section">
+              <div class="settings-section-title" style="font-size: 15px;">How does this work?</div>
+              <div class="settings-section-desc">Once connected, URLsToGo adds a workflow file to your GitHub repo. Every time you push code, that workflow runs and updates a short link to point at your latest deployment. No more manually updating links.</div>
 
-            <div class="settings-card" style="margin-bottom: 12px;">
-              <div style="font-weight: 500; margin-bottom: 10px;">Setup — 3 steps, one time per repo</div>
-              <div style="display: flex; flex-direction: column; gap: 12px;">
-                ${[
-                  { n: 1, t: 'Connect GitHub above', d: 'Click "Create token on GitHub", copy the token it generates, paste it into the box, and hit Connect. You only do this once.' },
-                  { n: 2, t: 'Pick a repo', d: 'Your GitHub repos will appear in a list. Find the one you want (e.g. my-app) and click Deploy.' },
-                  { n: 3, t: "That's it", d: 'URLsToGo drops a workflow file in your repo and saves your API key as a GitHub secret. From now on, every push auto-updates go.urlstogo.cloud/my-app--preview.' },
-                ].map(s => `
-                <div style="display: flex; gap: 12px; align-items: flex-start;">
-                  <div style="width: 24px; height: 24px; border-radius: 50%; background: oklch(var(--indigo) / 0.15); color: oklch(var(--indigo)); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; flex-shrink: 0;">${s.n}</div>
-                  <div>
-                    <div style="font-size: 13px; font-weight: 500; margin-bottom: 2px;">${s.t}</div>
-                    <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.5;">${s.d}</div>
-                  </div>
-                </div>`).join('')}
+              <div class="settings-card" style="margin-bottom: 12px;">
+                <div style="font-weight: 500; margin-bottom: 10px;">Setup — 3 steps, one time per repo</div>
+                <div style="display: flex; flex-direction: column; gap: 12px;">
+                  ${[
+                    { n: 1, t: 'Connect GitHub above', d: 'Click "Create token on GitHub", copy the token it generates, paste it into the box, and hit Connect. You only do this once.' },
+                    { n: 2, t: 'Pick a repo', d: 'Your GitHub repos will appear in a list. Find the one you want (e.g. my-app) and click Deploy.' },
+                    { n: 3, t: "That's it", d: 'URLsToGo drops a workflow file in your repo and saves your API key as a GitHub secret. From now on, every push auto-updates go.urlstogo.cloud/my-app--preview.' },
+                  ].map(s => `
+                  <div style="display: flex; gap: 12px; align-items: flex-start;">
+                    <div style="width: 24px; height: 24px; border-radius: 50%; background: oklch(var(--indigo) / 0.15); color: oklch(var(--indigo)); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; flex-shrink: 0;">${s.n}</div>
+                    <div>
+                      <div style="font-size: 13px; font-weight: 500; margin-bottom: 2px;">${s.t}</div>
+                      <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.5;">${s.d}</div>
+                    </div>
+                  </div>`).join('')}
+                </div>
+              </div>
+
+              <div class="settings-card">
+                <div style="font-weight: 500; margin-bottom: 6px;">What is a GitHub token?</div>
+                <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.6;">A GitHub Personal Access Token is like a password that lets URLsToGo talk to GitHub on your behalf — specifically to add the workflow file and save your API key as a secret. It needs two permissions: <strong style="color: oklch(var(--foreground));">repo</strong> (to write files) and <strong style="color: oklch(var(--foreground));">workflow</strong> (to add workflow files). The "Create token on GitHub" link above pre-selects both.</div>
               </div>
             </div>
+          </div>
 
-            <div class="settings-card" style="margin-bottom: 12px;">
-              <div style="font-weight: 500; margin-bottom: 6px;">What is a GitHub token?</div>
-              <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.6;">A GitHub Personal Access Token is like a password that lets URLsToGo talk to GitHub on your behalf — specifically to add the workflow file and save your API key as a secret. It needs two permissions: <strong style="color: oklch(var(--foreground));">repo</strong> (to write files) and <strong style="color: oklch(var(--foreground));">workflow</strong> (to add workflow files). The "Create token on GitHub" link above pre-selects both.</div>
-            </div>
-
-            <div class="settings-card" style="margin-bottom: 12px;">
-              <div style="font-weight: 500; margin-bottom: 6px;">Which platforms does it support?</div>
-              <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.6; margin-bottom: 10px;">The workflow auto-detects your platform by looking at your repo's config files:</div>
-              <div style="display: flex; flex-direction: column; gap: 6px; font-size: 13px;">
-                ${[
-                  ['Vercel', 'vercel.json or .vercel/project.json', 'https://{repo}-git-{branch}-{org}.vercel.app'],
-                  ['Cloudflare Pages', 'wrangler.toml (Pages only — not Workers)', 'https://{branch}.{project}.pages.dev'],
-                  ['GitHub Pages', '.github/workflows/pages.yml', 'https://{owner}.github.io/{repo}'],
-                ].map(([p, f, u]) => `
-                <div style="margin-bottom: 4px;">
-                  <div style="display: flex; gap: 8px; margin-bottom: 2px;">
-                    <strong style="color: oklch(var(--foreground)); min-width: 140px;">${p}</strong>
-                    <span style="color: oklch(var(--muted-foreground));">${f}</span>
-                  </div>
-                  <div style="padding-left: 148px; font-size: 12px; color: oklch(var(--muted-foreground) / 0.7); font-family: monospace;">${u}</div>
-                </div>`).join('')}
+          <div class="panel-tab-content" data-panel-tab="git-sync-reference">
+            <div class="settings-section">
+              <div class="settings-card" style="margin-bottom: 12px;">
+                <div style="font-weight: 500; margin-bottom: 6px;">Supported platforms</div>
+                <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.6; margin-bottom: 10px;">The workflow auto-detects your platform by looking at your repo's config files:</div>
+                <div style="display: flex; flex-direction: column; gap: 6px; font-size: 13px;">
+                  ${[
+                    ['Vercel', 'vercel.json or .vercel/project.json', 'https://{repo}-git-{branch}-{org}.vercel.app'],
+                    ['Cloudflare Pages', 'wrangler.toml (Pages only — not Workers)', 'https://{branch}.{project}.pages.dev'],
+                    ['GitHub Pages', '.github/workflows/pages.yml', 'https://{owner}.github.io/{repo}'],
+                  ].map(([p, f, u]) => `
+                  <div style="margin-bottom: 4px;">
+                    <div style="display: flex; gap: 8px; margin-bottom: 2px;">
+                      <strong style="color: oklch(var(--foreground)); min-width: 140px;">${p}</strong>
+                      <span style="color: oklch(var(--muted-foreground));">${f}</span>
+                    </div>
+                    <div style="padding-left: 148px; font-size: 12px; color: oklch(var(--muted-foreground) / 0.7); font-family: monospace;">${u}</div>
+                  </div>`).join('')}
+                </div>
+                <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid oklch(var(--border)); font-size: 13px; color: oklch(var(--muted-foreground));">
+                  The resulting short link will be: <code style="font-size: 12px; background: oklch(var(--secondary)); padding: 1px 5px; border-radius: 4px;">go.urlstogo.cloud/{repo-name}--preview</code>
+                </div>
               </div>
-              <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid oklch(var(--border)); font-size: 13px; color: oklch(var(--muted-foreground));">
-                The resulting short link will be: <code style="font-size: 12px; background: oklch(var(--secondary)); padding: 1px 5px; border-radius: 4px;">go.urlstogo.cloud/{repo-name}--preview</code>
-              </div>
-            </div>
 
-            <div class="settings-card">
-              <div style="font-weight: 500; margin-bottom: 6px;">Set this up with Claude</div>
-              <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.6; margin-bottom: 10px;">Copy this prompt and paste it into Claude Code inside your project's folder. Fill in your API key from Settings &rarr; API Keys.</div>
-              <pre id="gitSyncClaudePrompt" style="padding: 12px; background: oklch(var(--background)); border-radius: var(--radius); font-size: 12px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; color: oklch(var(--foreground)); margin: 0 0 8px; border: 1px solid oklch(var(--border));">Add a GitHub Actions workflow to this project that auto-updates a URLsToGo preview link on every deployment.
+              <div class="settings-card">
+                <div style="font-weight: 500; margin-bottom: 6px;">Set this up with Claude</div>
+                <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.6; margin-bottom: 10px;">Copy this prompt and paste it into Claude Code inside your project's folder. Fill in your API key from Settings &rarr; API Keys.</div>
+                <pre id="gitSyncClaudePrompt" style="padding: 12px; background: oklch(var(--background)); border-radius: var(--radius); font-size: 12px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; color: oklch(var(--foreground)); margin: 0 0 8px; border: 1px solid oklch(var(--border));">Add a GitHub Actions workflow to this project that auto-updates a URLsToGo preview link on every deployment.
 
 API call to make after each deploy:
   PUT https://go.urlstogo.cloud/api/preview-links/{repo-name}--preview
@@ -6192,20 +6226,28 @@ Create .github/workflows/update-preview-link.yml that:
 2. Grabs the correct deployment URL for this platform
 3. Calls the URLsToGo API with the right URL
 4. Stores the API key as a GitHub Actions secret named URLSTOGO_API_KEY</pre>
-              <button class="btn btn-outline btn-sm" onclick="
-                navigator.clipboard.writeText(document.getElementById('gitSyncClaudePrompt').innerText)
-                  .then(() => showToast('Copied', 'Prompt copied to clipboard'));
-              ">Copy prompt</button>
+                <button class="btn btn-outline btn-sm" onclick="
+                  navigator.clipboard.writeText(document.getElementById('gitSyncClaudePrompt').innerText)
+                    .then(() => showToast('Copied', 'Prompt copied to clipboard'));
+                ">Copy prompt</button>
+              </div>
             </div>
           </div>
         </div>
 
         <!-- API Keys Panel -->
         <div class="settings-panel" id="settingsApiKeys">
-          <div class="settings-section">
-            <div class="settings-section-title">API Keys</div>
-            <div class="settings-section-desc">Manage keys for programmatic access to your links.</div>
+          <div class="settings-section-title">API Keys</div>
+          <div class="settings-section-desc">Manage keys for programmatic access to your links.</div>
 
+          <div class="panel-tabs">
+            <button class="panel-tab active" data-ptab="api-keys-keys" onclick="switchPanelTab('api-keys','keys')">Your Keys</button>
+            <button class="panel-tab" data-ptab="api-keys-guide" onclick="switchPanelTab('api-keys','guide')">Guide</button>
+            <button class="panel-tab" data-ptab="api-keys-reference" onclick="switchPanelTab('api-keys','reference')">Reference</button>
+            <button class="panel-tab" data-ptab="api-keys-claude" onclick="switchPanelTab('api-keys','claude')">Claude Setup</button>
+          </div>
+
+          <div class="panel-tab-content active" data-panel-tab="api-keys-keys">
             <div class="settings-card" style="margin-bottom: 16px;">
               <div style="display: flex; gap: 8px; align-items: flex-end;">
                 <div style="flex: 1;">
@@ -6229,9 +6271,10 @@ Create .github/workflows/update-preview-link.yml that:
             <div id="settingsApiKeysList">
               <div style="text-align: center; padding: 24px; color: oklch(var(--muted-foreground));">Loading...</div>
             </div>
+          </div>
 
-            <!-- Usage Instructions -->
-            <div class="settings-section" style="margin-top: 32px;">
+          <div class="panel-tab-content" data-panel-tab="api-keys-guide">
+            <div class="settings-section">
               <div class="settings-section-title" style="font-size: 15px;">What is an API key?</div>
               <div class="settings-section-desc">An API key lets a script or GitHub Action do things in URLsToGo on your behalf — like creating links or updating a preview link — without you having to be logged in. Think of it like a spare key you hand to a robot.</div>
 
@@ -6250,22 +6293,36 @@ Create .github/workflows/update-preview-link.yml that:
                 </div>
               </div>
 
+              <div class="settings-card">
+                <div style="font-weight: 500; margin-bottom: 6px;">Need the Git Sync workflow file?</div>
+                <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.6;">Go to <strong style="color: oklch(var(--foreground));">Settings &rarr; Git Sync</strong> to connect GitHub and automatically deploy the workflow file and this API key to any of your repos in one click.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel-tab-content" data-panel-tab="api-keys-reference">
+            <div class="settings-section">
               <div class="settings-card" style="margin-bottom: 12px;">
-                <div style="font-weight: 500; margin-bottom: 6px;">Most common use: auto-updating a preview link</div>
+                <div style="font-weight: 500; margin-bottom: 6px;">Auto-updating a preview link</div>
                 <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.6; margin-bottom: 10px;">Every time your app deploys to Vercel or Cloudflare, a GitHub Action can call URLsToGo to update a short link like <code style="font-size: 12px; background: oklch(var(--secondary)); padding: 1px 5px; border-radius: 4px;">go.urlstogo.cloud/my-app--preview</code> to point at the new deployment. The link code must end in <code style="font-size: 12px; background: oklch(var(--secondary)); padding: 1px 5px; border-radius: 4px;">--preview</code>.</div>
                 <div style="font-size: 12px; color: oklch(var(--muted-foreground)); margin-bottom: 6px;">The GitHub Action sends this (your key goes in the Authorization line):</div>
                 <code style="display: block; padding: 12px; background: oklch(var(--background)); border-radius: var(--radius); font-size: 12px; line-height: 1.8; word-break: break-all;">PUT /api/preview-links/my-app--preview<br>Authorization: Bearer utg_...<br>{"destination": "https://my-app.vercel.app"}</code>
               </div>
 
-              <div class="settings-card" style="margin-bottom: 12px;">
-                <div style="font-weight: 500; margin-bottom: 6px;">Need the Git Sync workflow file?</div>
-                <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.6;">Go to <strong style="color: oklch(var(--foreground));">Settings &rarr; Git Sync</strong> to connect GitHub and automatically deploy the workflow file and this API key to any of your repos in one click.</div>
-              </div>
+            </div>
+          </div>
 
+          <div class="panel-tab-content" data-panel-tab="api-keys-claude">
+            <div class="settings-section">
               <div class="settings-card">
                 <div style="font-weight: 500; margin-bottom: 6px;">Set this up with Claude</div>
                 <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.6; margin-bottom: 10px;">Copy this prompt, fill in your API key, and paste it into Claude Code inside your project's folder:</div>
-                <pre id="apiKeyClaudePrompt" style="padding: 12px; background: oklch(var(--background)); border-radius: var(--radius); font-size: 12px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; color: oklch(var(--foreground)); margin: 0 0 8px; border: 1px solid oklch(var(--border));">Add a GitHub Actions workflow to this project that auto-updates a URLsToGo preview link on every deployment.
+                <div style="position: relative;">
+                  <button class="btn btn-outline btn-sm" style="position: absolute; top: 8px; right: 8px; z-index: 1; font-size: 11px; padding: 3px 10px;" onclick="
+                    navigator.clipboard.writeText(document.getElementById('apiKeyClaudePrompt').innerText)
+                      .then(() => { this.textContent = 'Copied!'; setTimeout(() => this.textContent = 'Copy', 1500); });
+                  ">Copy</button>
+                  <pre id="apiKeyClaudePrompt" style="padding: 12px; padding-right: 70px; background: oklch(var(--background)); border-radius: var(--radius); font-size: 12px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; color: oklch(var(--foreground)); margin: 0; border: 1px solid oklch(var(--border));">Add a GitHub Actions workflow to this project that auto-updates a URLsToGo preview link on every deployment.
 
 API call to make after each deploy:
   PUT https://go.urlstogo.cloud/api/preview-links/{repo-name}--preview
@@ -6286,10 +6343,7 @@ Create .github/workflows/update-preview-link.yml that:
 2. Grabs the correct deployment URL for this platform
 3. Calls the URLsToGo API with the right URL
 4. Stores the API key as a GitHub Actions secret named URLSTOGO_API_KEY</pre>
-                <button class="btn btn-outline btn-sm" onclick="
-                  navigator.clipboard.writeText(document.getElementById('apiKeyClaudePrompt').innerText)
-                    .then(() => showToast('Copied', 'Prompt copied to clipboard'));
-                ">Copy prompt</button>
+                </div>
               </div>
             </div>
           </div>
@@ -8004,6 +8058,19 @@ Create .github/workflows/update-preview-link.yml that:
       if (tab === 'git-sync') loadGitSyncSettings();
       if (tab === 'profile') loadProfile();
       if (tab === 'devtools') loadDevtools();
+    }
+
+    function switchPanelTab(panel, tab) {
+      const key = panel + '-' + tab;
+      const content = document.querySelector('[data-panel-tab="' + key + '"]');
+      if (!content) return;
+      const parent = content.closest('.settings-panel');
+      parent.querySelectorAll('.panel-tab-content').forEach(el => el.classList.remove('active'));
+      parent.querySelectorAll('.panel-tab').forEach(el => el.classList.remove('active'));
+      content.classList.add('active');
+      parent.querySelectorAll('.panel-tab').forEach(el => {
+        if (el.getAttribute('data-ptab') === key) el.classList.add('active');
+      });
     }
 
     // =========================================================================

@@ -1,0 +1,18 @@
+{
+  "name": "urlstogo-marketplace",
+  "owner": {
+    "name": "JBMD Creations",
+    "email": "jb@jbcloud.app"
+  },
+  "metadata": {
+    "description": "URLsToGo developer tools for Claude Code",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "urlstogo",
+      "source": "./",
+      "description": "URLsToGo CLI tools — create shortlinks, set up preview links, import from competitors, and view analytics."
+    }
+  ]
+}
