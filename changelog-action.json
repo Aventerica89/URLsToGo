@@ -1,0 +1,95 @@
+{ "v": "0.0.0", "ts": "2026-01-26T21:03:40+00:00", "msg": "Add major URL shortener improvements", "hash": "61b1220" }
+{ "v": "0.0.0", "ts": "2026-01-26T21:29:58+00:00", "msg": "Address PR review feedback", "hash": "b547b15" }
+{ "v": "0.0.0", "ts": "2026-01-26T22:23:38+00:00", "msg": "Fix escaped backticks in helper functions", "hash": "d1f97c0" }
+{ "v": "0.0.0", "ts": "2026-01-26T22:14:27-07:00", "msg": "Add HTML/code textarea for downloaded artifacts", "hash": "2fed74a" }
+{ "v": "0.0.0", "ts": "2026-01-26T22:51:46-07:00", "msg": "Improve artifact search and filter functionality", "hash": "d101edb" }
+{ "v": "0.0.0", "ts": "2026-01-26T23:10:58-07:00", "msg": "Add tag editor with autocomplete and management", "hash": "596bd83" }
+{ "v": "0.0.0", "ts": "2026-01-27T15:00:11+00:00", "msg": "Add PWA support and mobile optimization", "hash": "7edb344" }
+{ "v": "0.0.0", "ts": "2026-01-27T15:09:36+00:00", "msg": "Address artifacts PR review feedback", "hash": "ade35aa" }
+{ "v": "0.0.0", "ts": "2026-01-27T17:14:31+00:00", "msg": "Add mobile navigation to URL shortener app", "hash": "8431f14" }
+{ "v": "0.0.0", "ts": "2026-01-27T17:16:34+00:00", "msg": "Remove personal info from CLAUDE.md", "hash": "c9cff72" }
+{ "v": "0.0.0", "ts": "2026-01-27T18:15:51+00:00", "msg": "Handle invalid referrer URLs in analytics", "hash": "b2014c1" }
+{ "v": "0.0.0", "ts": "2026-01-27T19:00:32+00:00", "msg": "Improve links table responsiveness", "hash": "ae87c0d" }
+{ "v": "0.0.0", "ts": "2026-01-27T19:15:22+00:00", "msg": "Add iPhone mobile app mockup", "hash": "64fbf4b" }
+{ "v": "0.0.0", "ts": "2026-01-27T19:25:31+00:00", "msg": "Add floating dev tools button", "hash": "48d0207" }
+{ "v": "0.0.0", "ts": "2026-01-27T20:34:12+00:00", "msg": "Remove escaped backticks in mockup HTML", "hash": "391841a" }
+{ "v": "0.0.0", "ts": "2026-01-27T21:13:39+00:00", "msg": "Add comprehensive platform documentation", "hash": "8e8afa8" }
+{ "v": "0.0.0", "ts": "2026-01-27T21:18:12+00:00", "msg": "Scaffold Expo React Native companion app", "hash": "7b83ec2" }
+{ "v": "0.0.0", "ts": "2026-01-27T22:09:10+00:00", "msg": "Add EAS project ID and bundle identifier", "hash": "48251c3" }
+{ "v": "0.0.0", "ts": "2026-01-27T22:39:27+00:00", "msg": "Add EAS config, assets, and lock file", "hash": "356e506" }
+{ "v": "0.0.0", "ts": "2026-01-28T01:11:45-07:00", "msg": "Add Expo Snack demo for iPhone testing", "hash": "b2b3b3d" }
+{ "v": "0.0.0", "ts": "2026-01-28T01:38:05-07:00", "msg": "Update Snack demo to match mockup design", "hash": "8521cc6" }
+{ "v": "0.0.0", "ts": "2026-01-28T02:50:27-07:00", "msg": "Critical security improvements", "hash": "cf84ae4" }
+{ "v": "0.0.0", "ts": "2026-01-28T03:51:43-07:00", "msg": "Add CORS support for mobile app", "hash": "6f30690" }
+{ "v": "0.0.0", "ts": "2026-01-28T03:53:39-07:00", "msg": "Connect mobile app to real API with auth", "hash": "a04b5b7" }
+{ "v": "0.0.0", "ts": "2026-01-28T17:01:57-07:00", "msg": "Add placeholder name validation and cleanup", "hash": "463e892" }
+{ "v": "0.0.0", "ts": "2026-01-29T23:37:27-07:00", "msg": "Rename project to URLsToGo and update domain", "hash": "829cd41" }
+{ "v": "0.0.0", "ts": "2026-01-29T23:56:32-07:00", "msg": "Add public landing page for root path", "hash": "55c04a8" }
+{ "v": "0.0.0", "ts": "2026-01-30T13:42:31+00:00", "msg": "Add modern hero section with dashboard mockup", "hash": "37f5dd9" }
+{ "v": "0.0.0", "ts": "2026-01-30T15:13:03+00:00", "msg": "Add How It Works section to landing page", "hash": "4cab02b" }
+{ "v": "0.0.0", "ts": "2026-01-30T18:02:37+00:00", "msg": "Address PR review feedback for landing page", "hash": "36e866b" }
+{ "v": "0.0.0", "ts": "2026-01-30T18:33:08+00:00", "msg": "Add Clerk authentication integration", "hash": "f331672" }
+{ "v": "0.0.0", "ts": "2026-01-30T19:28:21+00:00", "msg": "Address security and code quality feedback", "hash": "c7127f3" }
+{ "v": "0.0.0", "ts": "2026-01-30T19:56:07+00:00", "msg": "Fix Clerk SDK loading for Brave browser", "hash": "57c9fe9" }
+{ "v": "0.0.0", "ts": "2026-01-30T20:11:41+00:00", "msg": "Fix JS syntax error in login page", "hash": "4a25f8f" }
+{ "v": "0.0.0", "ts": "2026-01-30T20:17:04+00:00", "msg": "Clear timeout when Clerk loads successfully", "hash": "6839f90" }
+{ "v": "0.0.0", "ts": "2026-01-30T20:20:07+00:00", "msg": "Add publishable-key attribute to Clerk script", "hash": "3536328" }
+{ "v": "0.0.0", "ts": "2026-01-30T20:55:14+00:00", "msg": "Convert to npm with official @clerk/backend SDK", "hash": "05d7acb" }
+{ "v": "0.0.0", "ts": "2026-01-30T21:32:22+00:00", "msg": "Fix Clerk initialization and package.json", "hash": "0aace0e" }
+{ "v": "0.0.0", "ts": "2026-01-30T21:41:07+00:00", "msg": "Add keep_vars to preserve env variables", "hash": "1bfef5d" }
+{ "v": "0.0.0", "ts": "2026-01-30T22:14:25+00:00", "msg": "Replace deprecated Clerk redirect props", "hash": "f634fb0" }
+{ "v": "0.0.0", "ts": "2026-01-30T23:29:18+00:00", "msg": "Update CLAUDE.md with Clerk auth and npm docs", "hash": "6fda9f7" }
+{ "v": "0.0.0", "ts": "2026-01-30T18:57:26-07:00", "msg": "Upgrade admin UI to purple/blue color scheme", "hash": "3b759a1" }
+{ "v": "0.0.0", "ts": "2026-01-30T19:34:14-07:00", "msg": "OKLCH color fixes and branding updates", "hash": "37e9a3b" }
+{ "v": "0.0.0", "ts": "2026-02-01T23:19:00-07:00", "msg": "Add HTML artifact sharing and extension v1.1.0", "hash": "f049a05" }
+{ "v": "0.0.0", "ts": "2026-02-01T23:37:36-07:00", "msg": "Remove Artifact Manager (moved to own repo)", "hash": "37ad9ff" }
+{ "v": "0.0.0", "ts": "2026-02-02T02:23:23-07:00", "msg": "Add worktree setup script", "hash": "051026e" }
+{ "v": "0.0.0", "ts": "2026-02-02T02:30:30-07:00", "msg": "Change shortlink domain to go.urlstogo.cloud", "hash": "9678f68" }
+{ "v": "0.0.0", "ts": "2026-02-02T02:42:06-07:00", "msg": "Use go.urlstogo.cloud for shortlinks", "hash": "e4120f1" }
+{ "v": "0.0.0", "ts": "2026-02-02T14:25:14-07:00", "msg": "Fetch user email from Clerk + rebrand", "hash": "ced1fa1" }
+{ "v": "0.0.0", "ts": "2026-02-02T15:04:05-07:00", "msg": "Extract admin path into ADMIN_PATH constant", "hash": "2ee1676" }
+{ "v": "0.0.0", "ts": "2026-02-02T16:53:21-07:00", "msg": "Add iOS-style mobile UI with tab nav (#62)", "hash": "14951e2" }
+{ "v": "0.0.0", "ts": "2026-02-02T16:54:14-07:00", "msg": "Add iOS-style mobile UI with tab nav (#63)", "hash": "01899ac" }
+{ "v": "0.0.0", "ts": "2026-02-02T20:01:45-07:00", "msg": "Improve light mode visibility for mobile cards", "hash": "cbe69ff" }
+{ "v": "0.0.0", "ts": "2026-02-03T20:43:11-07:00", "msg": "Mobile UX improvements for PWA", "hash": "fcf399f" }
+{ "v": "0.0.0", "ts": "2026-02-03T21:14:44-07:00", "msg": "Add API Keys management UI", "hash": "18deb0a" }
+{ "v": "0.0.0", "ts": "2026-02-04T14:08:30-07:00", "msg": "Add custom logo and enhanced badges to README", "hash": "d2da758" }
+{ "v": "0.0.0", "ts": "2026-02-04T14:12:11-07:00", "msg": "Update logo to match SaaS favicon style", "hash": "6b6c91c" }
+{ "v": "0.0.0", "ts": "2026-02-06T11:13:11-07:00", "msg": "Add dynamic preview links with GitHub Actions", "hash": "7cc9916" }
+{ "v": "0.0.0", "ts": "2026-02-06T13:31:58-07:00", "msg": "Implement escapeJs function for string escaping", "hash": "11dea2f" }
+{ "v": "0.0.0", "ts": "2026-02-06T15:06:14-07:00", "msg": "Fix escapeJs: use char loop instead of regex", "hash": "2717b8e" }
+{ "v": "0.0.0", "ts": "2026-02-06T15:49:30-07:00", "msg": "Fix escapeJs: charCode for template literals", "hash": "104fae9" }
+{ "v": "0.0.0", "ts": "2026-02-06T16:52:35-07:00", "msg": "Fix escapeJs charcode handling", "hash": "5817adc" }
+{ "v": "0.0.0", "ts": "2026-02-06T17:51:34-07:00", "msg": "Fix escapeJs: charCodeAt for all special chars", "hash": "3d3645b" }
+{ "v": "0.0.0", "ts": "2026-02-06T18:00:13-07:00", "msg": "Convert all HSL colors to OKLCH in mobile UI", "hash": "f3f8ed5" }
+{ "v": "0.0.0", "ts": "2026-02-08T23:42:00-07:00", "msg": "Fix landing icons, add feature cards, fix admin", "hash": "16e9030" }
+{ "v": "0.0.0", "ts": "2026-02-09T00:22:57-07:00", "msg": "Reorder migrations to prevent D1 abort", "hash": "9883416" }
+{ "v": "0.0.0", "ts": "2026-02-09T01:28:50-07:00", "msg": "Style checkboxes with dark-theme appearance", "hash": "e99eef4" }
+{ "v": "0.0.0", "ts": "2026-02-09T01:44:45-07:00", "msg": "Improve checkbox visibility with lighter border", "hash": "0383461" }
+{ "v": "0.0.0", "ts": "2026-02-09T03:38:26-07:00", "msg": "Add Settings page with Git Sync and Profile", "hash": "7f2ed9d" }
+{ "v": "0.0.0", "ts": "2026-02-09T03:42:16-07:00", "msg": "Fix settings view layout to fill content area", "hash": "4f3310b" }
+{ "v": "0.0.0", "ts": "2026-02-09T03:50:27-07:00", "msg": "Remove ALTER TABLE statements blocking D1", "hash": "c774d00" }
+{ "v": "0.0.0", "ts": "2026-02-13T06:36:35+00:00", "msg": "Add hookify rules for code safety", "hash": "d2de976" }
+{ "v": "0.0.0", "ts": "2026-02-19T12:43:39-07:00", "msg": "Replace GPL with proprietary + beta waitlist", "hash": "3f71a65" }
+{ "v": "0.0.0", "ts": "2026-02-19T13:42:50-07:00", "msg": "Add About tab with feature list and roadmap", "hash": "6c8243a" }
+{ "v": "0.0.0", "ts": "2026-02-19T13:47:17-07:00", "msg": "Update landing page features and copy", "hash": "46105b9" }
+{ "v": "0.0.0", "ts": "2026-02-19T14:25:47-07:00", "msg": "Apply Apple HIG mobile layout corrections", "hash": "142ff3c" }
+{ "v": "0.0.0", "ts": "2026-02-19T16:36:40-07:00", "msg": "CORS lockdown + SSRF private IP blocklist", "hash": "382a1ec" }
+{ "v": "0.0.0", "ts": "2026-02-19T16:54:13-07:00", "msg": "Fix rate limiting gaps + input validation", "hash": "5f4a2f4" }
+{ "v": "0.0.0", "ts": "2026-02-19T17:01:32-07:00", "msg": "Add HTTP security headers to all HTML", "hash": "99503a9" }
+{ "v": "0.0.0", "ts": "2026-02-19T17:08:42-07:00", "msg": "Enforce API key scopes, fix enumeration", "hash": "1e01f56" }
+{ "v": "0.0.0", "ts": "2026-02-20T22:53:46-07:00", "msg": "Add in-app help hub with three tabs", "hash": "67d3aea" }
+{ "v": "0.0.0", "ts": "2026-02-20T23:06:36-07:00", "msg": "Clearer workflow 404 error + API key docs", "hash": "30ea1f9" }
+{ "v": "0.0.0", "ts": "2026-02-20T23:08:26-07:00", "msg": "CSP: allow Cloudflare beacon + Clerk Workers", "hash": "e0ea59b" }
+{ "v": "0.0.0", "ts": "2026-02-20T23:12:24-07:00", "msg": "Move helpView inside app-layout flex container", "hash": "e0724c6" }
+{ "v": "0.0.0", "ts": "2026-02-20T23:24:50-07:00", "msg": "Plain-English instructions for settings panels", "hash": "fbd3666" }
+{ "v": "0.0.0", "ts": "2026-02-20T23:39:05-07:00", "msg": "Add copy-for-Claude prompt cards to settings", "hash": "f02f540" }
+{ "v": "0.0.0", "ts": "2026-02-21T00:05:57-07:00", "msg": "Repo search, pagination, favorites + deep links", "hash": "4863d06" }
+{ "v": "0.0.0", "ts": "2026-02-21T02:44:55-07:00", "msg": "App-sync: update docs and changelog", "hash": "8c5a2c5" }
+{ "v": "0.0.0", "ts": "2026-02-21T06:34:35-07:00", "msg": "Add proxy/cloaking plan for preview links", "hash": "f6c1689" }
+{ "v": "0.0.0", "ts": "2026-02-23T00:50:58-07:00", "msg": "Add shared collection pages for categories", "hash": "7dc33d5" }
+{ "v": "0.0.0", "ts": "2026-02-23T01:02:10-07:00", "msg": "Redesign shared collection page, dark theme", "hash": "6d41ed1" }
+{ "v": "0.0.0", "ts": "2026-02-23T01:16:58-07:00", "msg": "Share page owner editing + featured grouping", "hash": "e840df4" }
+{ "v": "0.0.0", "ts": "2026-02-23T02:04:55-07:00", "msg": "Archive links on share page with table view", "hash": "335d50e" }
+{ "v": "0.0.0", "ts": "2026-02-23T02:09:25-07:00", "msg": "Add SHARED COLLECTIONS section to CLAUDE.md", "hash": "a45cd89" }
+{ "v": "0.0.0", "ts": "2026-02-23T02:24:17-07:00", "msg": "Remove applied ALTER TABLE from migrations", "hash": "8851c92" }
