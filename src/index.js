@@ -1607,7 +1607,6 @@ export default {
           cancel_url: cancelUrl,
           'subscription_data[metadata][app]': 'urlstogo',
           'subscription_data[metadata][user_email]': userEmail,
-          'customer_update[email]': 'auto',
         }, env);
         if (session.error) return jsonResponse({ error: session.error.message || 'Checkout session failed' }, { status: 500 });
         return jsonResponse({ url: session.url });
