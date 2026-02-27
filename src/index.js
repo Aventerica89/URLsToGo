@@ -6703,24 +6703,15 @@ Create .github/workflows/update-preview-link.yml that:
             <div class="settings-section-desc">Manage your URLsToGo plan and subscription.</div>
 
             <!-- Plan status card (populated by JS) -->
-            <div id="billingStatus" style="margin-bottom: 16px;">
-              <div style="padding: 24px 0; text-align: center; color: oklch(var(--muted-foreground)); font-size: 14px;">Loading...</div>
+            <div id="billingStatus">
+              <div class="settings-card" style="text-align: center; color: oklch(var(--muted-foreground)); font-size: 14px; padding: 24px;">Loading...</div>
             </div>
 
-            <!-- Usage bar -->
-            <div id="billingUsage" style="display: none; margin-bottom: 20px;">
-              <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px; margin-bottom: 6px;">
-                <span style="color: oklch(var(--muted-foreground));">Links used</span>
-                <span id="billingUsageText" style="font-weight: 500;"></span>
-              </div>
-              <div style="background: oklch(var(--secondary)); border-radius: 99px; height: 6px; overflow: hidden;">
-                <div id="billingUsageBar" style="height: 100%; border-radius: 99px; background: oklch(var(--accent-violet)); transition: width .3s;"></div>
-              </div>
-              <div id="billingUsageWarning" style="display: none; margin-top: 8px; font-size: 12px; color: oklch(0.75 0.15 45);"></div>
-            </div>
+            <!-- Usage section (populated by JS) -->
+            <div id="billingUsage" style="display: none;"></div>
 
-            <!-- CTA buttons -->
-            <div id="billingActions" style="display: flex; flex-direction: column; gap: 8px;"></div>
+            <!-- CTA and features (populated by JS) -->
+            <div id="billingActions"></div>
           </div>
         </div>
 
@@ -8370,6 +8361,13 @@ Create .github/workflows/update-preview-link.yml that:
     // Billing Panel
     // =========================================================================
 
+    function billingMakeEl(tag, styles, text) {
+      const el = document.createElement(tag);
+      if (styles) el.style.cssText = styles;
+      if (text !== undefined) el.textContent = text;
+      return el;
+    }
+
     async function loadBillingStatus() {
       const container = document.getElementById('billingStatus');
       const usageSection = document.getElementById('billingUsage');
@@ -8381,59 +8379,124 @@ Create .github/workflows/update-preview-link.yml that:
         const data = await res.json();
 
         const isPro = data.plan === 'pro';
-        const pct = Math.min(100, Math.round((data.links_used / data.links_limit) * 100));
+        const used = Number(data.links_used) || 0;
+        const limit = Number(data.links_limit) || 25;
+        const pct = Math.min(100, Math.round((used / limit) * 100));
+        const atLimit = pct >= 100;
         const nearLimit = pct >= 80;
+        const barColor = atLimit ? 'oklch(0.6 0.18 25)' : nearLimit ? 'oklch(0.75 0.15 45)' : 'oklch(var(--accent-violet))';
 
         // Plan card
-        container.innerHTML = isPro
-          ? '<div style="padding: 16px; border-radius: 10px; background: oklch(var(--accent-violet) / 0.1); border: 1px solid oklch(var(--accent-violet) / 0.3);">' +
-            '<div style="display: flex; align-items: center; justify-content: space-between;">' +
-            '<div><div style="font-size: 13px; font-weight: 600; color: oklch(var(--accent-violet));">Pro Plan</div>' +
-            '<div style="font-size: 12px; color: oklch(var(--muted-foreground)); margin-top: 2px;">$12 / month</div></div>' +
-            '<span style="font-size: 11px; padding: 2px 8px; border-radius: 99px; background: oklch(0.65 0.18 145 / 0.15); color: oklch(0.65 0.18 145); font-weight: 600;">Active</span>' +
-            '</div></div>'
-          : '<div style="padding: 16px; border-radius: 10px; background: oklch(var(--secondary)); border: 1px solid oklch(var(--border));">' +
-            '<div style="font-size: 13px; font-weight: 600;">Free Plan</div>' +
-            '<div style="font-size: 12px; color: oklch(var(--muted-foreground)); margin-top: 2px;">Limited to ' + data.links_limit + ' links</div>' +
-            '</div>';
+        container.textContent = '';
+        const planCard = document.createElement('div');
+        planCard.className = 'settings-card';
+        planCard.style.cssText = isPro
+          ? 'background: oklch(var(--accent-violet) / 0.06); border-color: oklch(var(--accent-violet) / 0.25); margin-bottom: 12px;'
+          : 'margin-bottom: 12px;';
 
-        // Usage bar
-        usageSection.style.display = 'block';
-        document.getElementById('billingUsageText').textContent = data.links_used + ' / ' + data.links_limit + ' links';
-        document.getElementById('billingUsageBar').style.width = pct + '%';
-        document.getElementById('billingUsageBar').style.background = nearLimit
-          ? 'oklch(0.75 0.15 45)' : 'oklch(var(--accent-violet))';
+        const planHeader = billingMakeEl('div', 'display: flex; align-items: center; justify-content: space-between;');
+        const planInfo = document.createElement('div');
+        planInfo.appendChild(billingMakeEl('div', 'font-size: 15px; font-weight: 600;' + (isPro ? ' color: oklch(var(--accent-violet));' : ''), isPro ? 'Pro Plan' : 'Free Plan'));
+        planInfo.appendChild(billingMakeEl('div', 'font-size: 13px; color: oklch(var(--muted-foreground)); margin-top: 2px;', isPro ? '$12 / month' : 'Up to ' + limit + ' links'));
+        planHeader.appendChild(planInfo);
 
-        const warn = document.getElementById('billingUsageWarning');
-        if (nearLimit && !isPro) {
-          warn.style.display = 'block';
-          warn.textContent = pct >= 100
-            ? 'You have reached your link limit. Upgrade to Pro to add more.'
-            : 'You are approaching your link limit (' + pct + '% used).';
+        const badge = billingMakeEl('span', isPro
+          ? 'font-size: 11px; padding: 3px 10px; border-radius: 99px; background: oklch(0.65 0.18 145 / 0.15); color: oklch(0.65 0.18 145); font-weight: 600; letter-spacing: 0.02em;'
+          : 'font-size: 11px; padding: 3px 10px; border-radius: 99px; background: oklch(var(--secondary)); color: oklch(var(--muted-foreground)); font-weight: 500; border: 1px solid oklch(var(--border));',
+          isPro ? 'Active' : 'Free');
+        planHeader.appendChild(badge);
+        planCard.appendChild(planHeader);
+
+        // Next billing date for Pro
+        if (isPro && data.current_period_end) {
+          const d = new Date(Number(data.current_period_end) * 1000);
+          const dateLabel = d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+          const row = billingMakeEl('div', 'display: flex; align-items: center; justify-content: space-between; padding: 12px 0 0; margin-top: 12px; border-top: 1px solid oklch(var(--border));');
+          row.appendChild(billingMakeEl('div', 'font-size: 14px; font-weight: 500;', 'Next billing date'));
+          row.appendChild(billingMakeEl('div', 'font-size: 14px; color: oklch(var(--muted-foreground));', dateLabel));
+          planCard.appendChild(row);
         }
+        container.appendChild(planCard);
+
+        // Usage card
+        usageSection.style.display = 'block';
+        usageSection.textContent = '';
+        const usageCard = document.createElement('div');
+        usageCard.className = 'settings-card';
+        usageCard.style.marginBottom = '12px';
+
+        const usageHeader = billingMakeEl('div', 'display: flex; justify-content: space-between; align-items: center; font-size: 13px; margin-bottom: 10px;');
+        usageHeader.appendChild(billingMakeEl('span', 'font-weight: 500;', 'Links used'));
+        const countSpan = billingMakeEl('span', 'color: oklch(var(--muted-foreground));');
+        const countBold = billingMakeEl('span', 'color: oklch(var(--foreground)); font-weight: 600;', String(used));
+        countSpan.appendChild(countBold);
+        countSpan.appendChild(document.createTextNode(' / ' + limit));
+        usageHeader.appendChild(countSpan);
+        usageCard.appendChild(usageHeader);
+
+        const barTrack = billingMakeEl('div', 'background: oklch(var(--secondary)); border-radius: 99px; height: 10px; overflow: hidden;');
+        const barFill = billingMakeEl('div', 'height: 100%; border-radius: 99px; transition: width .3s; background: ' + barColor + '; width: ' + pct + '%;');
+        barTrack.appendChild(barFill);
+        usageCard.appendChild(barTrack);
+
+        if (nearLimit && !isPro) {
+          const warn = billingMakeEl('div',
+            'margin-top: 10px; font-size: 12px; padding: 8px 12px; border-radius: 8px; background: oklch(' + (atLimit ? '0.6 0.18 25' : '0.75 0.15 45') + ' / 0.1); color: oklch(' + (atLimit ? '0.75 0.15 25' : '0.8 0.15 50') + '); border: 1px solid oklch(' + (atLimit ? '0.6 0.18 25' : '0.75 0.15 45') + ' / 0.25);',
+            atLimit ? 'Link limit reached. Upgrade to Pro to add more.' : 'Approaching your link limit (' + pct + '% used).');
+          usageCard.appendChild(warn);
+        }
+        usageSection.appendChild(usageCard);
 
         // Action buttons
-        actionsEl.innerHTML = '';
+        actionsEl.textContent = '';
         if (isPro) {
           const manageBtn = document.createElement('button');
           manageBtn.className = 'btn btn-outline';
+          manageBtn.style.width = '100%';
           manageBtn.textContent = 'Manage Subscription';
           manageBtn.onclick = () => openBillingPortal();
           actionsEl.appendChild(manageBtn);
         } else {
+          const upgradeCard = document.createElement('div');
+          upgradeCard.className = 'settings-card';
+          upgradeCard.style.cssText = 'background: oklch(var(--accent-violet) / 0.04); border-color: oklch(var(--accent-violet) / 0.2);';
+
+          upgradeCard.appendChild(billingMakeEl('div', 'font-size: 14px; font-weight: 600; margin-bottom: 12px;', 'Upgrade to Pro'));
+
+          const featureList = billingMakeEl('div', 'display: flex; flex-direction: column; gap: 7px; margin-bottom: 16px;');
+          const proFeatures = ['200 short links', 'Full analytics (geo, device, browser)', 'Unlimited categories & tags', 'Priority support'];
+          proFeatures.forEach(function(f) {
+            const row = billingMakeEl('div', 'display: flex; align-items: center; gap: 8px; font-size: 13px;');
+            const checkSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            checkSvg.setAttribute('width', '14'); checkSvg.setAttribute('height', '14');
+            checkSvg.setAttribute('viewBox', '0 0 24 24'); checkSvg.setAttribute('fill', 'none');
+            checkSvg.setAttribute('stroke', 'oklch(0.65 0.18 145)'); checkSvg.setAttribute('stroke-width', '2.5');
+            checkSvg.setAttribute('stroke-linecap', 'round'); checkSvg.setAttribute('stroke-linejoin', 'round');
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', 'M20 6 9 17l-5-5');
+            checkSvg.appendChild(path);
+            row.appendChild(checkSvg);
+            row.appendChild(billingMakeEl('span', null, f));
+            featureList.appendChild(row);
+          });
+          upgradeCard.appendChild(featureList);
+
           const upgradeBtn = document.createElement('button');
           upgradeBtn.className = 'btn btn-primary';
-          upgradeBtn.style.cssText = 'background: oklch(var(--accent-violet)); color: #fff;';
-          upgradeBtn.textContent = 'Upgrade to Pro — $12 / month';
+          upgradeBtn.style.cssText = 'width: 100%; background: oklch(var(--accent-violet)); color: #fff; font-weight: 600;';
+          upgradeBtn.textContent = 'Upgrade — $12 / month';
           upgradeBtn.onclick = () => startCheckout();
-          actionsEl.appendChild(upgradeBtn);
-          const featuresEl = document.createElement('div');
-          featuresEl.style.cssText = 'font-size: 12px; color: oklch(var(--muted-foreground)); margin-top: 4px;';
-          featuresEl.textContent = '200 links · Full analytics (geo, device, browser) · Unlimited categories & tags';
-          actionsEl.appendChild(featuresEl);
+          upgradeCard.appendChild(upgradeBtn);
+          actionsEl.appendChild(upgradeCard);
         }
       } catch (e) {
-        container.innerHTML = '<div style="color: oklch(0.75 0.12 25); font-size: 13px;">Failed to load billing status.</div>';
+        container.textContent = '';
+        const errCard = document.createElement('div');
+        errCard.className = 'settings-card';
+        errCard.style.color = 'oklch(0.75 0.12 25)';
+        errCard.style.fontSize = '13px';
+        errCard.textContent = 'Failed to load billing status. Please refresh.';
+        container.appendChild(errCard);
       }
     }
 
@@ -8442,8 +8505,8 @@ Create .github/workflows/update-preview-link.yml that:
         const res = await fetch('/api/billing/checkout', { method: 'POST', credentials: 'include' });
         const data = await res.json();
         if (data.url) { window.location.href = data.url; }
-        else { alert('Could not start checkout: ' + (data.error || 'Unknown error')); }
-      } catch (e) { alert('Checkout failed. Please try again.'); }
+        else { showToast('Checkout Failed', data.error || 'Unknown error', 'error'); }
+      } catch (e) { showToast('Checkout Failed', e.message || 'Please try again.', 'error'); }
     }
 
     async function openBillingPortal() {
@@ -8451,8 +8514,8 @@ Create .github/workflows/update-preview-link.yml that:
         const res = await fetch('/api/billing/portal', { credentials: 'include' });
         const data = await res.json();
         if (data.url) { window.location.href = data.url; }
-        else { alert('Could not open portal: ' + (data.error || 'Unknown error')); }
-      } catch (e) { alert('Could not open billing portal.'); }
+        else { showToast('Billing Portal Error', data.error || 'Unknown error', 'error'); }
+      } catch (e) { showToast('Billing Portal Error', 'Could not open billing portal.', 'error'); }
     }
 
     // =========================================================================
