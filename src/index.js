@@ -1669,8 +1669,12 @@ async function stripeRequest(method, endpoint, body, env) {
   if (body) {
     opts.body = new URLSearchParams(body).toString();
   }
-  const res = await fetch(STRIPE_API_BASE + endpoint, opts);
-  return res.json();
+  try {
+    const res = await fetch(STRIPE_API_BASE + endpoint, opts);
+    return res.json();
+  } catch (e) {
+    return { error: { message: 'Stripe API unreachable: ' + e.message } };
+  }
 }
 
 // Verify Stripe webhook signature using HMAC-SHA256
@@ -1687,11 +1691,10 @@ async function verifyStripeSignature(payload, sigHeader, secret) {
   if (Math.abs(Date.now() / 1000 - parseInt(timestamp)) > 300) return false;
   const signedPayload = timestamp + '.' + payload;
   const key = await crypto.subtle.importKey(
-    'raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+    'raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']
   );
-  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(signedPayload));
-  const computed = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
-  return computed === signature;
+  const sigBytes = new Uint8Array(signature.match(/.{2}/g).map(b => parseInt(b, 16)));
+  return crypto.subtle.verify('HMAC', key, sigBytes, new TextEncoder().encode(signedPayload));
 }
 // Base64URL decode helper (for Cloudflare Access fallback)
 function base64UrlDecode(str) {
@@ -7640,12 +7643,13 @@ Create .github/workflows/update-preview-link.yml that:
         renderNewTags();
         showToast('Link created', password ? 'Password-protected link created' : 'Your new short link is ready to use');
         await Promise.all([loadLinks(), loadStats(), loadCategories(), loadTags()]);
-      } else if (res.status === 402) {
-        const data = await res.json();
-        showUpgradeModal(data.links_used, data.links_limit, data.plan);
       } else {
         const data = await res.json();
-        showToast('Error', data.error || 'Failed to create link', 'error');
+        if (data.error === 'plan_limit') {
+          showUpgradeModal(data.links_used, data.links_limit, data.plan);
+        } else {
+          showToast('Error', data.error || 'Failed to create link', 'error');
+        }
       }
     }
 
