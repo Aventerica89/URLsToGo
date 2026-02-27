@@ -7672,7 +7672,7 @@ Create .github/workflows/update-preview-link.yml that:
         '</div></div>' +
         '<div style="display:flex;gap:8px;">' +
         '<button onclick="startCheckout()" style="flex:1;padding:10px;background:oklch(0.6 0.2 290);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">Upgrade to Pro</button>' +
-        '<button onclick="document.getElementById(\'upgradeModal\').remove()" style="padding:10px 16px;background:oklch(0.2 0.01 260);color:oklch(0.7 0.02 260);border:none;border-radius:8px;font-size:14px;cursor:pointer;">Cancel</button>' +
+        '<button onclick="document.getElementById(\\'upgradeModal\\').remove()" style="padding:10px 16px;background:oklch(0.2 0.01 260);color:oklch(0.7 0.02 260);border:none;border-radius:8px;font-size:14px;cursor:pointer;">Cancel</button>' +
         '</div></div>';
       modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
       document.body.appendChild(modal);
