@@ -7640,12 +7640,13 @@ Create .github/workflows/update-preview-link.yml that:
         renderNewTags();
         showToast('Link created', password ? 'Password-protected link created' : 'Your new short link is ready to use');
         await Promise.all([loadLinks(), loadStats(), loadCategories(), loadTags()]);
-      } else if (res.status === 402) {
-        const data = await res.json();
-        showUpgradeModal(data.links_used, data.links_limit, data.plan);
       } else {
         const data = await res.json();
-        showToast('Error', data.error || 'Failed to create link', 'error');
+        if (data.error === 'plan_limit') {
+          showUpgradeModal(data.links_used, data.links_limit, data.plan);
+        } else {
+          showToast('Error', data.error || 'Failed to create link', 'error');
+        }
       }
     }
 
