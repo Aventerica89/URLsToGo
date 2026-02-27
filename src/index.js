@@ -169,6 +169,18 @@ const CORS_HEADERS = {
   'Vary': 'Origin',
 };
 
+
+// =============================================================================
+// BILLING - Plan Limits & Stripe Config
+// =============================================================================
+
+const PLAN_LIMITS = {
+  free: { links: 25 },
+  pro:  { links: 200 },
+};
+
+const STRIPE_API_BASE = 'https://api.stripe.com/v1';
+const STRIPE_PRO_PRICE_ID = 'price_1T5Jz1H6aZ92e8Txu9tLJnRI';
 // Dynamic CORS headers for preflight — echoes the requesting origin if allowed
 function getCorsHeaders(request) {
   const origin = request?.headers?.get('Origin') || '';
@@ -445,6 +457,67 @@ export default {
       }
     }
 
+
+    // === STRIPE BILLING WEBHOOK (public — verified by signature) ===
+    if (path === 'api/billing/webhook' && request.method === 'POST') {
+      const rawBody = await request.text();
+      const sigHeader = request.headers.get('stripe-signature') || '';
+      const webhookSecret = env.STRIPE_WEBHOOK_SECRET;
+      if (!webhookSecret) {
+        return new Response('Webhook secret not configured', { status: 500 });
+      }
+      const valid = await verifyStripeSignature(rawBody, sigHeader, webhookSecret);
+      if (!valid) {
+        return new Response('Invalid signature', { status: 400 });
+      }
+      let event;
+      try { event = JSON.parse(rawBody); } catch { return new Response('Invalid JSON', { status: 400 }); }
+
+      const obj = event.data?.object;
+      const customerEmail = obj?.customer_email || obj?.customer_details?.email;
+      const customerId = obj?.customer;
+      const subscriptionId = obj?.id || obj?.subscription;
+
+      // Resolve email from customer ID if not on the object
+      let resolvedEmail = customerEmail;
+      if (!resolvedEmail && customerId && env.STRIPE_SECRET_KEY) {
+        const cust = await stripeRequest('GET', '/customers/' + customerId, null, env);
+        resolvedEmail = cust?.email;
+      }
+
+      if (resolvedEmail) {
+        if (event.type === 'customer.subscription.created' || event.type === 'customer.subscription.updated') {
+          const plan = obj?.items?.data?.[0]?.price?.id === STRIPE_PRO_PRICE_ID ? 'pro' : 'free';
+          const status = obj?.status || 'active';
+          const periodEnd = obj?.current_period_end || null;
+          await env.DB.prepare(`
+            INSERT INTO subscriptions (user_email, stripe_customer_id, stripe_subscription_id, plan, status, current_period_end, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+            ON CONFLICT(user_email) DO UPDATE SET
+              stripe_customer_id = excluded.stripe_customer_id,
+              stripe_subscription_id = excluded.stripe_subscription_id,
+              plan = excluded.plan,
+              status = excluded.status,
+              current_period_end = excluded.current_period_end,
+              updated_at = excluded.updated_at
+          `).bind(resolvedEmail, customerId, subscriptionId, plan, status, periodEnd).run();
+        } else if (event.type === 'customer.subscription.deleted') {
+          await env.DB.prepare(
+            "UPDATE subscriptions SET plan = 'free', status = 'canceled', updated_at = datetime('now') WHERE user_email = ?"
+          ).bind(resolvedEmail).run();
+        } else if (event.type === 'invoice.payment_failed') {
+          await env.DB.prepare(
+            "UPDATE subscriptions SET status = 'past_due', updated_at = datetime('now') WHERE user_email = ?"
+          ).bind(resolvedEmail).run();
+        } else if (event.type === 'invoice.payment_succeeded') {
+          await env.DB.prepare(
+            "UPDATE subscriptions SET status = 'active', updated_at = datetime('now') WHERE user_email = ?"
+          ).bind(resolvedEmail).run();
+        }
+      }
+      return new Response('ok', { status: 200 });
+    }
+
     // Protected API routes require auth
     if (!userEmail) {
       return new Response(JSON.stringify({ error: 'Unauthorized - Please login' }), {
@@ -550,6 +623,24 @@ export default {
       const urlValidation = validateUrl(destination);
       if (!urlValidation.valid) {
         return jsonResponse({ error: urlValidation.error }, { status: 400 });
+      }
+
+
+      // Plan limit check
+      const userPlan = await getUserPlan(env, userEmail);
+      const planLimit = PLAN_LIMITS[userPlan].links;
+      const { count: linkCount } = await env.DB.prepare(
+        'SELECT COUNT(*) as count FROM links WHERE user_email = ?'
+      ).bind(userEmail).first();
+      if (linkCount >= planLimit) {
+        return jsonResponse({
+          error: 'plan_limit',
+          message: `You have reached the ${planLimit}-link limit for the ${userPlan} plan.`,
+          links_used: linkCount,
+          links_limit: planLimit,
+          plan: userPlan,
+          upgrade: userPlan === 'free',
+        }, { status: 402 });
       }
 
       // Check if code exists globally
@@ -1464,6 +1555,82 @@ export default {
       }
     }
 
+
+    // === BILLING API ===
+
+    // GET /api/billing/status — current plan + link usage
+    if (path === 'api/billing/status' && request.method === 'GET') {
+      const plan = await getUserPlan(env, userEmail);
+      const { count } = await env.DB.prepare(
+        'SELECT COUNT(*) as count FROM links WHERE user_email = ?'
+      ).bind(userEmail).first();
+      const limit = PLAN_LIMITS[plan].links;
+      const sub = await env.DB.prepare(
+        'SELECT stripe_customer_id, stripe_subscription_id, status, current_period_end FROM subscriptions WHERE user_email = ?'
+      ).bind(userEmail).first();
+      return jsonResponse({
+        plan,
+        links_used: count || 0,
+        links_limit: limit,
+        status: sub?.status || 'none',
+        current_period_end: sub?.current_period_end || null,
+      });
+    }
+
+    // POST /api/billing/checkout — create Stripe Checkout session
+    if (path === 'api/billing/checkout' && request.method === 'POST') {
+      if (!env.STRIPE_SECRET_KEY) {
+        return jsonResponse({ error: 'Billing not configured' }, { status: 503 });
+      }
+      // Look up or create Stripe customer
+      let customerId = null;
+      const existing = await env.DB.prepare(
+        'SELECT stripe_customer_id FROM subscriptions WHERE user_email = ?'
+      ).bind(userEmail).first();
+      if (existing?.stripe_customer_id) {
+        customerId = existing.stripe_customer_id;
+      } else {
+        const cust = await stripeRequest('POST', '/customers', { email: userEmail, metadata: { app: 'urlstogo' } }, env);
+        if (cust.error) return jsonResponse({ error: 'Failed to create customer' }, { status: 500 });
+        customerId = cust.id;
+      }
+      const successUrl = new URL('/admin', url.origin).toString() + '#billing?upgraded=1';
+      const cancelUrl = new URL('/admin', url.origin).toString() + '#billing';
+      const session = await stripeRequest('POST', '/checkout/sessions', {
+        customer: customerId,
+        mode: 'subscription',
+        'line_items[0][price]': STRIPE_PRO_PRICE_ID,
+        'line_items[0][quantity]': '1',
+        success_url: successUrl,
+        cancel_url: cancelUrl,
+        'subscription_data[metadata][app]': 'urlstogo',
+        'subscription_data[metadata][user_email]': userEmail,
+        'customer_update[email]': 'auto',
+      }, env);
+      if (session.error) return jsonResponse({ error: session.error.message }, { status: 500 });
+      return jsonResponse({ url: session.url });
+    }
+
+    // GET /api/billing/portal — Stripe Customer Portal (manage/cancel)
+    if (path === 'api/billing/portal' && request.method === 'GET') {
+      if (!env.STRIPE_SECRET_KEY) {
+        return jsonResponse({ error: 'Billing not configured' }, { status: 503 });
+      }
+      const sub = await env.DB.prepare(
+        'SELECT stripe_customer_id FROM subscriptions WHERE user_email = ?'
+      ).bind(userEmail).first();
+      if (!sub?.stripe_customer_id) {
+        return jsonResponse({ error: 'No subscription found' }, { status: 404 });
+      }
+      const returnUrl = new URL('/admin', url.origin).toString() + '#billing';
+      const portal = await stripeRequest('POST', '/billing_portal/sessions', {
+        customer: sub.stripe_customer_id,
+        return_url: returnUrl,
+      }, env);
+      if (portal.error) return jsonResponse({ error: portal.error.message }, { status: 500 });
+      return jsonResponse({ url: portal.url });
+    }
+
     return new Response('Not found', { status: 404 });
   }
 };
@@ -1478,6 +1645,54 @@ export default {
 // - CLERK_SECRET_KEY: sk_test_... or sk_live_... (as secret)
 // =============================================================================
 
+
+// Get user's current billing plan from subscriptions table
+async function getUserPlan(env, userEmail) {
+  const sub = await env.DB.prepare(
+    'SELECT plan, status, current_period_end FROM subscriptions WHERE user_email = ?'
+  ).bind(userEmail).first();
+  if (!sub) return 'free';
+  if (sub.status !== 'active' && sub.status !== 'trialing') return 'free';
+  if (sub.current_period_end && sub.current_period_end < Math.floor(Date.now() / 1000)) return 'free';
+  return sub.plan === 'pro' ? 'pro' : 'free';
+}
+
+// Stripe API helper — makes authenticated requests to Stripe REST API
+async function stripeRequest(method, endpoint, body, env) {
+  const opts = {
+    method,
+    headers: {
+      'Authorization': 'Bearer ' + env.STRIPE_SECRET_KEY,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+  };
+  if (body) {
+    opts.body = new URLSearchParams(body).toString();
+  }
+  const res = await fetch(STRIPE_API_BASE + endpoint, opts);
+  return res.json();
+}
+
+// Verify Stripe webhook signature using HMAC-SHA256
+async function verifyStripeSignature(payload, sigHeader, secret) {
+  const parts = sigHeader.split(',').reduce((acc, part) => {
+    const [k, v] = part.split('=');
+    acc[k] = v;
+    return acc;
+  }, {});
+  const timestamp = parts.t;
+  const signature = parts.v1;
+  if (!timestamp || !signature) return false;
+  // Reject events older than 5 minutes
+  if (Math.abs(Date.now() / 1000 - parseInt(timestamp)) > 300) return false;
+  const signedPayload = timestamp + '.' + payload;
+  const key = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(signedPayload));
+  const computed = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
+  return computed === signature;
+}
 // Base64URL decode helper (for Cloudflare Access fallback)
 function base64UrlDecode(str) {
   str = str.replace(/-/g, '+').replace(/_/g, '/');
@@ -6106,6 +6321,10 @@ function getAdminHTML(userEmail, env) {
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="m9 12 2 2 4-4"/></svg>
           DevTools
         </button>
+        <button class="settings-tab" onclick="switchSettingsTab('billing')" data-settings-tab="billing">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><path d="M2 10h20"/></svg>
+          Billing
+        </button>
       </nav>
 
       <div class="settings-content">
@@ -6470,6 +6689,35 @@ Create .github/workflows/update-preview-link.yml that:
                 Support
               </a>
             </div>
+          </div>
+        </div>
+
+
+        <!-- Billing Panel -->
+        <div class="settings-panel" id="settingsBilling">
+          <div class="settings-section">
+            <div class="settings-section-title">Billing</div>
+            <div class="settings-section-desc">Manage your URLsToGo plan and subscription.</div>
+
+            <!-- Plan status card (populated by JS) -->
+            <div id="billingStatus" style="margin-bottom: 16px;">
+              <div style="padding: 24px 0; text-align: center; color: oklch(var(--muted-foreground)); font-size: 14px;">Loading...</div>
+            </div>
+
+            <!-- Usage bar -->
+            <div id="billingUsage" style="display: none; margin-bottom: 20px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px; margin-bottom: 6px;">
+                <span style="color: oklch(var(--muted-foreground));">Links used</span>
+                <span id="billingUsageText" style="font-weight: 500;"></span>
+              </div>
+              <div style="background: oklch(var(--secondary)); border-radius: 99px; height: 6px; overflow: hidden;">
+                <div id="billingUsageBar" style="height: 100%; border-radius: 99px; background: oklch(var(--accent-violet)); transition: width .3s;"></div>
+              </div>
+              <div id="billingUsageWarning" style="display: none; margin-top: 8px; font-size: 12px; color: oklch(0.75 0.15 45);"></div>
+            </div>
+
+            <!-- CTA buttons -->
+            <div id="billingActions" style="display: flex; flex-direction: column; gap: 8px;"></div>
           </div>
         </div>
 
@@ -7094,6 +7342,12 @@ Create .github/workflows/update-preview-link.yml that:
       const hash = window.location.hash.slice(1);
       if (hash.startsWith('settings/')) {
         showSettingsView(hash.slice('settings/'.length) || 'profile');
+      } else if (hash === 'billing' || hash.startsWith('billing?')) {
+        showSettingsView('billing');
+        if (hash.includes('upgraded=1')) {
+          history.replaceState(null, '', '#billing');
+          showToast('Subscribed!', 'Welcome to Pro. Your plan is now active.', 'success');
+        }
       } else if (hash.startsWith('help/')) {
         showHelpView(hash.slice('help/'.length) || 'getting-started');
       }
@@ -7104,6 +7358,12 @@ Create .github/workflows/update-preview-link.yml that:
       const hash = window.location.hash.slice(1);
       if (hash.startsWith('settings/')) {
         showSettingsView(hash.slice('settings/'.length) || 'profile');
+      } else if (hash === 'billing' || hash.startsWith('billing?')) {
+        showSettingsView('billing');
+        if (hash.includes('upgraded=1')) {
+          history.replaceState(null, '', '#billing');
+          showToast('Subscribed!', 'Welcome to Pro. Your plan is now active.', 'success');
+        }
       } else if (hash.startsWith('help/')) {
         showHelpView(hash.slice('help/'.length) || 'getting-started');
       } else if (!hash) {
@@ -7380,10 +7640,38 @@ Create .github/workflows/update-preview-link.yml that:
         renderNewTags();
         showToast('Link created', password ? 'Password-protected link created' : 'Your new short link is ready to use');
         await Promise.all([loadLinks(), loadStats(), loadCategories(), loadTags()]);
+      } else if (res.status === 402) {
+        const data = await res.json();
+        showUpgradeModal(data.links_used, data.links_limit, data.plan);
       } else {
         const data = await res.json();
         showToast('Error', data.error || 'Failed to create link', 'error');
       }
+    }
+
+    function showUpgradeModal(used, limit, plan) {
+      const existing = document.getElementById('upgradeModal');
+      if (existing) existing.remove();
+      const modal = document.createElement('div');
+      modal.id = 'upgradeModal';
+      modal.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);';
+      modal.innerHTML =
+        '<div style="background:oklch(0.13 0.01 260);border:1px solid oklch(0.25 0.02 260);border-radius:14px;padding:28px;max-width:400px;width:calc(100% - 48px);box-shadow:0 24px 60px rgba(0,0,0,.5);">' +
+        '<div style="font-size:18px;font-weight:700;margin-bottom:8px;">Link limit reached</div>' +
+        '<div style="font-size:14px;color:oklch(0.65 0.02 260);margin-bottom:20px;">You have used ' + used + ' of ' + limit + ' links on the Free plan.</div>' +
+        '<div style="background:oklch(0.1 0.01 260);border-radius:10px;padding:16px;margin-bottom:20px;">' +
+        '<div style="font-size:13px;font-weight:600;color:oklch(0.85 0.14 290);margin-bottom:10px;">URLsToGo Pro — $12 / month</div>' +
+        '<div style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:oklch(0.7 0.02 260);">' +
+        '<div>200 short links</div>' +
+        '<div>Full analytics (geo, device, browser)</div>' +
+        '<div>Unlimited categories &amp; tags</div>' +
+        '</div></div>' +
+        '<div style="display:flex;gap:8px;">' +
+        '<button onclick="startCheckout()" style="flex:1;padding:10px;background:oklch(0.6 0.2 290);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">Upgrade to Pro</button>' +
+        '<button onclick="document.getElementById('upgradeModal').remove()" style="padding:10px 16px;background:oklch(0.2 0.01 260);color:oklch(0.7 0.02 260);border:none;border-radius:8px;font-size:14px;cursor:pointer;">Cancel</button>' +
+        '</div></div>';
+      modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+      document.body.appendChild(modal);
     }
 
     // Get expiration date from select and custom input
@@ -8051,13 +8339,14 @@ Create .github/workflows/update-preview-link.yml that:
       document.querySelectorAll('.settings-panel').forEach(el => el.classList.remove('active'));
       const tabBtn = document.querySelector('[data-settings-tab="' + tab + '"]');
       if (tabBtn) tabBtn.classList.add('active');
-      const panelMap = { profile: 'settingsProfile', 'git-sync': 'settingsGitSync', 'api-keys': 'settingsApiKeys', appearance: 'settingsAppearance', about: 'settingsAbout', devtools: 'settingsDevtools' };
+      const panelMap = { profile: 'settingsProfile', 'git-sync': 'settingsGitSync', 'api-keys': 'settingsApiKeys', appearance: 'settingsAppearance', about: 'settingsAbout', devtools: 'settingsDevtools', billing: 'settingsBilling' };
       const panel = document.getElementById(panelMap[tab]);
       if (panel) panel.classList.add('active');
       if (tab === 'api-keys') loadApiKeys();
       if (tab === 'git-sync') loadGitSyncSettings();
       if (tab === 'profile') loadProfile();
       if (tab === 'devtools') loadDevtools();
+      if (tab === 'billing') loadBillingStatus();
     }
 
     function switchPanelTab(panel, tab) {
@@ -8071,6 +8360,95 @@ Create .github/workflows/update-preview-link.yml that:
       parent.querySelectorAll('.panel-tab').forEach(el => {
         if (el.getAttribute('data-ptab') === key) el.classList.add('active');
       });
+    }
+
+    // =========================================================================
+    // Billing Panel
+    // =========================================================================
+
+    async function loadBillingStatus() {
+      const container = document.getElementById('billingStatus');
+      const usageSection = document.getElementById('billingUsage');
+      const actionsEl = document.getElementById('billingActions');
+      if (!container) return;
+
+      try {
+        const res = await fetch('/api/billing/status', { credentials: 'include' });
+        const data = await res.json();
+
+        const isPro = data.plan === 'pro';
+        const pct = Math.min(100, Math.round((data.links_used / data.links_limit) * 100));
+        const nearLimit = pct >= 80;
+
+        // Plan card
+        container.innerHTML = isPro
+          ? '<div style="padding: 16px; border-radius: 10px; background: oklch(var(--accent-violet) / 0.1); border: 1px solid oklch(var(--accent-violet) / 0.3);">' +
+            '<div style="display: flex; align-items: center; justify-content: space-between;">' +
+            '<div><div style="font-size: 13px; font-weight: 600; color: oklch(var(--accent-violet));">Pro Plan</div>' +
+            '<div style="font-size: 12px; color: oklch(var(--muted-foreground)); margin-top: 2px;">$12 / month</div></div>' +
+            '<span style="font-size: 11px; padding: 2px 8px; border-radius: 99px; background: oklch(0.65 0.18 145 / 0.15); color: oklch(0.65 0.18 145); font-weight: 600;">Active</span>' +
+            '</div></div>'
+          : '<div style="padding: 16px; border-radius: 10px; background: oklch(var(--secondary)); border: 1px solid oklch(var(--border));">' +
+            '<div style="font-size: 13px; font-weight: 600;">Free Plan</div>' +
+            '<div style="font-size: 12px; color: oklch(var(--muted-foreground)); margin-top: 2px;">Limited to ' + data.links_limit + ' links</div>' +
+            '</div>';
+
+        // Usage bar
+        usageSection.style.display = 'block';
+        document.getElementById('billingUsageText').textContent = data.links_used + ' / ' + data.links_limit + ' links';
+        document.getElementById('billingUsageBar').style.width = pct + '%';
+        document.getElementById('billingUsageBar').style.background = nearLimit
+          ? 'oklch(0.75 0.15 45)' : 'oklch(var(--accent-violet))';
+
+        const warn = document.getElementById('billingUsageWarning');
+        if (nearLimit && !isPro) {
+          warn.style.display = 'block';
+          warn.textContent = pct >= 100
+            ? 'You have reached your link limit. Upgrade to Pro to add more.'
+            : 'You are approaching your link limit (' + pct + '% used).';
+        }
+
+        // Action buttons
+        actionsEl.innerHTML = '';
+        if (isPro) {
+          const manageBtn = document.createElement('button');
+          manageBtn.className = 'btn btn-outline';
+          manageBtn.textContent = 'Manage Subscription';
+          manageBtn.onclick = () => openBillingPortal();
+          actionsEl.appendChild(manageBtn);
+        } else {
+          const upgradeBtn = document.createElement('button');
+          upgradeBtn.className = 'btn btn-primary';
+          upgradeBtn.style.cssText = 'background: oklch(var(--accent-violet)); color: #fff;';
+          upgradeBtn.textContent = 'Upgrade to Pro — $12 / month';
+          upgradeBtn.onclick = () => startCheckout();
+          actionsEl.appendChild(upgradeBtn);
+          const featuresEl = document.createElement('div');
+          featuresEl.style.cssText = 'font-size: 12px; color: oklch(var(--muted-foreground)); margin-top: 4px;';
+          featuresEl.textContent = '200 links · Full analytics (geo, device, browser) · Unlimited categories & tags';
+          actionsEl.appendChild(featuresEl);
+        }
+      } catch (e) {
+        container.innerHTML = '<div style="color: oklch(0.75 0.12 25); font-size: 13px;">Failed to load billing status.</div>';
+      }
+    }
+
+    async function startCheckout() {
+      try {
+        const res = await fetch('/api/billing/checkout', { method: 'POST', credentials: 'include' });
+        const data = await res.json();
+        if (data.url) { window.location.href = data.url; }
+        else { alert('Could not start checkout: ' + (data.error || 'Unknown error')); }
+      } catch (e) { alert('Checkout failed. Please try again.'); }
+    }
+
+    async function openBillingPortal() {
+      try {
+        const res = await fetch('/api/billing/portal', { credentials: 'include' });
+        const data = await res.json();
+        if (data.url) { window.location.href = data.url; }
+        else { alert('Could not open portal: ' + (data.error || 'Unknown error')); }
+      } catch (e) { alert('Could not open billing portal.'); }
     }
 
     // =========================================================================
