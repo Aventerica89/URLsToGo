@@ -189,7 +189,8 @@ function getCorsHeaders(request) {
 }
 
 // JSON response with CORS headers (for API endpoints)
-function jsonResponse(data, status = 200) {
+function jsonResponse(data, statusOrOpts = 200) {
+  const status = typeof statusOrOpts === 'object' ? (statusOrOpts.status ?? 200) : statusOrOpts;
   return new Response(JSON.stringify(data), {
     status,
     headers: {
@@ -1582,33 +1583,37 @@ export default {
       if (!env.STRIPE_SECRET_KEY) {
         return jsonResponse({ error: 'Billing not configured' }, { status: 503 });
       }
-      // Look up or create Stripe customer
-      let customerId = null;
-      const existing = await env.DB.prepare(
-        'SELECT stripe_customer_id FROM subscriptions WHERE user_email = ?'
-      ).bind(userEmail).first();
-      if (existing?.stripe_customer_id) {
-        customerId = existing.stripe_customer_id;
-      } else {
-        const cust = await stripeRequest('POST', '/customers', { email: userEmail, metadata: { app: 'urlstogo' } }, env);
-        if (cust.error) return jsonResponse({ error: 'Failed to create customer' }, { status: 500 });
-        customerId = cust.id;
+      try {
+        // Look up or create Stripe customer
+        let customerId = null;
+        const existing = await env.DB.prepare(
+          'SELECT stripe_customer_id FROM subscriptions WHERE user_email = ?'
+        ).bind(userEmail).first();
+        if (existing?.stripe_customer_id) {
+          customerId = existing.stripe_customer_id;
+        } else {
+          const cust = await stripeRequest('POST', '/customers', { email: userEmail, metadata: { app: 'urlstogo' } }, env);
+          if (cust.error) return jsonResponse({ error: cust.error.message || 'Failed to create customer' }, { status: 500 });
+          customerId = cust.id;
+        }
+        const successUrl = new URL('/admin', url.origin).toString() + '#billing?upgraded=1';
+        const cancelUrl = new URL('/admin', url.origin).toString() + '#billing';
+        const session = await stripeRequest('POST', '/checkout/sessions', {
+          customer: customerId,
+          mode: 'subscription',
+          'line_items[0][price]': STRIPE_PRO_PRICE_ID,
+          'line_items[0][quantity]': '1',
+          success_url: successUrl,
+          cancel_url: cancelUrl,
+          'subscription_data[metadata][app]': 'urlstogo',
+          'subscription_data[metadata][user_email]': userEmail,
+          'customer_update[email]': 'auto',
+        }, env);
+        if (session.error) return jsonResponse({ error: session.error.message || 'Checkout session failed' }, { status: 500 });
+        return jsonResponse({ url: session.url });
+      } catch (e) {
+        return jsonResponse({ error: e.message || 'Checkout failed' }, { status: 500 });
       }
-      const successUrl = new URL('/admin', url.origin).toString() + '#billing?upgraded=1';
-      const cancelUrl = new URL('/admin', url.origin).toString() + '#billing';
-      const session = await stripeRequest('POST', '/checkout/sessions', {
-        customer: customerId,
-        mode: 'subscription',
-        'line_items[0][price]': STRIPE_PRO_PRICE_ID,
-        'line_items[0][quantity]': '1',
-        success_url: successUrl,
-        cancel_url: cancelUrl,
-        'subscription_data[metadata][app]': 'urlstogo',
-        'subscription_data[metadata][user_email]': userEmail,
-        'customer_update[email]': 'auto',
-      }, env);
-      if (session.error) return jsonResponse({ error: session.error.message }, { status: 500 });
-      return jsonResponse({ url: session.url });
     }
 
     // GET /api/billing/portal — Stripe Customer Portal (manage/cancel)
@@ -1616,19 +1621,23 @@ export default {
       if (!env.STRIPE_SECRET_KEY) {
         return jsonResponse({ error: 'Billing not configured' }, { status: 503 });
       }
-      const sub = await env.DB.prepare(
-        'SELECT stripe_customer_id FROM subscriptions WHERE user_email = ?'
-      ).bind(userEmail).first();
-      if (!sub?.stripe_customer_id) {
-        return jsonResponse({ error: 'No subscription found' }, { status: 404 });
+      try {
+        const sub = await env.DB.prepare(
+          'SELECT stripe_customer_id FROM subscriptions WHERE user_email = ?'
+        ).bind(userEmail).first();
+        if (!sub?.stripe_customer_id) {
+          return jsonResponse({ error: 'No subscription found' }, { status: 404 });
+        }
+        const returnUrl = new URL('/admin', url.origin).toString() + '#billing';
+        const portal = await stripeRequest('POST', '/billing_portal/sessions', {
+          customer: sub.stripe_customer_id,
+          return_url: returnUrl,
+        }, env);
+        if (portal.error) return jsonResponse({ error: portal.error.message || 'Portal session failed' }, { status: 500 });
+        return jsonResponse({ url: portal.url });
+      } catch (e) {
+        return jsonResponse({ error: e.message || 'Portal failed' }, { status: 500 });
       }
-      const returnUrl = new URL('/admin', url.origin).toString() + '#billing';
-      const portal = await stripeRequest('POST', '/billing_portal/sessions', {
-        customer: sub.stripe_customer_id,
-        return_url: returnUrl,
-      }, env);
-      if (portal.error) return jsonResponse({ error: portal.error.message }, { status: 500 });
-      return jsonResponse({ url: portal.url });
     }
 
     return new Response('Not found', { status: 404 });
@@ -1671,7 +1680,7 @@ async function stripeRequest(method, endpoint, body, env) {
   }
   try {
     const res = await fetch(STRIPE_API_BASE + endpoint, opts);
-    return res.json();
+    return await res.json();
   } catch (e) {
     return { error: { message: 'Stripe API unreachable: ' + e.message } };
   }
