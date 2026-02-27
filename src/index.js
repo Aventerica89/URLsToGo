@@ -1592,7 +1592,7 @@ export default {
         if (existing?.stripe_customer_id) {
           customerId = existing.stripe_customer_id;
         } else {
-          const cust = await stripeRequest('POST', '/customers', { email: userEmail, metadata: { app: 'urlstogo' } }, env);
+          const cust = await stripeRequest('POST', '/customers', { email: userEmail, 'metadata[app]': 'urlstogo' }, env);
           if (cust.error) return jsonResponse({ error: cust.error.message || 'Failed to create customer' }, { status: 500 });
           customerId = cust.id;
         }
