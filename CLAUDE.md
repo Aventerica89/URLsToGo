@@ -20,9 +20,18 @@
 
 ### Adding Schema Changes
 
-1. Add SQL to `migrations.sql` using `CREATE TABLE IF NOT EXISTS` or `CREATE INDEX IF NOT EXISTS`
-2. Push to main
-3. Done - migrations run automatically
+**Create a new migration file** — do NOT edit existing migration files (hookify rule enforces this).
+
+1. Create `migrations-{feature}.sql` with `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS`
+2. Add a step to `deploy.yml` to run it:
+   ```yaml
+   command: d1 execute url-shortener --remote --file=migrations-{feature}.sql
+   ```
+3. Push to main — runs automatically
+
+**Existing migration files (append-only reference):**
+- `migrations.sql` — core schema
+- `migrations-billing.sql` — Stripe subscriptions table
 
 ### One-Time Setup (Already Done)
 
@@ -37,7 +46,8 @@ User only needs to set these GitHub secrets once:
 | `src/index.js` | Main worker (npm-based, uses @clerk/backend) |
 | `worker-multiuser.js` | Legacy file (kept for reference, not deployed) |
 | `package.json` | npm dependencies (@clerk/backend, wrangler) |
-| `migrations.sql` | Auto-runs on every deploy |
+| `migrations.sql` | Core schema (append-only) |
+| `migrations-billing.sql` | Stripe subscriptions schema |
 | `schema-multiuser.sql` | Full schema reference |
 | `design-system.html` | UI playground for testing changes |
 | `.github/workflows/deploy.yml` | CI/CD pipeline (includes npm ci) |
@@ -73,25 +83,16 @@ Replaced Cloudflare Access with Clerk for authentication. Provides custom-brande
 
 ### Key Code Locations
 
-| Location | Purpose |
-|----------|---------|
-| `src/index.js:1-3` | @clerk/backend import |
-| `src/index.js:~815-890` | JWT verification with verifyToken |
-| `src/index.js:~1400-1700` | Login/signup page HTML (getAuthPageHTML) |
-| `src/index.js:~4400-4430` | Admin page Clerk initialization |
+Search `src/index.js` for: `getUserEmail`, `verifyToken`, `getAuthPageHTML`, `initClerk`
 
-### Pending Migration
+### Legacy Data Migration (if needed)
 
-User switched from Cloudflare Access to Clerk. Links are associated with old email. To transfer:
-
+If links still show under `admin@jbmdcreations.com` (old Cloudflare Access email), run in D1 Console:
 ```sql
--- Run in Cloudflare D1 Console (Storage & Databases → D1 → url-shortener → Console)
-UPDATE links SET user_email = 'NEW_EMAIL' WHERE user_email = 'admin@jbmdcreations.com';
-UPDATE categories SET user_email = 'NEW_EMAIL' WHERE user_email = 'admin@jbmdcreations.com';
-UPDATE tags SET user_email = 'NEW_EMAIL' WHERE user_email = 'admin@jbmdcreations.com';
+UPDATE links SET user_email = 'YOUR_GOOGLE_EMAIL' WHERE user_email = 'admin@jbmdcreations.com';
+UPDATE categories SET user_email = 'YOUR_GOOGLE_EMAIL' WHERE user_email = 'admin@jbmdcreations.com';
+UPDATE tags SET user_email = 'YOUR_GOOGLE_EMAIL' WHERE user_email = 'admin@jbmdcreations.com';
 ```
-
-Replace `NEW_EMAIL` with the user's Clerk/Google email.
 
 ### Design System
 
@@ -110,8 +111,24 @@ The UI uses Shadcn-style CSS variables. To test UI changes:
 ### Remember
 
 - Merging to `main` = automatic deploy
-- Schema changes go in `migrations.sql`
+- Schema changes → create new migration file (see above)
 - Never ask user to run wrangler commands or edit Cloudflare dashboard
+
+---
+
+## GIT WORKFLOW
+
+**Cannot push directly to `main`** — branch is protected.
+
+```bash
+# Always work on a claude branch
+git checkout -b claude/{feature}-{sessionID}
+git add ... && git commit -m "feat: ..."
+git push -u origin claude/{feature}-{sessionID}
+gh pr create   # merge triggers auto-deploy
+```
+
+Admin URL: `urlstogo.cloud/admin` (NOT `go.urlstogo.cloud` — that's for shortlinks only)
 
 ---
 
@@ -254,7 +271,7 @@ Content-Type: application/json
 To add dynamic preview links to a new repository:
 
 1. **Create API Key** (in URLsToGo admin):
-   - Go to go.urlstogo.cloud/admin → API Keys
+   - Go to urlstogo.cloud/admin → API Keys
    - Create key with name like "bricks-cc-preview"
    - Save the key (format: `utg_xxxxxxx...`)
 
@@ -284,6 +301,54 @@ To add dynamic preview links to a new repository:
 
 - **bricks-cc** (Vercel): `go.urlstogo.cloud/bricks-cc--preview`
 - **jb-cloud-app-tracker** (TBD): `go.urlstogo.cloud/jb-cloud-app-tracker--preview`
+
+---
+
+## STRIPE BILLING (February 2026)
+
+### Plans
+
+| Plan | Price | Links | Analytics |
+|------|-------|-------|-----------|
+| Free | $0 | 25 | None |
+| Pro | $12/mo | 200 | Full (geo, device, browser) |
+
+Limits defined in `src/index.js`: `const PLAN_LIMITS = { free: { links: 25 }, pro: { links: 200 } }`
+
+### Stripe Resources
+
+- **Product:** `prod_U3Qqpfwus7EuD9` (URLsToGo Pro)
+- **Price:** `price_1T5Jz1H6aZ92e8Txu9tLJnRI` ($12/mo)
+- **Webhook:** `we_1T5JzHH6aZ92e8TxrS4EWSNU` → `urlstogo.cloud/api/billing/webhook`
+
+### Environment Variables (Cloudflare Dashboard — already set)
+
+| Variable | Description |
+|----------|-------------|
+| `STRIPE_SECRET_KEY` | Live secret key |
+| `STRIPE_WEBHOOK_SECRET` | Webhook signing secret (URLsToGo-specific) |
+| `STRIPE_PRO_PRICE_ID` | `price_1T5Jz1H6aZ92e8Txu9tLJnRI` |
+
+All keys in 1Password: App Dev vault, tagged `#urlstogo`.
+
+### API Routes
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| `POST` | `/api/billing/webhook` | Stripe HMAC | Subscription lifecycle |
+| `GET` | `/api/billing/status` | Clerk | Current plan + usage |
+| `POST` | `/api/billing/checkout` | Clerk | Start Stripe Checkout |
+| `GET` | `/api/billing/portal` | Clerk | Manage/cancel subscription |
+
+### Enforcement
+
+- Link creation (`POST /api/links`) checks count vs `PLAN_LIMITS[plan].links`
+- Returns `{ error: 'plan_limit', upgrade: true }` with HTTP 402 on limit hit
+- Frontend shows upgrade modal; billing tab at `urlstogo.cloud/admin#billing`
+
+### Key Code
+
+Search `src/index.js` for: `getUserPlan`, `stripeRequest`, `verifyStripeSignature`, `showUpgradeModal`
 
 ---
 
@@ -333,75 +398,19 @@ All XSS vulnerabilities fixed:
 
 ### Known Issues / TODO
 
-1. **Logout button** - Email in sidebar footer needs logout functionality
-2. **Import button** - Needs testing (uploads JSON to restore artifacts)
-3. **Default collections** - Auto-creates on first visit via `/api/init`
-
-### User Info
-
-- Account: (see Cloudflare dashboard)
-- Email: (from Cloudflare Access JWT)
-- Workers subdomain: (your-subdomain.workers.dev)
+1. **Logout button** — sidebar footer email needs logout functionality
+2. **Import button** — needs testing
+3. **Default collections** — auto-creates on first visit via `/api/init`
 
 ---
 
 ## CHROME EXTENSION (January 2026)
 
-### What It Is
+Local-only Chrome extension in `chrome-extension/` — adds "Save" button on Claude.ai to send artifacts to Artifact Manager.
 
-A Chrome extension that adds a "Save to Artifact Manager" button on Claude.ai, allowing one-click saving of artifacts.
+**Install:** Open `chrome-extension/generate-icons.html` → download icons → load unpacked at `chrome://extensions/`
 
-### Location
-
-`chrome-extension/` directory (not deployed - local browser extension)
-
-### Files
-
-| File | Purpose |
-|------|---------|
-| `chrome-extension/manifest.json` | Extension configuration (MV3) |
-| `chrome-extension/content.js` | Runs on Claude.ai, adds save buttons |
-| `chrome-extension/content.css` | Styles for save buttons |
-| `chrome-extension/background.js` | Service worker for API calls |
-| `chrome-extension/popup.html` | Extension popup UI |
-| `chrome-extension/popup.js` | Popup logic |
-| `chrome-extension/generate-icons.html` | Tool to generate PNG icons |
-| `chrome-extension/README.md` | Installation & usage docs |
-
-### Installation
-
-1. Open `chrome-extension/generate-icons.html` in browser
-2. Download icons and place in `chrome-extension/icons/`
-3. Go to `chrome://extensions/`
-4. Enable Developer Mode
-5. Click "Load unpacked" and select `chrome-extension/` folder
-6. Configure Artifact Manager URL in extension popup
-
-### How It Works
-
-1. Content script detects artifacts on Claude.ai pages
-2. Adds purple "Save" button to each artifact
-3. Click sends artifact data to Artifact Manager API
-4. CORS headers on API allow cross-origin requests from claude.ai
-
-### CORS Configuration
-
-The Artifact Manager worker includes CORS headers to allow the extension to make API calls from claude.ai:
-
-```javascript
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': 'https://claude.ai',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Cf-Access-Jwt-Assertion',
-  'Access-Control-Allow-Credentials': 'true'
-};
-```
-
-### Limitations
-
-- Claude.ai UI changes may require content script updates
-- User must be logged into Cloudflare Access first
-- Artifact detection is heuristic-based (may miss some artifacts)
+See `chrome-extension/README.md` for full setup. CORS on Artifact Manager allows `claude.ai` origin.
 
 ---
 
