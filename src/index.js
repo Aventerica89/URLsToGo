@@ -1773,9 +1773,9 @@ async function getUserEmail(request, env) {
     const clerkClient = createClerkClient({ secretKey });
     const user = await clerkClient.users.getUser(userId);
 
-    return user.emailAddresses?.[0]?.emailAddress ||
-           user.primaryEmailAddress?.emailAddress ||
-           userId; // Fall back to user ID if no email
+    const primaryEmail = user.emailAddresses?.find(e => e.id === user.primaryEmailAddressId)?.emailAddress;
+    const anyEmail = user.emailAddresses?.[0]?.emailAddress;
+    return primaryEmail || anyEmail || null;
   } catch (e) {
     console.error('Clerk user fetch error:', e.message);
     return null;
@@ -7454,7 +7454,13 @@ Create .github/workflows/update-preview-link.yml that:
       if (category) url += '&category=' + category;
 
       const res = await fetch(url);
-      allLinks = await res.json();
+      if (!res.ok) {
+        allLinks = [];
+        renderLinks();
+        return;
+      }
+      const data = await res.json();
+      allLinks = Array.isArray(data) ? data : [];
       renderLinks();
     }
 
@@ -7464,7 +7470,7 @@ Create .github/workflows/update-preview-link.yml that:
       const pageLinks = allLinks.slice(start, start + perPage);
 
       if (pageLinks.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 48px; color: oklch(var(--muted-foreground));">No links found. Create your first one above!</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 48px; color: oklch(var(--muted-foreground));">No links yet. Click + Create Link to add your first one.</td></tr>';
         document.getElementById('pagination').style.display = 'none';
         return;
       }

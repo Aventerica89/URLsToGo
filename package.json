@@ -7,7 +7,9 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "playwright test",
+    "test:auth": "playwright test tests/fixtures/auth.setup.ts",
+    "test:ui": "playwright test --ui"
   },
   "repository": {
     "type": "git",
@@ -25,6 +27,7 @@
     "tweetsodium": "^0.0.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.50.0",
     "wrangler": "^4.61.1"
   }
 }

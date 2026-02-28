@@ -19,3 +19,8 @@ Thumbs.db
 *.log
 npm-debug.log*
 .claude/session-cache.json
+
+# Playwright
+playwright-report/
+playwright/.auth/
+test-results/
