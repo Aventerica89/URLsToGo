@@ -4948,7 +4948,13 @@ function getAdminHTML(userEmail, env) {
     .table tr:hover .cell-actions { opacity: 1; }
     /* Variant D table topbar */
     .table-topbar { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid oklch(var(--border)); }
-    .table-search { max-width: 280px; height: 34px; font-size: 13px; }
+    .table-search { max-width: 220px; height: 34px; font-size: 13px; }
+    /* Tag filter chips in topbar */
+    .tag-filter-chips { display: flex; align-items: center; gap: 5px; flex: 1; overflow-x: auto; padding: 0 2px; scrollbar-width: none; }
+    .tag-filter-chips::-webkit-scrollbar { display: none; }
+    .tag-chip { background: none; border: 1px solid oklch(var(--border)); border-radius: 20px; padding: 3px 11px; font-size: 12px; font-weight: 500; color: oklch(var(--muted-foreground)); cursor: pointer; white-space: nowrap; transition: background 120ms, color 120ms, border-color 120ms; line-height: 1.5; }
+    .tag-chip:hover { background: oklch(var(--muted) / 0.5); color: oklch(var(--foreground)); }
+    .tag-chip.active { background: oklch(60.56% 0.2189 292.72 / 0.15); border-color: oklch(60.56% 0.2189 292.72 / 0.5); color: oklch(60.56% 0.2189 292.72); }
     /* Variant D tag pills in table rows */
     .tag-pill-row { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; background: oklch(60.56% 0.2189 292.72 / 0.12); color: oklch(60.56% 0.2189 292.72); border: 1px solid oklch(60.56% 0.2189 292.72 / 0.25); margin-right: 3px; }
     /* Variant D clicks column */
@@ -6213,127 +6219,6 @@ function getAdminHTML(userEmail, env) {
       </header>
 
       <div class="page">
-        <!-- Stats -->
-        <div class="stats-grid">
-          <div class="card stat-card">
-            <div class="stat-label">Total Links</div>
-            <div class="stat-value" id="statLinks">0</div>
-          </div>
-          <div class="card stat-card">
-            <div class="stat-label">Total Clicks</div>
-            <div class="stat-value" id="statClicks">0</div>
-          </div>
-          <div class="card stat-card">
-            <div class="stat-label">Categories</div>
-            <div class="stat-value" id="statCategories">0</div>
-          </div>
-          <div class="card stat-card">
-            <div class="stat-label">Unique Tags</div>
-            <div class="stat-value" id="statTags">0</div>
-          </div>
-        </div>
-
-        <!-- Create Form -->
-        <div class="card" style="margin-bottom: 24px;">
-          <div class="card-header">
-            <h2 class="card-title">Create New Link</h2>
-            <p class="card-description">Add a new shortened link with optional category and tags.</p>
-          </div>
-          <div class="card-content">
-            <div class="form-grid">
-              <div class="form-group">
-                <label class="label">Short Code</label>
-                <input type="text" class="input" id="newCode" placeholder="my-link">
-              </div>
-              <div class="form-group">
-                <label class="label">Destination URL</label>
-                <div style="display: flex; gap: 8px;">
-                  <input type="url" class="input" id="newDestination" placeholder="https://example.com/your-long-url" style="flex: 1;">
-                  <button type="button" class="btn btn-outline btn-sm" onclick="toggleUTMBuilder()" title="UTM Parameters">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
-                      <circle cx="12" cy="12" r="3"/>
-                    </svg>
-                    UTM
-                  </button>
-                </div>
-              </div>
-              <div class="form-group">
-                <label class="label">Description (optional)</label>
-                <input type="text" class="input" id="newDescription" placeholder="Brief note about this link">
-              </div>
-              <!-- UTM Builder Panel -->
-              <div id="utmBuilder" style="grid-column: 1 / -1; display: none; padding: 16px; background: oklch(var(--muted) / 0.3); border-radius: var(--radius); margin-top: -8px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                  <span style="font-size: 13px; font-weight: 500;">UTM Parameters</span>
-                  <button type="button" class="btn btn-ghost btn-sm" onclick="toggleUTMBuilder()">Close</button>
-                </div>
-                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
-                  <div>
-                    <label class="label" style="font-size: 12px;">Source *</label>
-                    <input type="text" class="input" id="utmSource" placeholder="google, newsletter" style="height: 36px;">
-                  </div>
-                  <div>
-                    <label class="label" style="font-size: 12px;">Medium *</label>
-                    <input type="text" class="input" id="utmMedium" placeholder="cpc, email, social" style="height: 36px;">
-                  </div>
-                  <div>
-                    <label class="label" style="font-size: 12px;">Campaign *</label>
-                    <input type="text" class="input" id="utmCampaign" placeholder="spring_sale" style="height: 36px;">
-                  </div>
-                  <div>
-                    <label class="label" style="font-size: 12px;">Term (optional)</label>
-                    <input type="text" class="input" id="utmTerm" placeholder="running+shoes" style="height: 36px;">
-                  </div>
-                  <div>
-                    <label class="label" style="font-size: 12px;">Content (optional)</label>
-                    <input type="text" class="input" id="utmContent" placeholder="logolink" style="height: 36px;">
-                  </div>
-                  <div style="display: flex; align-items: flex-end;">
-                    <button type="button" class="btn btn-default btn-sm" onclick="applyUTM()" style="width: 100%;">Apply UTM</button>
-                  </div>
-                </div>
-              </div>
-              <div class="form-group">
-                <label class="label">Category</label>
-                <select class="select" id="newCategory">
-                  <option value="">No category</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label class="label">Tags</label>
-                <div class="tag-input" id="tagInput">
-                  <input type="text" placeholder="Add tag..." id="newTagInput">
-                </div>
-              </div>
-              <div class="form-group">
-                <label class="label">Expires</label>
-                <select class="select" id="newExpires">
-                  <option value="">Never</option>
-                  <option value="1h">1 hour</option>
-                  <option value="24h">24 hours</option>
-                  <option value="7d">7 days</option>
-                  <option value="30d">30 days</option>
-                  <option value="90d">90 days</option>
-                  <option value="custom">Custom date</option>
-                </select>
-              </div>
-              <div class="form-group" id="customExpiryGroup" style="display: none;">
-                <label class="label">Expiry Date</label>
-                <input type="datetime-local" class="input" id="newExpiresCustom">
-              </div>
-              <div class="form-group">
-                <label class="label">Password</label>
-                <input type="password" class="input" id="newPassword" placeholder="Optional">
-              </div>
-              <div class="form-group">
-                <label class="label">&nbsp;</label>
-                <button class="btn btn-default" style="height: 40px;" onclick="createLink()">Create Link</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
         <!-- Bulk Actions Bar -->
         <div class="bulk-actions" id="bulkActions">
           <span class="bulk-actions-count"><span id="bulkCount">0</span> selected</span>
@@ -6354,6 +6239,9 @@ function getAdminHTML(userEmail, env) {
             <select id="filterCategory" style="display:none;" onchange="loadLinks()">
               <option value="">All Categories</option>
             </select>
+            <div id="tagFilterChips" class="tag-filter-chips">
+              <button class="tag-chip active" data-tag="" onclick="filterByTag('')">All</button>
+            </div>
             <div style="display:flex;gap:6px;margin-left:auto;">
               <select class="select sm" id="sortLinks" onchange="loadLinks()">
                 <option value="newest">Sort: Newest</option>
@@ -7346,6 +7234,7 @@ Create .github/workflows/update-preview-link.yml that:
     let allCategories = [];
     let allTags = [];
     let newTags = [];
+    let activeTagFilter = '';
 
     // Escape for use in JavaScript string literals (client-side version)
     function escapeJs(str) {
@@ -7489,10 +7378,11 @@ Create .github/workflows/update-preview-link.yml that:
     async function loadStats() {
       const res = await fetch('/api/stats');
       const stats = await res.json();
-      document.getElementById('statLinks').textContent = stats.links.toLocaleString();
-      document.getElementById('statClicks').textContent = stats.clicks.toLocaleString();
-      document.getElementById('statCategories').textContent = stats.categories;
-      document.getElementById('statTags').textContent = stats.tags;
+      const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+      setEl('statLinks', stats.links.toLocaleString());
+      setEl('statClicks', stats.clicks.toLocaleString());
+      setEl('statCategories', stats.categories);
+      setEl('statTags', stats.tags);
       document.getElementById('totalLinksNav').textContent = stats.links;
 
       // Sidebar stats widget
@@ -7539,7 +7429,8 @@ Create .github/workflows/update-preview-link.yml that:
 
       // Update form selects (escape user-controlled data)
       const options = '<option value="">No category</option>' + allCategories.map(cat => \`<option value="\${escapeAttr(cat.id)}">\${escapeHtml(cat.name)}</option>\`).join('');
-      document.getElementById('newCategory').innerHTML = options;
+      const newCatEl = document.getElementById('newCategory');
+      if (newCatEl) newCatEl.innerHTML = options;
       document.getElementById('filterCategory').innerHTML = '<option value="">All Categories</option>' + allCategories.map(cat => \`<option value="\${escapeAttr(cat.slug)}">\${escapeHtml(cat.name)}</option>\`).join('');
     }
 
@@ -7551,6 +7442,8 @@ Create .github/workflows/update-preview-link.yml that:
       nav.innerHTML = allTags.map(tag => \`
         <span class="tag-cloud-pill" onclick="filterByTag('\${escapeAttr(tag.name)}')">\${escapeHtml(tag.name)}</span>
       \`).join('');
+
+      renderTagChips();
     }
 
     async function loadLinks() {
@@ -7649,11 +7542,21 @@ Create .github/workflows/update-preview-link.yml that:
     }
 
     function filterLinksSearch(query) {
-      const q = query.toLowerCase().trim();
+      applyLinkFilters();
+    }
+
+    function applyLinkFilters() {
+      const q = (document.getElementById('tableSearch').value || '').toLowerCase().trim();
       document.querySelectorAll('#linksTable tr[data-code]').forEach(row => {
         const code = row.dataset.code.toLowerCase();
         const dest = (row.querySelector('.cell-url') || {}).textContent || '';
-        row.style.display = (!q || code.includes(q) || dest.toLowerCase().includes(q)) ? '' : 'none';
+        const matchesSearch = !q || code.includes(q) || dest.toLowerCase().includes(q);
+        let matchesTag = true;
+        if (activeTagFilter) {
+          const pills = [...row.querySelectorAll('.tag-pill-row')].map(p => p.textContent.trim());
+          matchesTag = pills.includes(activeTagFilter);
+        }
+        row.style.display = (matchesSearch && matchesTag) ? '' : 'none';
       });
     }
 
@@ -7685,8 +7588,27 @@ Create .github/workflows/update-preview-link.yml that:
     }
 
     function filterByTag(tag) {
-      // For now, just show toast - could add tag filtering
-      showToast('Tag filtering coming soon!', 'Showing links tagged with: ' + tag);
+      activeTagFilter = tag;
+      renderTagChips();
+      applyLinkFilters();
+    }
+
+    function renderTagChips() {
+      const container = document.getElementById('tagFilterChips');
+      if (!container) return;
+      const MAX = 8;
+      const visible = allTags.slice(0, MAX);
+      const overflow = allTags.slice(MAX);
+      let html = \`<button class="tag-chip\${activeTagFilter === '' ? ' active' : ''}" data-tag="" onclick="filterByTag('')">All</button>\`;
+      visible.forEach(tag => {
+        const n = escapeAttr(tag.name);
+        const h = escapeHtml(tag.name);
+        html += \`<button class="tag-chip\${activeTagFilter === tag.name ? ' active' : ''}" data-tag="\${n}" onclick="filterByTag('\${n}')">\${h}</button>\`;
+      });
+      if (overflow.length) {
+        html += \`<button class="tag-chip" title="\${overflow.length} more tags available">+\${overflow.length}</button>\`;
+      }
+      container.innerHTML = html;
     }
 
     function filterCatSearch(query) {
@@ -7939,9 +7861,9 @@ Create .github/workflows/update-preview-link.yml that:
       });
     }
 
-    // Tag input handling
+    // Tag input handling (inline form removed — guard in case element missing)
     const tagInputEl = document.getElementById('newTagInput');
-    tagInputEl.addEventListener('keydown', (e) => {
+    if (tagInputEl) tagInputEl.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ',') {
         e.preventDefault();
         const tag = tagInputEl.value.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
@@ -8059,11 +7981,13 @@ Create .github/workflows/update-preview-link.yml that:
       setTimeout(() => toast.remove(), 5000);
     }
 
-    // Keyboard shortcuts for form
-    document.getElementById('newCode').addEventListener('keypress', e => {
-      if (e.key === 'Enter') document.getElementById('newDestination').focus();
+    // Keyboard shortcuts for inline form (guarded — form removed from desktop layout)
+    const _newCode = document.getElementById('newCode');
+    const _newDest = document.getElementById('newDestination');
+    if (_newCode) _newCode.addEventListener('keypress', e => {
+      if (e.key === 'Enter' && _newDest) _newDest.focus();
     });
-    document.getElementById('newDestination').addEventListener('keypress', e => {
+    if (_newDest) _newDest.addEventListener('keypress', e => {
       if (e.key === 'Enter') createLink();
     });
 
