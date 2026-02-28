@@ -1760,7 +1760,7 @@ async function getUserEmail(request, env) {
   try {
     const payload = await verifyToken(token, {
       secretKey,
-      // Clerk SDK handles JWKS fetching and caching automatically
+      authorizedParties: ['https://urlstogo.cloud', 'https://go.urlstogo.cloud'],
     });
 
     if (!payload) return null;
@@ -7233,7 +7233,6 @@ Create .github/workflows/update-preview-link.yml that:
     let allLinks = [];
     let allCategories = [];
     let allTags = [];
-    let newTags = [];
     let activeTagFilter = '';
 
     // Escape for use in JavaScript string literals (client-side version)
@@ -7625,48 +7624,6 @@ Create .github/workflows/update-preview-link.yml that:
       });
     }
 
-    async function createLink() {
-      const code = document.getElementById('newCode').value.trim();
-      const destination = document.getElementById('newDestination').value.trim();
-      const description = document.getElementById('newDescription').value.trim() || null;
-      const category_id = document.getElementById('newCategory').value || null;
-      const expires_at = getExpirationDate('newExpires', 'newExpiresCustom');
-      const password = document.getElementById('newPassword').value || null;
-
-      if (!code || !destination) {
-        showToast('Missing fields', 'Please enter both code and destination', 'error');
-        return;
-      }
-
-      const res = await fetch('/api/links', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, destination, description, category_id, tags: newTags, expires_at, password })
-      });
-
-      if (res.ok) {
-        document.getElementById('newCode').value = '';
-        document.getElementById('newDestination').value = '';
-        document.getElementById('newDescription').value = '';
-        document.getElementById('newCategory').value = '';
-        document.getElementById('newExpires').value = '';
-        document.getElementById('newExpiresCustom').value = '';
-        document.getElementById('newPassword').value = '';
-        document.getElementById('customExpiryGroup').style.display = 'none';
-        newTags = [];
-        renderNewTags();
-        showToast('Link created', password ? 'Password-protected link created' : 'Your new short link is ready to use');
-        await Promise.all([loadLinks(), loadStats(), loadCategories(), loadTags()]);
-      } else {
-        const data = await res.json();
-        if (data.error === 'plan_limit') {
-          showUpgradeModal(data.links_used, data.links_limit, data.plan);
-        } else {
-          showToast('Error', data.error || 'Failed to create link', 'error');
-        }
-      }
-    }
-
     function showUpgradeModal(used, limit, plan) {
       const existing = document.getElementById('upgradeModal');
       if (existing) existing.remove();
@@ -7712,65 +7669,10 @@ Create .github/workflows/update-preview-link.yml that:
       }
     }
 
-    // Toggle custom expiry input visibility
-    document.getElementById('newExpires').addEventListener('change', (e) => {
-      document.getElementById('customExpiryGroup').style.display = e.target.value === 'custom' ? 'block' : 'none';
-    });
+    // Toggle custom expiry input visibility (edit modal only — inline form removed in PR #89)
     document.getElementById('editExpires').addEventListener('change', (e) => {
       document.getElementById('editCustomExpiryGroup').style.display = e.target.value === 'custom' ? 'block' : 'none';
     });
-
-    // UTM Builder functions
-    function toggleUTMBuilder() {
-      const builder = document.getElementById('utmBuilder');
-      builder.style.display = builder.style.display === 'none' ? 'block' : 'none';
-    }
-
-    function applyUTM() {
-      const source = document.getElementById('utmSource').value.trim();
-      const medium = document.getElementById('utmMedium').value.trim();
-      const campaign = document.getElementById('utmCampaign').value.trim();
-      const term = document.getElementById('utmTerm').value.trim();
-      const content = document.getElementById('utmContent').value.trim();
-
-      if (!source || !medium || !campaign) {
-        showToast('Missing UTM parameters', 'Source, Medium, and Campaign are required', 'error');
-        return;
-      }
-
-      const destInput = document.getElementById('newDestination');
-      let url = destInput.value.trim();
-
-      if (!url) {
-        showToast('Missing URL', 'Please enter a destination URL first', 'error');
-        return;
-      }
-
-      try {
-        const urlObj = new URL(url);
-
-        // Add UTM parameters
-        urlObj.searchParams.set('utm_source', source);
-        urlObj.searchParams.set('utm_medium', medium);
-        urlObj.searchParams.set('utm_campaign', campaign);
-        if (term) urlObj.searchParams.set('utm_term', term);
-        if (content) urlObj.searchParams.set('utm_content', content);
-
-        destInput.value = urlObj.href;
-
-        // Clear UTM fields and close builder
-        document.getElementById('utmSource').value = '';
-        document.getElementById('utmMedium').value = '';
-        document.getElementById('utmCampaign').value = '';
-        document.getElementById('utmTerm').value = '';
-        document.getElementById('utmContent').value = '';
-        toggleUTMBuilder();
-
-        showToast('UTM Applied', 'UTM parameters added to destination URL');
-      } catch (e) {
-        showToast('Invalid URL', 'Please enter a valid URL first', 'error');
-      }
-    }
 
     // Get expiry badge HTML
     function getExpiryBadge(expiresAt) {
@@ -7867,41 +7769,6 @@ Create .github/workflows/update-preview-link.yml that:
       });
     }
 
-    // Tag input handling (inline form removed — guard in case element missing)
-    const tagInputEl = document.getElementById('newTagInput');
-    if (tagInputEl) tagInputEl.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ',') {
-        e.preventDefault();
-        const tag = tagInputEl.value.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
-        if (tag && !newTags.includes(tag)) {
-          newTags.push(tag);
-          renderNewTags();
-        }
-        tagInputEl.value = '';
-      } else if (e.key === 'Backspace' && !tagInputEl.value && newTags.length) {
-        newTags.pop();
-        renderNewTags();
-      }
-    });
-
-    function renderNewTags() {
-      const container = document.getElementById('tagInput');
-      const input = document.getElementById('newTagInput');
-      container.innerHTML = '';
-      newTags.forEach((tag, i) => {
-        const el = document.createElement('span');
-        el.className = 'tag';
-        el.innerHTML = escapeHtml(tag) + '<span class="tag-close" onclick="removeNewTag(' + i + ')"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span>';
-        container.appendChild(el);
-      });
-      container.appendChild(input);
-    }
-
-    function removeNewTag(index) {
-      newTags.splice(index, 1);
-      renderNewTags();
-    }
-
     // Search
     const searchTrigger = document.getElementById('searchTrigger');
     const searchDialog = document.getElementById('searchDialog');
@@ -7986,16 +7853,6 @@ Create .github/workflows/update-preview-link.yml that:
       container.appendChild(toast);
       setTimeout(() => toast.remove(), 5000);
     }
-
-    // Keyboard shortcuts for inline form (guarded — form removed from desktop layout)
-    const _newCode = document.getElementById('newCode');
-    const _newDest = document.getElementById('newDestination');
-    if (_newCode) _newCode.addEventListener('keypress', e => {
-      if (e.key === 'Enter' && _newDest) _newDest.focus();
-    });
-    if (_newDest) _newDest.addEventListener('keypress', e => {
-      if (e.key === 'Enter') createLink();
-    });
 
     // Edit Modal
     let editTags = [];
