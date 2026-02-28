@@ -8466,30 +8466,10 @@ Create .github/workflows/update-preview-link.yml that:
           actionsEl.appendChild(manageBtn);
         } else {
           const upgradeCard = document.createElement('div');
-          upgradeCard.className = 'settings-card';
-          upgradeCard.style.cssText = 'border-color: oklch(var(--accent-violet) / 0.35); padding: 0; overflow: hidden; margin-bottom: 0;';
-
-          // Header: plan name, badge, description, price
-          const cardHeader = billingMakeEl('div', 'padding: 20px 20px 16px; background: oklch(var(--accent-violet) / 0.05);');
-
-          const nameRow = billingMakeEl('div', 'display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;');
-          nameRow.appendChild(billingMakeEl('div', 'font-size: 16px; font-weight: 700; letter-spacing: -0.01em;', 'Pro'));
-          const popBadge = billingMakeEl('span', 'font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 8px; border-radius: 99px; background: oklch(var(--accent-violet) / 0.15); color: oklch(var(--accent-violet)); border: 1px solid oklch(var(--accent-violet) / 0.3);', 'Most popular');
-          nameRow.appendChild(popBadge);
-          cardHeader.appendChild(nameRow);
-
-          cardHeader.appendChild(billingMakeEl('div', 'font-size: 13px; color: oklch(var(--muted-foreground)); margin-bottom: 14px;', 'For serious link creators'));
-
-          const priceRow = billingMakeEl('div', 'display: flex; align-items: baseline; gap: 6px;');
-          priceRow.appendChild(billingMakeEl('span', 'font-size: 36px; font-weight: 800; letter-spacing: -0.03em; line-height: 1;', '$12'));
-          priceRow.appendChild(billingMakeEl('span', 'font-size: 13px; color: oklch(var(--muted-foreground));', '/ month'));
-          cardHeader.appendChild(priceRow);
-
-          upgradeCard.appendChild(cardHeader);
-          upgradeCard.appendChild(billingMakeEl('div', 'height: 1px; background: oklch(var(--border));'));
+          upgradeCard.style.cssText = 'margin-bottom: 0;';
 
           // Features + CTA
-          const featuresSection = billingMakeEl('div', 'padding: 16px 20px 20px;');
+          const featuresSection = billingMakeEl('div', '');
 
           const proFeatures = [
             { text: '200 short links', sub: 'vs 25 on Free' },
@@ -8499,7 +8479,7 @@ Create .github/workflows/update-preview-link.yml that:
             { text: 'Priority support', sub: null },
           ];
 
-          const featureList = billingMakeEl('div', 'display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px;');
+          const featureList = billingMakeEl('div', 'display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px;');
           proFeatures.forEach(function(f) {
             const row = billingMakeEl('div', 'display: flex; align-items: flex-start; gap: 10px;');
 
@@ -8525,10 +8505,10 @@ Create .github/workflows/update-preview-link.yml that:
           featuresSection.appendChild(featureList);
 
           const upgradeBtn = document.createElement('button');
-          upgradeBtn.style.cssText = 'width: 100%; background: oklch(var(--accent-violet)); color: #fff; font-weight: 600; font-size: 14px; padding: 10px 16px; border-radius: calc(var(--radius) - 2px); border: none; cursor: pointer; transition: opacity 0.15s;';
+          upgradeBtn.style.cssText = 'width: 100%; background: linear-gradient(135deg, oklch(var(--indigo)) 0%, oklch(var(--purple)) 100%); color: #fff; font-weight: 600; font-size: 14px; padding: 11px 16px; border-radius: var(--radius); border: none; cursor: pointer; box-shadow: 0 4px 16px oklch(var(--indigo) / 0.35); transition: all 0.2s;';
           upgradeBtn.textContent = 'Upgrade to Pro \u2192';
-          upgradeBtn.onmouseenter = () => { upgradeBtn.style.opacity = '0.88'; };
-          upgradeBtn.onmouseleave = () => { upgradeBtn.style.opacity = '1'; };
+          upgradeBtn.onmouseenter = () => { upgradeBtn.style.transform = 'translateY(-1px)'; upgradeBtn.style.boxShadow = '0 6px 24px oklch(var(--indigo) / 0.45)'; };
+          upgradeBtn.onmouseleave = () => { upgradeBtn.style.transform = ''; upgradeBtn.style.boxShadow = '0 4px 16px oklch(var(--indigo) / 0.35)'; };
           upgradeBtn.onclick = () => startCheckout();
           featuresSection.appendChild(upgradeBtn);
 
