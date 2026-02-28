@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>URLsToGo — Arrow Variants</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #09090b; --surface: #111113; --surface2: #18181b;
+      --border: #27272a; --text: #fafafa; --muted: #71717a;
+      --violet: #8b5cf6; --indigo: #6366f1; --purple: #a855f7;
+    }
+    body { background: var(--bg); color: var(--text); font-family: 'Inter', -apple-system, sans-serif; min-height: 100dvh; padding: 48px 24px; }
+
+    header { text-align: center; margin-bottom: 8px; }
+    header p { font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 24px; }
+
+    .locked-tag { display: inline-flex; align-items: center; gap: 4px; background: #18181b; border: 1px solid #27272a; border-radius: 6px; padding: 3px 10px; font-size: 10px; font-weight: 600; color: #52525b; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 18px; }
+
+    .wordmark-banner {
+      display: inline-flex; align-items: center; gap: 6px; margin-bottom: 8px;
+    }
+    .wm-text { font-size: 44px; font-weight: 900; color: #fafafa; letter-spacing: -0.03em; }
+
+    .section-label {
+      font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--muted); text-align: center; margin-bottom: 28px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 20px; max-width: 1100px; margin: 0 auto 48px;
+    }
+
+    .card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+      padding: 28px; display: flex; flex-direction: column; gap: 20px;
+      cursor: pointer; transition: border-color 0.15s, transform 0.15s; position: relative;
+    }
+    .card:hover { border-color: #3f3f46; transform: translateY(-2px); }
+    .card.selected { border-color: var(--violet); box-shadow: 0 0 0 1px var(--violet), 0 8px 32px rgba(139,92,246,0.15); }
+    .card.selected::before {
+      content: 'Selected'; position: absolute; top: 12px; right: 12px;
+      background: var(--violet); color: #fff; font-size: 11px; font-weight: 600;
+      letter-spacing: 0.06em; padding: 3px 8px; border-radius: 6px;
+    }
+    .concept-label { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+
+    .icon-row { display: flex; align-items: flex-end; gap: 12px; }
+    .icon-wrap {
+      background: var(--bg); border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .icon-wrap.xl { width: 96px; height: 96px; border-radius: 20px; }
+    .icon-wrap.lg { width: 60px; height: 60px; border-radius: 13px; }
+    .icon-wrap.md { width: 40px; height: 40px; border-radius: 9px; }
+    .icon-wrap.sm { width: 24px; height: 24px; border-radius: 5px; }
+
+    .light-strip {
+      background: #f4f4f5; border: 1px solid #e4e4e7; border-radius: 10px;
+      padding: 10px 14px; display: flex; align-items: center; gap: 8px;
+    }
+    .light-wm { font-size: 14px; font-weight: 900; color: #09090b; letter-spacing: -0.02em; }
+
+    .pair-row {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--surface2); border-radius: 10px; padding: 10px 14px;
+    }
+    .pair-wm { font-size: 16px; font-weight: 900; color: var(--text); letter-spacing: -0.02em; }
+
+    .card-name { font-size: 16px; font-weight: 700; }
+    .card-desc { font-size: 13px; color: var(--muted); line-height: 1.6; margin-top: 4px; }
+
+    .sz { font-size: 10px; color: var(--muted); text-align: center; margin-top: 4px; }
+    .sz-col { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+
+    .tab-row { display: flex; align-items: center; gap: 20px; justify-content: center; flex-wrap: wrap; }
+    .tab-mock { display: flex; align-items: center; gap: 6px; background: #1c1c1e; border-radius: 8px; padding: 7px 12px; font-size: 12px; color: #a1a1aa; }
+    .tab-label { font-size: 11px; color: var(--muted); text-align: center; margin-top: 6px; }
+    .tab-col { display: flex; flex-direction: column; align-items: center; }
+
+    hr { border: none; border-top: 1px solid var(--border); margin: 40px auto; max-width: 1100px; }
+    .vote-bar { display: flex; justify-content: center; gap: 10px; margin: 0 auto 24px; max-width: 700px; flex-wrap: wrap; }
+    .vote-btn { flex: 1; min-width: 120px; padding: 13px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+    .vote-btn:hover { background: var(--surface2); border-color: #3f3f46; }
+    .vote-btn.active { background: var(--violet); border-color: var(--violet); }
+  </style>
+</head>
+<body>
+
+<header>
+  <p>URLsToGo — Arrow Variants</p>
+</header>
+
+<!-- LOCKED WORDMARK -->
+<div style="text-align:center; margin-bottom: 48px;">
+  <div class="locked-tag">Wordmark Locked</div><br>
+  <div class="wordmark-banner">
+    <span class="wm-text">URLs</span>
+    <svg width="40" height="40" viewBox="0 0 56 56" fill="none" style="margin: 0 4px;">
+      <defs><linearGradient id="wm-g" x1="0" y1="0" x2="56" y2="0" gradientUnits="userSpaceOnUse"><stop stop-color="#6366f1"/><stop offset="1" stop-color="#a855f7"/></linearGradient></defs>
+      <line x1="10" y1="28" x2="40" y2="28" stroke="url(#wm-g)" stroke-width="5" stroke-linecap="round"/>
+      <polyline points="28,16 42,28 28,40" stroke="url(#wm-g)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    </svg>
+    <span class="wm-text">Go</span>
+  </div>
+</div>
+
+<div class="section-label">Arrow Variations — pick the flair</div>
+
+<div class="grid">
+
+  <!-- ─── A: Speed Streaks ─── -->
+  <div class="card" data-concept="A" onclick="selectCard(this)">
+    <div class="concept-label">Variant A</div>
+
+    <div class="icon-row">
+      <div class="icon-wrap xl">
+        <svg width="64" height="56" viewBox="0 0 64 56" fill="none">
+          <defs><linearGradient id="A1" x1="0" y1="0" x2="64" y2="0" gradientUnits="userSpaceOnUse"><stop stop-color="#6366f1"/><stop offset="1" stop-color="#a855f7"/></linearGradient></defs>
+          <line x1="2" y1="21" x2="15" y2="21" stroke="url(#A1)" stroke-width="3" stroke-linecap="round" opacity="0.4"/>
+          <line x1="0" y1="28" x2="18" y2="28" stroke="url(#A1)" stroke-width="3" stroke-linecap="round" opacity="0.65"/>
+          <line x1="2" y1="35" x2="15" y2="35" stroke="url(#A1)" stroke-width="3" stroke-linecap="round" opacity="0.4"/>
+          <line x1="21" y1="28" x2="50" y2="28" stroke="url(#A1)" stroke-width="5" stroke-linecap="round"/>
+          <polyline points="38,16 52,28 38,40" stroke="url(#A1)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <div style="display:flex;gap:8px;align-items:flex-end;">
+          <div class="sz-col">
+            <div class="icon-wrap lg">
+              <svg width="36" height="32" viewBox="0 0 64 56" fill="none"><defs><linearGradient id="A1b" x1="0" y1="0" x2="64" y2="0" gradientUnits="userSpaceOnUse"><stop stop-color="#6366f1"/><stop offset="1" stop-color="#a855f7"/></linearGradient></defs><line x1="2" y1="21" x2="15" y2="21" stroke="url(#A1b)" stroke-width="3" stroke-linecap="round" opacity="0.4"/><line x1="0" y1="28" x2="18" y2="28" stroke="url(#A1b)" stroke-width="3" stroke-linecap="round" opacity="0.65"/><line x1="2" y1="35" x2="15" y2="35" stroke="url(#A1b)" stroke-width="3" stroke-linecap="round" opacity="0.4"/><line x1="21" y1="28" x2="50" y2="28" stroke="url(#A1b)" stroke-width="5" stroke-linecap="round"/><polyline points="38,16 52,28 38,40" stroke="url(#A1b)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+            </div>
+            <div class="sz">60px</div>
+          </div>
+          <div class="sz-col">
+            <div class="icon-wrap md">
+              <svg width="24" height="22" viewBox="0 0 64 56" fill="none"><defs><linearGradient id="A1c" x1="0" y1="0" x2="64" y2="0" gradientUnits="userSpaceOnUse"><stop stop-color="#6366f1"/><stop offset="1" stop-color="#a855f7"/></linearGradient></defs><line x1="2" y1="21" x2="15" y2="21" stroke="url(#A1c)" stroke-width="3" stroke-linecap="round" opacity="0.4"/><line x1="0" y1="28" x2="18" y2="28" stroke="url(#A1c)" stroke-width="3" stroke-linecap="round" opacity="0.65"/><line x1="2" y1="35" x2="15" y2="35" stroke="url(#A1c)" stroke-width="3" stroke-linecap="round" opacity="0.4"/><line x1="21" y1="28" x2="50" y2="28" stroke="url(#A1c)" stroke-width="5" stroke-linecap="round"/><polyline points="38,16 52,28 38,40" stroke="url(#A1c)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+            </div>
+            <div class="sz">40px</div>
+          </div>
+          <div class="sz-col">
+            <div class="icon-wrap sm">
+              <svg width="14" height="12" viewBox="0 0 64 56" fill="none"><defs><linearGradient id="A1d" x1="0" y1="0" x2="64" y2="0" gradientUnits="userSpaceOnUse"><stop stop-color="#6366f1"/><stop offset="1" stop-color="#a855f7"/></linearGradient></defs><line x1="21" y1="28" x2="50" y2="28" stroke="url(#A1d)" stroke-width="6" stroke-linecap="round"/><polyline points="38,16 52,28 38,40" stroke="url(#A1d)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+            </div>
+            <div class="sz">24px</div>
+          </div>
+        </div>
+        <div class="light-strip">
+          <span class="light-wm">URLs → Go</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="pair-row">
+      <span class="pair-wm">URLs → Go</span>
+    </div>
+
+    <div>
+      <div class="card-name">Speed Streaks</div>
+      <div class="card-desc">Three horizontal speed lines trail the arrow. Kinetic energy, forward motion. Reads as fast and directional at every size.</div>
+    </div>
+  </div>
+
+  <!-- ─── B: Dot Origin ─── -->
+  <div class="card" data-concept="B" onclick="selectCard(this)">
+    <div class="concept-label">Variant B</div>
+
+    <div class="icon-row">
+      <div class="icon-wrap xl">
+        <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
+          <defs><linearGradient id="B1" x1="0" y1="0" x2="56" y2="0" gradientUnits="userSpaceOnUse"><stop stop-color="#6366f1"/><stop offset="1" stop-color="#a855f7"/></linearGradient></defs>
+          <circle cx="11" cy="28" r="4.5" fill="url(#B1)"/>
+          <line x1="17" y1="28" x2="38" y2="28" stroke="url(#B1)" stroke-width="5" stroke-linecap="round"/>
+          <polyline points="28,16 42,28 28,40" stroke="url(#B1)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <div style="display:flex;gap:8px;align-items:flex-end;">
+          <div class="sz-col">
+            <div class="icon-wrap lg">
+              <svg width="34" height="34" viewBox="0 0 56 56" fill="none"><defs><linearGradient id="B1b" x1="0" y1="0" x2="56" y2="0" gradientUnits="userSpaceOnUse"><stop stop-color="#6366f1"/><stop offset="1" stop-color="#a855f7"/></linearGradient></defs><circle cx="11" cy="28" r="4.5" fill="url(#B1b)"/><line x1="17" y1="28" x2="38" y2="28" stroke="url(#B1b)" stroke-width="5" stroke-linecap="round"/><polyline points="28,16 42,28 28,40" stroke="url(#B1b)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+            </div>
+            <div class="sz">60px</div>
+          </div>
+          <div class="sz-col">
+            <div class="icon-wrap md">
+              <svg width="22" height="22" viewBox="0 0 56 56" fill="none"><defs><linearGradient id="B1c" x1="0" y1="0" x2="56" y2="0" gradientUnits="userSpaceOnUse"><stop stop-color="#6366f1"/><stop offset="1" stop-color="#a855f7"/></linearGradient></defs><circle cx="11" cy="28" r="4.5" fill="url(#B1c)"/><line x1="17" y1="28" x2="38" y2="28" stroke="url(#B1c)" stroke-width="5" stroke-linecap="round"/><polyline points="28,16 42,28 28,40" stroke="url(#B1c)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+            </div>
+            <div class="sz">40px</div>
+          </div>
+          <div class="sz-col">
+            <div class="icon-wrap sm">
+              <svg width="14" height="14" viewBox="0 0 56 56" fill="none"><defs><linearGradient id="B1d" x1="0" y1="0" x2="56" y2="0" gradientUnits="userSpaceOnUse"><stop stop-color="#6366f1"/><stop offset="1" stop-color="#a855f7"/></linearGradient></defs><circle cx="11" cy="28" r="5" fill="url(#B1d)"/><line x1="18" y1="28" x2="38" y2="28" stroke="url(#B1d)" stroke-width="5.5" stroke-linecap="round"/><polyline points="28,16 42,28 28,40" stroke="url(#B1d)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+            </div>
+            <div class="sz">24px</div>
+          </div>
+        </div>
+        <div class="light-strip">
+          <span class="light-wm">URLs → Go</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="pair-row">
+      <span class="pair-wm">URLs → Go</span>
+    </div>
+
+    <div>
+      <div class="card-name">Dot Origin</div>
+      <div class="card-desc">A solid dot anchors the tail — URL in, redirect out. The dot suggests a source point. Feels complete, purposeful, and slightly more refined.</div>
+    </div>
+  </div>
+
+  <!-- ─── C: Orbit Ring ─── -->
+  <div class="card" data-concept="C" onclick="selectCard(this)">
+    <div class="concept-label">Variant C</div>
+
+    <div class="icon-row">
+      <div class="icon-wrap xl">
+        <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
+          <defs><linearGradient id="C1" x1="0" y1="0" x2="56" y2="56" gradientUnits="userSpaceOnUse"><stop stop-color="#6366f1"/><stop offset="1" stop-color="#a855f7"/></linearGradient></defs>
+          <circle cx="28" cy="28" r="22" stroke="url(#C1)" stroke-width="2"/>
+          <line x1="13" y1="28" x2="35" y2="28" stroke="url(#C1)" stroke-width="4.5" stroke-linecap="round"/>
+          <polyline points="26,19 38,28 26,37" stroke="url(#C1)" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <div style="display:flex;gap:8px;align-items:flex-end;">
+          <div class="sz-col">
+            <div class="icon-wrap lg">
+              <svg width="36" height="36" viewBox="0 0 56 56" fill="none"><defs><linearGradient id="C1b" x1="0" y1="0" x2="56" y2="56" gradientUnits="userSpaceOnUse"><stop stop-color="#6366f1"/><stop offset="1" stop-color="#a855f7"/></linearGradient></defs><circle cx="28" cy="28" r="22" stroke="url(#C1b)" stroke-width="2"/><line x1="13" y1="28" x2="35" y2="28" stroke="url(#C1b)" stroke-width="4.5" stroke-linecap="round"/><polyline points="26,19 38,28 26,37" stroke="url(#C1b)" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+            </div>
+            <div class="sz">60px</div>
+          </div>
+          <div class="sz-col">
+            <div class="icon-wrap md">
+              <svg width="26" height="26" viewBox="0 0 56 56" fill="none"><defs><linearGradient id="C1c" x1="0" y1="0" x2="56" y2="56" gradientUnits="userSpaceOnUse"><stop stop-color="#6366f1"/><stop offset="1" stop-color="#a855f7"/></linearGradient></defs><circle cx="28" cy="28" r="22" stroke="url(#C1c)" stroke-width="2.5"/><line x1="13" y1="28" x2="35" y2="28" stroke="url(#C1c)" stroke-width="4.5" stroke-linecap="round"/><polyline points="26,19 38,28 26,37" stroke="url(#C1c)" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+            </div>
+            <div class="sz">40px</div>
+          </div>
+          <div class="sz-col">
+            <div class="icon-wrap sm">
+              <svg width="16" height="16" viewBox="0 0 56 56" fill="none"><defs><linearGradient id="C1d" x1="0" y1="0" x2="56" y2="56" gradientUnits="userSpaceOnUse"><stop stop-color="#6366f1"/><stop offset="1" stop-color="#a855f7"/></linearGradient></defs><circle cx="28" cy="28" r="22" stroke="url(#C1d)" stroke-width="3"/><line x1="13" y1="28" x2="35" y2="28" stroke="url(#C1d)" stroke-width="5" stroke-linecap="round"/><polyline points="26,19 38,28 26,37" stroke="url(#C1d)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+            </div>
+            <div class="sz">24px</div>
+          </div>
+        </div>
+        <div class="light-strip">
+          <span class="light-wm">URLs → Go</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="pair-row">
+      <span class="pair-wm">URLs → Go</span>
+    </div>
+
+    <div>
+      <div class="card-name">Orbit Ring</div>
+      <div class="card-desc">A thin gradient circle frames the arrow. Universal, app-store-ready shape. Adds containment and polish — scales perfectly as a PWA square icon.</div>
+    </div>
+  </div>
+
+  <!-- ─── D: Echo Arrow ─── -->
+  <div class="card" data-concept="D" onclick="selectCard(this)">
+    <div class="concept-label">Variant D</div>
+
+    <div class="icon-row">
+      <div class="icon-wrap xl">
+        <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
+          <defs><linearGradient id="D1" x1="0" y1="0" x2="56" y2="0" gradientUnits="userSpaceOnUse"><stop stop-color="#6366f1"/><stop offset="1" stop-color="#a855f7"/></linearGradient></defs>
+          <!-- Ghost echo arrow -->
+          <g opacity="0.28">
+            <line x1="6" y1="28" x2="38" y2="28" stroke="url(#D1)" stroke-width="5" stroke-linecap="round"/>
+            <polyline points="25,13 41,28 25,43" stroke="url(#D1)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          </g>
+          <!-- Main arrow -->
+          <line x1="11" y1="28" x2="42" y2="28" stroke="url(#D1)" stroke-width="5" stroke-linecap="round"/>
+          <polyline points="30,16 44,28 30,40" stroke="url(#D1)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <div style="display:flex;gap:8px;align-items:flex-end;">
+          <div class="sz-col">
+            <div class="icon-wrap lg">
+              <svg width="34" height="34" viewBox="0 0 56 56" fill="none"><defs><linearGradient id="D1b" x1="0" y1="0" x2="56" y2="0" gradientUnits="userSpaceOnUse"><stop stop-color="#6366f1"/><stop offset="1" stop-color="#a855f7"/></linearGradient></defs><g opacity="0.28"><line x1="6" y1="28" x2="38" y2="28" stroke="url(#D1b)" stroke-width="5" stroke-linecap="round"/><polyline points="25,13 41,28 25,43" stroke="url(#D1b)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></g><line x1="11" y1="28" x2="42" y2="28" stroke="url(#D1b)" stroke-width="5" stroke-linecap="round"/><polyline points="30,16 44,28 30,40" stroke="url(#D1b)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+            </div>
+            <div class="sz">60px</div>
+          </div>
+          <div class="sz-col">
+            <div class="icon-wrap md">
+              <svg width="22" height="22" viewBox="0 0 56 56" fill="none"><defs><linearGradient id="D1c" x1="0" y1="0" x2="56" y2="0" gradientUnits="userSpaceOnUse"><stop stop-color="#6366f1"/><stop offset="1" stop-color="#a855f7"/></linearGradient></defs><g opacity="0.28"><line x1="6" y1="28" x2="38" y2="28" stroke="url(#D1c)" stroke-width="5" stroke-linecap="round"/><polyline points="25,13 41,28 25,43" stroke="url(#D1c)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></g><line x1="11" y1="28" x2="42" y2="28" stroke="url(#D1c)" stroke-width="5" stroke-linecap="round"/><polyline points="30,16 44,28 30,40" stroke="url(#D1c)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+            </div>
+            <div class="sz">40px</div>
+          </div>
+          <div class="sz-col">
+            <div class="icon-wrap sm">
+              <svg width="14" height="14" viewBox="0 0 56 56" fill="none"><defs><linearGradient id="D1d" x1="0" y1="0" x2="56" y2="0" gradientUnits="userSpaceOnUse"><stop stop-color="#6366f1"/><stop offset="1" stop-color="#a855f7"/></linearGradient></defs><line x1="11" y1="28" x2="42" y2="28" stroke="url(#D1d)" stroke-width="6" stroke-linecap="round"/><polyline points="30,16 44,28 30,40" stroke="url(#D1d)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+            </div>
+            <div class="sz">24px</div>
+          </div>
+        </div>
+        <div class="light-strip">
+          <span class="light-wm">URLs → Go</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="pair-row">
+      <span class="pair-wm">URLs → Go</span>
+    </div>
+
+    <div>
+      <div class="card-name">Echo Arrow</div>
+      <div class="card-desc">A ghost arrow sits behind the main mark at 28% opacity. Depth, momentum, and velocity — like the icon is mid-redirect. Subtle but premium.</div>
+    </div>
+  </div>
+
+</div>
+
+<hr>
+<div class="section-label">Favicon comparison</div>
+<div class="tab-row">
+  <div class="tab-col">
+    <div class="tab-mock">
+      <svg width="16" height="14" viewBox="0 0 64 56" fill="none"><defs><linearGradient id="fA" x1="0" y1="0" x2="64" y2="0" gradientUnits="userSpaceOnUse"><stop stop-color="#6366f1"/><stop offset="1" stop-color="#a855f7"/></linearGradient></defs><line x1="21" y1="28" x2="50" y2="28" stroke="url(#fA)" stroke-width="7" stroke-linecap="round"/><polyline points="38,16 52,28 38,40" stroke="url(#fA)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+      <span>URLsToGo</span>
+    </div>
+    <div class="tab-label">A — Speed</div>
+  </div>
+  <div class="tab-col">
+    <div class="tab-mock">
+      <svg width="16" height="16" viewBox="0 0 56 56" fill="none"><defs><linearGradient id="fB" x1="0" y1="0" x2="56" y2="0" gradientUnits="userSpaceOnUse"><stop stop-color="#6366f1"/><stop offset="1" stop-color="#a855f7"/></linearGradient></defs><circle cx="11" cy="28" r="5" fill="url(#fB)"/><line x1="18" y1="28" x2="38" y2="28" stroke="url(#fB)" stroke-width="5.5" stroke-linecap="round"/><polyline points="28,16 42,28 28,40" stroke="url(#fB)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+      <span>URLsToGo</span>
+    </div>
+    <div class="tab-label">B — Dot</div>
+  </div>
+  <div class="tab-col">
+    <div class="tab-mock">
+      <svg width="16" height="16" viewBox="0 0 56 56" fill="none"><defs><linearGradient id="fC" x1="0" y1="0" x2="56" y2="56" gradientUnits="userSpaceOnUse"><stop stop-color="#6366f1"/><stop offset="1" stop-color="#a855f7"/></linearGradient></defs><circle cx="28" cy="28" r="22" stroke="url(#fC)" stroke-width="3"/><line x1="13" y1="28" x2="35" y2="28" stroke="url(#fC)" stroke-width="5" stroke-linecap="round"/><polyline points="26,19 38,28 26,37" stroke="url(#fC)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+      <span>URLsToGo</span>
+    </div>
+    <div class="tab-label">C — Ring</div>
+  </div>
+  <div class="tab-col">
+    <div class="tab-mock">
+      <svg width="16" height="16" viewBox="0 0 56 56" fill="none"><defs><linearGradient id="fD" x1="0" y1="0" x2="56" y2="0" gradientUnits="userSpaceOnUse"><stop stop-color="#6366f1"/><stop offset="1" stop-color="#a855f7"/></linearGradient></defs><line x1="11" y1="28" x2="42" y2="28" stroke="url(#fD)" stroke-width="6" stroke-linecap="round"/><polyline points="30,16 44,28 30,40" stroke="url(#fD)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+      <span>URLsToGo</span>
+    </div>
+    <div class="tab-label">D — Echo</div>
+  </div>
+</div>
+
+<hr>
+<div class="section-label">Your pick</div>
+<div class="vote-bar">
+  <button class="vote-btn" onclick="vote('A')">A — Speed Streaks</button>
+  <button class="vote-btn" onclick="vote('B')">B — Dot Origin</button>
+  <button class="vote-btn" onclick="vote('C')">C — Orbit Ring</button>
+  <button class="vote-btn" onclick="vote('D')">D — Echo Arrow</button>
+</div>
+
+<script>
+  function selectCard(card) {
+    document.querySelectorAll('.card').forEach(c => c.classList.remove('selected'));
+    card.classList.add('selected');
+    const concept = card.dataset.concept;
+    document.querySelectorAll('.vote-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.textContent.trim().startsWith(concept));
+    });
+  }
+  function vote(concept) {
+    const card = document.querySelector('[data-concept="' + concept + '"]');
+    if (card) selectCard(card);
+  }
+  // Pre-select Variant C
+  vote('C');
+</script>
+</body>
+</html>

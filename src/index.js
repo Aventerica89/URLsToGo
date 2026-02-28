@@ -4,7 +4,8 @@ import { verifyToken, createClerkClient } from '@clerk/backend';
 import { seal as sodiumSeal } from 'tweetsodium';
 
 // Favicon SVG with accessibility title and optimized grouped paths
-const ADMIN_FAVICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctitle%3EURLsToGo Admin Icon%3C/title%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Cg stroke='%238b5cf6' stroke-width='2.5' stroke-linecap='round' fill='none'%3E%3Cpath d='M18.5 10.5a4 4 0 0 1 5.66 5.66l-2.83 2.83a4 4 0 0 1-5.66 0'/%3E%3Cpath d='M13.5 21.5a4 4 0 0 1-5.66-5.66l2.83-2.83a4 4 0 0 1 5.66 0'/%3E%3C/g%3E%3C/svg%3E";
+// Orbit Ring icon: gradient arrow centered inside a thin gradient circle, dark rounded-rect bg
+const ADMIN_FAVICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctitle%3EURLsToGo Admin Icon%3C/title%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='32' y2='32' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='%236366f1'/%3E%3Cstop offset='1' stop-color='%23a855f7'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='16' cy='16' r='12' stroke='url(%23g)' stroke-width='1.5' fill='none'/%3E%3Cline x1='9' y1='16' x2='20' y2='16' stroke='url(%23g)' stroke-width='2.5' stroke-linecap='round'/%3E%3Cpolyline points='15,11 21,16 15,21' stroke='url(%23g)' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E";
 
 // Admin path constant - used for redirects and PWA start URL
 const ADMIN_PATH = '/admin';
@@ -15,11 +16,13 @@ const ADMIN_PATH = '/admin';
 
 // PWA Manifest
 const PWA_MANIFEST = {
+  id: ADMIN_PATH,
   name: 'URLsToGo',
   short_name: 'URLsToGo',
   description: 'Fast, free URL shortener powered by Cloudflare',
   start_url: ADMIN_PATH,
   display: 'standalone',
+  display_override: ['standalone'],
   background_color: '#09090b',
   theme_color: '#8b5cf6',
   orientation: 'any',
@@ -4522,16 +4525,20 @@ function getAdminHTML(userEmail, env) {
       --ring: 0.6056 0.2189 292.7172;
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      overscroll-behavior: none;
+      -webkit-tap-highlight-color: transparent;
+    }
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
       font-size: 14px;
       line-height: 1.5;
       background: oklch(var(--background));
       color: oklch(var(--foreground));
-      min-height: 100vh;
+      min-height: 100dvh;
       -webkit-font-smoothing: antialiased;
     }
-    .app-layout { display: flex; min-height: 100vh; }
+    .app-layout { display: flex; min-height: 100dvh; }
 
     /* Sidebar */
     .sidebar {
@@ -5129,7 +5136,7 @@ function getAdminHTML(userEmail, env) {
       .cell-link a { padding: 3px 6px; font-size: 12px; }
       .cell-link .copy-btn { display: none; }
       .cell-actions { opacity: 1; gap: 2px; }
-      .cell-actions .icon-btn { width: 32px; height: 32px; min-width: 32px; }
+      .cell-actions .icon-btn { width: 44px; height: 44px; min-width: 44px; }
       .pagination { padding: 12px 16px; flex-wrap: wrap; gap: 8px; }
       .pagination-info { font-size: 12px; }
       /* Prevent iOS zoom on input focus - minimum 16px */
