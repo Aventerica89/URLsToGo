@@ -8467,34 +8467,72 @@ Create .github/workflows/update-preview-link.yml that:
         } else {
           const upgradeCard = document.createElement('div');
           upgradeCard.className = 'settings-card';
-          upgradeCard.style.cssText = 'background: oklch(var(--accent-violet) / 0.04); border-color: oklch(var(--accent-violet) / 0.2);';
+          upgradeCard.style.cssText = 'border-color: oklch(var(--accent-violet) / 0.35); padding: 0; overflow: hidden; margin-bottom: 0;';
 
-          upgradeCard.appendChild(billingMakeEl('div', 'font-size: 14px; font-weight: 600; margin-bottom: 12px;', 'Upgrade to Pro'));
+          // Header: plan name, badge, description, price
+          const cardHeader = billingMakeEl('div', 'padding: 20px 20px 16px; background: oklch(var(--accent-violet) / 0.05);');
 
-          const featureList = billingMakeEl('div', 'display: flex; flex-direction: column; gap: 7px; margin-bottom: 16px;');
-          const proFeatures = ['200 short links', 'Full analytics (geo, device, browser)', 'Unlimited categories & tags', 'Priority support'];
+          const nameRow = billingMakeEl('div', 'display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;');
+          nameRow.appendChild(billingMakeEl('div', 'font-size: 16px; font-weight: 700; letter-spacing: -0.01em;', 'Pro'));
+          const popBadge = billingMakeEl('span', 'font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 8px; border-radius: 99px; background: oklch(var(--accent-violet) / 0.15); color: oklch(var(--accent-violet)); border: 1px solid oklch(var(--accent-violet) / 0.3);', 'Most popular');
+          nameRow.appendChild(popBadge);
+          cardHeader.appendChild(nameRow);
+
+          cardHeader.appendChild(billingMakeEl('div', 'font-size: 13px; color: oklch(var(--muted-foreground)); margin-bottom: 14px;', 'For serious link creators'));
+
+          const priceRow = billingMakeEl('div', 'display: flex; align-items: baseline; gap: 6px;');
+          priceRow.appendChild(billingMakeEl('span', 'font-size: 36px; font-weight: 800; letter-spacing: -0.03em; line-height: 1;', '$12'));
+          priceRow.appendChild(billingMakeEl('span', 'font-size: 13px; color: oklch(var(--muted-foreground));', '/ month'));
+          cardHeader.appendChild(priceRow);
+
+          upgradeCard.appendChild(cardHeader);
+          upgradeCard.appendChild(billingMakeEl('div', 'height: 1px; background: oklch(var(--border));'));
+
+          // Features + CTA
+          const featuresSection = billingMakeEl('div', 'padding: 16px 20px 20px;');
+
+          const proFeatures = [
+            { text: '200 short links', sub: 'vs 25 on Free' },
+            { text: 'Full analytics', sub: 'geo, device, browser' },
+            { text: 'Unlimited categories & tags', sub: null },
+            { text: 'Custom slugs & bulk import', sub: null },
+            { text: 'Priority support', sub: null },
+          ];
+
+          const featureList = billingMakeEl('div', 'display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px;');
           proFeatures.forEach(function(f) {
-            const row = billingMakeEl('div', 'display: flex; align-items: center; gap: 8px; font-size: 13px;');
+            const row = billingMakeEl('div', 'display: flex; align-items: flex-start; gap: 10px;');
+
+            const checkWrap = billingMakeEl('div', 'flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%; background: oklch(0.65 0.18 145 / 0.12); display: flex; align-items: center; justify-content: center; margin-top: 1px;');
             const checkSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            checkSvg.setAttribute('width', '14'); checkSvg.setAttribute('height', '14');
+            checkSvg.setAttribute('width', '11'); checkSvg.setAttribute('height', '11');
             checkSvg.setAttribute('viewBox', '0 0 24 24'); checkSvg.setAttribute('fill', 'none');
-            checkSvg.setAttribute('stroke', 'oklch(0.65 0.18 145)'); checkSvg.setAttribute('stroke-width', '2.5');
+            checkSvg.setAttribute('stroke', 'oklch(0.65 0.18 145)'); checkSvg.setAttribute('stroke-width', '3');
             checkSvg.setAttribute('stroke-linecap', 'round'); checkSvg.setAttribute('stroke-linejoin', 'round');
             const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
             path.setAttribute('d', 'M20 6 9 17l-5-5');
             checkSvg.appendChild(path);
-            row.appendChild(checkSvg);
-            row.appendChild(billingMakeEl('span', null, f));
+            checkWrap.appendChild(checkSvg);
+            row.appendChild(checkWrap);
+
+            const textWrap = billingMakeEl('div', '');
+            textWrap.appendChild(billingMakeEl('div', 'font-size: 13px; font-weight: 500;', f.text));
+            if (f.sub) textWrap.appendChild(billingMakeEl('div', 'font-size: 12px; color: oklch(var(--muted-foreground)); margin-top: 1px;', f.sub));
+            row.appendChild(textWrap);
+
             featureList.appendChild(row);
           });
-          upgradeCard.appendChild(featureList);
+          featuresSection.appendChild(featureList);
 
           const upgradeBtn = document.createElement('button');
-          upgradeBtn.className = 'btn btn-primary';
-          upgradeBtn.style.cssText = 'width: 100%; background: oklch(var(--accent-violet)); color: #fff; font-weight: 600;';
-          upgradeBtn.textContent = 'Upgrade — $12 / month';
+          upgradeBtn.style.cssText = 'width: 100%; background: oklch(var(--accent-violet)); color: #fff; font-weight: 600; font-size: 14px; padding: 10px 16px; border-radius: calc(var(--radius) - 2px); border: none; cursor: pointer; transition: opacity 0.15s;';
+          upgradeBtn.textContent = 'Upgrade to Pro \u2192';
+          upgradeBtn.onmouseenter = () => { upgradeBtn.style.opacity = '0.88'; };
+          upgradeBtn.onmouseleave = () => { upgradeBtn.style.opacity = '1'; };
           upgradeBtn.onclick = () => startCheckout();
-          upgradeCard.appendChild(upgradeBtn);
+          featuresSection.appendChild(upgradeBtn);
+
+          upgradeCard.appendChild(featuresSection);
           actionsEl.appendChild(upgradeCard);
         }
       } catch (e) {
