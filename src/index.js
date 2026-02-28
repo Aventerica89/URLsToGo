@@ -1005,12 +1005,16 @@ export default {
       const linksResult = await env.DB.prepare('SELECT COUNT(*) as count, SUM(clicks) as clicks FROM links WHERE user_email = ?').bind(userEmail).first();
       const categoriesResult = await env.DB.prepare('SELECT COUNT(*) as count FROM categories WHERE user_email = ?').bind(userEmail).first();
       const tagsResult = await env.DB.prepare('SELECT COUNT(DISTINCT t.id) as count FROM tags t JOIN link_tags lt ON t.id = lt.tag_id JOIN links l ON lt.link_id = l.id WHERE l.user_email = ?').bind(userEmail).first();
+      const todayResult = await env.DB.prepare("SELECT COUNT(*) as count FROM click_events ce JOIN links l ON ce.link_id = l.id WHERE l.user_email = ? AND ce.clicked_at >= date('now')").bind(userEmail).first();
+      const yesterdayResult = await env.DB.prepare("SELECT COUNT(*) as count FROM click_events ce JOIN links l ON ce.link_id = l.id WHERE l.user_email = ? AND ce.clicked_at >= date('now', '-1 day') AND ce.clicked_at < date('now')").bind(userEmail).first();
 
       return jsonResponse({
         links: linksResult?.count || 0,
         clicks: linksResult?.clicks || 0,
         categories: categoriesResult?.count || 0,
-        tags: tagsResult?.count || 0
+        tags: tagsResult?.count || 0,
+        today_clicks: todayResult?.count || 0,
+        yesterday_clicks: yesterdayResult?.count || 0
       });
     }
 
@@ -4589,6 +4593,59 @@ function getAdminHTML(userEmail, env) {
     .cat-dot.marketing, .cat-dot.orange { background: oklch(var(--cat-marketing)); }
     .cat-dot.docs, .cat-dot.green { background: oklch(var(--cat-docs)); }
     .cat-dot.gray { background: oklch(var(--muted-foreground)); }
+    /* Sidebar category search */
+    .cat-search-input {
+      width: 100%; padding: 6px 10px;
+      border-radius: calc(var(--radius) - 2px);
+      border: 1px solid oklch(var(--border));
+      background: oklch(var(--accent));
+      color: oklch(var(--foreground));
+      font-size: 12px; outline: none;
+      margin-bottom: 6px; box-sizing: border-box;
+    }
+    .cat-search-input::placeholder { color: oklch(var(--muted-foreground)); }
+    .cat-search-input:focus { border-color: oklch(var(--ring)); }
+    /* Folder tree rows */
+    .cat-folder-row {
+      display: flex; align-items: center; gap: 6px;
+      padding: 7px 12px;
+      border-radius: calc(var(--radius) - 2px);
+      color: oklch(var(--muted-foreground));
+      font-size: 13px; cursor: pointer;
+      transition: all 150ms; position: relative;
+    }
+    .cat-folder-row:hover { background: oklch(var(--accent)); color: oklch(var(--accent-foreground)); }
+    .cat-folder-row.active { background: oklch(var(--secondary)); color: oklch(var(--secondary-foreground)); }
+    .cat-folder-chevron { width: 10px; flex-shrink: 0; opacity: 0.35; display: flex; align-items: center; }
+    .cat-folder-chevron svg { width: 8px; height: 8px; }
+    .cat-folder-icon-dot { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+    .cat-folder-icon-dot.work, .cat-folder-icon-dot.violet { background: oklch(var(--cat-work)); }
+    .cat-folder-icon-dot.personal, .cat-folder-icon-dot.pink { background: oklch(var(--cat-personal)); }
+    .cat-folder-icon-dot.social, .cat-folder-icon-dot.cyan { background: oklch(var(--cat-social)); }
+    .cat-folder-icon-dot.marketing, .cat-folder-icon-dot.orange { background: oklch(var(--cat-marketing)); }
+    .cat-folder-icon-dot.docs, .cat-folder-icon-dot.green { background: oklch(var(--cat-docs)); }
+    .cat-folder-icon-dot.gray { background: oklch(var(--muted-foreground)); }
+    /* Tags cloud */
+    .tags-cloud { display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 12px 4px; }
+    .tag-cloud-pill {
+      padding: 3px 9px; border-radius: 99px;
+      font-size: 11px; font-weight: 500; cursor: pointer;
+      border: 1px solid oklch(var(--border));
+      color: oklch(var(--muted-foreground));
+      background: transparent; transition: all 100ms;
+    }
+    .tag-cloud-pill:hover { background: oklch(var(--accent)); color: oklch(var(--accent-foreground)); }
+    .tag-cloud-pill.active { background: oklch(var(--indigo) / 0.15); color: oklch(var(--indigo)); border-color: oklch(var(--indigo) / 0.4); }
+    /* Sidebar stats widget */
+    .sidebar-stats-widget {
+      margin: 0 0 20px; padding: 12px 14px;
+      background: oklch(var(--accent));
+      border-radius: calc(var(--radius) - 2px);
+      border: 1px solid oklch(var(--border));
+    }
+    .sidebar-stats-label { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: oklch(var(--muted-foreground)); margin-bottom: 6px; }
+    .sidebar-stats-number { font-size: 22px; font-weight: 700; color: oklch(0.65 0.18 145); line-height: 1; margin-bottom: 2px; }
+    .sidebar-stats-sub { font-size: 11px; color: oklch(var(--muted-foreground)); }
     .sidebar-footer { padding: 12px; border-top: 1px solid oklch(var(--border)); }
     .user-button {
       display: flex; align-items: center; gap: 12px;
@@ -5978,6 +6035,7 @@ function getAdminHTML(userEmail, env) {
 
         <div class="nav-group">
           <div class="nav-group-label">Categories</div>
+          <input class="cat-search-input" id="catSearchInput" placeholder="Filter categories..." oninput="filterCatSearch(this.value)">
           <div id="categoriesNav"></div>
           <div class="nav-item" style="color: oklch(var(--muted-foreground));" onclick="promptAddCategory()">
             <span class="nav-item-icon">
@@ -5991,8 +6049,14 @@ function getAdminHTML(userEmail, env) {
         </div>
 
         <div class="nav-group">
-          <div class="nav-group-label">Popular Tags</div>
-          <div id="tagsNav" style="padding: 0 12px; display: flex; flex-wrap: wrap; gap: 6px;"></div>
+          <div class="nav-group-label">Tags</div>
+          <div id="tagsNav" class="tags-cloud"></div>
+        </div>
+
+        <div class="sidebar-stats-widget">
+          <div class="sidebar-stats-label">Today</div>
+          <div class="sidebar-stats-number" id="sidebarTodayClicks">—</div>
+          <div class="sidebar-stats-sub" id="sidebarClicksSub">clicks</div>
         </div>
 
         <div class="nav-group">
@@ -7412,6 +7476,17 @@ Create .github/workflows/update-preview-link.yml that:
       document.getElementById('statCategories').textContent = stats.categories;
       document.getElementById('statTags').textContent = stats.tags;
       document.getElementById('totalLinksNav').textContent = stats.links;
+
+      // Sidebar stats widget
+      const today = stats.today_clicks ?? 0;
+      const yesterday = stats.yesterday_clicks ?? 0;
+      document.getElementById('sidebarTodayClicks').textContent = today.toLocaleString();
+      let sub = 'clicks today';
+      if (yesterday > 0) {
+        const pct = Math.round((today - yesterday) / yesterday * 100);
+        sub = `clicks \u00b7 ${pct >= 0 ? '+' : ''}${pct}% vs yesterday`;
+      }
+      document.getElementById('sidebarClicksSub').textContent = sub;
     }
 
     async function loadCategories() {
@@ -7421,8 +7496,9 @@ Create .github/workflows/update-preview-link.yml that:
       // Update sidebar (escape user-controlled data)
       const nav = document.getElementById('categoriesNav');
       nav.innerHTML = allCategories.map(cat => \`
-        <div class="nav-item" style="position: relative;" onclick="filterByCategory('\${escapeAttr(cat.slug)}')">
-          <span class="cat-dot \${escapeAttr(cat.color)}"></span>
+        <div class="cat-folder-row" onclick="filterByCategory('\${escapeAttr(cat.slug)}')" data-slug="\${escapeAttr(cat.slug)}" data-name="\${escapeAttr(cat.name.toLowerCase())}">
+          <span class="cat-folder-chevron"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span>
+          <span class="cat-folder-icon-dot \${escapeAttr(cat.color)}"></span>
           <span style="flex: 1;">\${escapeHtml(cat.name)}</span>
           <span class="nav-item-badge">\${parseInt(cat.link_count) || 0}</span>
           <button class="share-cat-btn" title="Share collection" onclick="event.stopPropagation(); openShareModal('\${escapeAttr(cat.slug)}', '\${escapeAttr(cat.name)}')" style="display: none; padding: 2px 4px; margin-left: 4px; background: none; border: none; cursor: pointer; color: oklch(var(--muted-foreground)); border-radius: 4px;">
@@ -7432,7 +7508,7 @@ Create .github/workflows/update-preview-link.yml that:
       \`).join('');
 
       // Show/hide share button on hover
-      nav.querySelectorAll('.nav-item').forEach(item => {
+      nav.querySelectorAll('.cat-folder-row').forEach(item => {
         item.addEventListener('mouseenter', () => {
           const btn = item.querySelector('.share-cat-btn');
           if (btn) btn.style.display = 'inline-flex';
@@ -7454,8 +7530,8 @@ Create .github/workflows/update-preview-link.yml that:
       allTags = await res.json();
 
       const nav = document.getElementById('tagsNav');
-      nav.innerHTML = allTags.slice(0, 8).map(tag => \`
-        <span class="badge badge-secondary" style="cursor: pointer;" onclick="filterByTag('\${escapeAttr(tag.name)}')">\${escapeHtml(tag.name)}</span>
+      nav.innerHTML = allTags.map(tag => \`
+        <span class="tag-cloud-pill" onclick="filterByTag('\${escapeAttr(tag.name)}')">\${escapeHtml(tag.name)}</span>
       \`).join('');
     }
 
@@ -7599,15 +7675,26 @@ Create .github/workflows/update-preview-link.yml that:
       loadLinks();
 
       // Update active state
-      document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.nav-item, .cat-folder-row').forEach(el => el.classList.remove('active'));
       if (!slug) {
-        document.querySelector('.nav-item').classList.add('active');
+        document.querySelector('.nav-item[data-nav="links"]').classList.add('active');
+      } else {
+        const activeRow = document.querySelector(`.cat-folder-row[data-slug="${CSS.escape(slug)}"]`);
+        if (activeRow) activeRow.classList.add('active');
       }
     }
 
     function filterByTag(tag) {
       // For now, just show toast - could add tag filtering
       showToast('Tag filtering coming soon!', 'Showing links tagged with: ' + tag);
+    }
+
+    function filterCatSearch(query) {
+      const q = query.toLowerCase();
+      document.querySelectorAll('#categoriesNav .cat-folder-row').forEach(row => {
+        const name = row.dataset.name || '';
+        row.style.display = name.includes(q) ? '' : 'none';
+      });
     }
 
     async function createLink() {
