@@ -7484,7 +7484,7 @@ Create .github/workflows/update-preview-link.yml that:
       let sub = 'clicks today';
       if (yesterday > 0) {
         const pct = Math.round((today - yesterday) / yesterday * 100);
-        sub = `clicks \u00b7 ${pct >= 0 ? '+' : ''}${pct}% vs yesterday`;
+        sub = \`clicks \u00b7 \${pct >= 0 ? '+' : ''}\${pct}% vs yesterday\`;
       }
       document.getElementById('sidebarClicksSub').textContent = sub;
     }
