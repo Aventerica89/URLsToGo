@@ -4,7 +4,8 @@ import { verifyToken, createClerkClient } from '@clerk/backend';
 import { seal as sodiumSeal } from 'tweetsodium';
 
 // Favicon SVG with accessibility title and optimized grouped paths
-const ADMIN_FAVICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctitle%3EURLsToGo Admin Icon%3C/title%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Cg stroke='%238b5cf6' stroke-width='2.5' stroke-linecap='round' fill='none'%3E%3Cpath d='M18.5 10.5a4 4 0 0 1 5.66 5.66l-2.83 2.83a4 4 0 0 1-5.66 0'/%3E%3Cpath d='M13.5 21.5a4 4 0 0 1-5.66-5.66l2.83-2.83a4 4 0 0 1 5.66 0'/%3E%3C/g%3E%3C/svg%3E";
+// Orbit Ring icon: gradient arrow centered inside a thin gradient circle, dark rounded-rect bg
+const ADMIN_FAVICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctitle%3EURLsToGo Admin Icon%3C/title%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='32' y2='32' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='%236366f1'/%3E%3Cstop offset='1' stop-color='%23a855f7'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='16' cy='16' r='12' stroke='url(%23g)' stroke-width='1.5' fill='none'/%3E%3Cline x1='9' y1='16' x2='20' y2='16' stroke='url(%23g)' stroke-width='2.5' stroke-linecap='round'/%3E%3Cpolyline points='15,11 21,16 15,21' stroke='url(%23g)' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E";
 
 // Admin path constant - used for redirects and PWA start URL
 const ADMIN_PATH = '/admin';
@@ -15,11 +16,13 @@ const ADMIN_PATH = '/admin';
 
 // PWA Manifest
 const PWA_MANIFEST = {
+  id: ADMIN_PATH,
   name: 'URLsToGo',
   short_name: 'URLsToGo',
   description: 'Fast, free URL shortener powered by Cloudflare',
   start_url: ADMIN_PATH,
   display: 'standalone',
+  display_override: ['standalone'],
   background_color: '#09090b',
   theme_color: '#8b5cf6',
   orientation: 'any',
@@ -4522,16 +4525,20 @@ function getAdminHTML(userEmail, env) {
       --ring: 0.6056 0.2189 292.7172;
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      overscroll-behavior: none;
+      -webkit-tap-highlight-color: transparent;
+    }
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
       font-size: 14px;
       line-height: 1.5;
       background: oklch(var(--background));
       color: oklch(var(--foreground));
-      min-height: 100vh;
+      min-height: 100dvh;
       -webkit-font-smoothing: antialiased;
     }
-    .app-layout { display: flex; min-height: 100vh; }
+    .app-layout { display: flex; min-height: 100dvh; }
 
     /* Sidebar */
     .sidebar {
@@ -4939,6 +4946,24 @@ function getAdminHTML(userEmail, env) {
     .cell-date { color: oklch(var(--muted-foreground)); font-size: 13px; white-space: nowrap; min-width: 80px; }
     .cell-actions { display: flex; gap: 4px; justify-content: flex-end; opacity: 0; transition: opacity 150ms; }
     .table tr:hover .cell-actions { opacity: 1; }
+    /* Variant D table topbar */
+    .table-topbar { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid oklch(var(--border)); }
+    .table-search { max-width: 280px; height: 34px; font-size: 13px; }
+    /* Variant D tag pills in table rows */
+    .tag-pill-row { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; background: oklch(60.56% 0.2189 292.72 / 0.12); color: oklch(60.56% 0.2189 292.72); border: 1px solid oklch(60.56% 0.2189 292.72 / 0.25); margin-right: 3px; }
+    /* Variant D clicks column */
+    .cell-clicks-new { text-align: right; font-weight: 700; color: oklch(60.56% 0.2189 292.72); white-space: nowrap; }
+    /* Variant D ··· overflow actions */
+    .action-menu-wrap { position: relative; display: flex; justify-content: flex-end; }
+    .action-overflow-btn { background: none; border: none; cursor: pointer; color: oklch(var(--muted-foreground)); font-size: 16px; letter-spacing: 2px; padding: 4px 8px; border-radius: 4px; opacity: 0; transition: opacity 150ms, color 150ms; line-height: 1; }
+    .table tr:hover .action-overflow-btn { opacity: 1; }
+    .action-overflow-btn:hover { color: oklch(var(--foreground)); background: oklch(var(--muted) / 0.5); }
+    .row-menu { display: none; position: absolute; right: 0; top: calc(100% + 4px); background: oklch(var(--card)); border: 1px solid oklch(var(--border)); border-radius: 8px; padding: 4px; min-width: 140px; z-index: 50; box-shadow: 0 8px 24px oklch(0% 0 0 / 0.4); }
+    .row-menu.open { display: block; }
+    .row-menu-item { display: block; width: 100%; text-align: left; background: none; border: none; cursor: pointer; padding: 7px 12px; border-radius: 5px; font-size: 13px; color: oklch(var(--foreground)); transition: background 100ms; }
+    .row-menu-item:hover { background: oklch(var(--muted) / 0.6); }
+    .row-menu-danger { color: oklch(0.637 0.237 25); }
+    .row-menu-danger:hover { background: oklch(0.637 0.237 25 / 0.1); }
 
     /* Stats */
     .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
@@ -5121,15 +5146,13 @@ function getAdminHTML(userEmail, env) {
       /* Links table mobile optimizations */
       .links-table { font-size: 0.8125rem; }
       .links-table th, .links-table td { padding: 0 8px; height: 48px; }
-      .links-table th:nth-child(3), .links-table td:nth-child(3) { display: none; } /* Destination */
-      .links-table th:nth-child(4), .links-table td:nth-child(4) { display: none; } /* Category */
-      .links-table th:nth-child(5), .links-table td:nth-child(5) { display: none; } /* Tags */
-      .links-table th:nth-child(7), .links-table td:nth-child(7) { display: none; } /* Created */
-      .cell-checkbox { width: 32px; }
+      .links-table th:nth-child(2), .links-table td:nth-child(2) { display: none; } /* Destination */
+      .links-table th:nth-child(3), .links-table td:nth-child(3) { display: none; } /* Tags */
+      .links-table th:nth-child(5), .links-table td:nth-child(5) { display: none; } /* Created */
       .cell-link a { padding: 3px 6px; font-size: 12px; }
       .cell-link .copy-btn { display: none; }
-      .cell-actions { opacity: 1; gap: 2px; }
-      .cell-actions .icon-btn { width: 32px; height: 32px; min-width: 32px; }
+      .cell-actions { opacity: 1; }
+      .action-overflow-btn { opacity: 1; }
       .pagination { padding: 12px 16px; flex-wrap: wrap; gap: 8px; }
       .pagination-info { font-size: 12px; }
       /* Prevent iOS zoom on input focus - minimum 16px */
@@ -5137,8 +5160,7 @@ function getAdminHTML(userEmail, env) {
     }
     @media (max-width: 480px) {
       /* Extra small screens - show only essential columns */
-      .links-table th:nth-child(6), .links-table td:nth-child(6) { display: none; } /* Clicks */
-      .cell-actions .icon-btn:not(:first-child):not(:last-child) { display: none; } /* Hide middle actions, keep QR and delete */
+      .links-table th:nth-child(4), .links-table td:nth-child(4) { display: none; } /* Clicks */
       .content { padding: 0.75rem; }
       .content-header h1 { font-size: 1.25rem; }
     }
@@ -6327,33 +6349,29 @@ function getAdminHTML(userEmail, env) {
 
         <!-- Links Table -->
         <div class="card">
-          <div class="card-header row">
-            <div>
-              <h2 class="card-title">Your Links</h2>
-              <p class="card-description">Manage all your shortened URLs.</p>
-            </div>
-            <div style="display: flex; gap: 8px;">
-              <select class="select sm" style="width: 150px;" id="filterCategory" onchange="loadLinks()">
-                <option value="">All Categories</option>
-              </select>
-              <select class="select sm" style="width: 150px;" id="sortLinks" onchange="loadLinks()">
+          <div class="table-topbar">
+            <input class="input table-search" id="tableSearch" placeholder="Search links..." oninput="filterLinksSearch(this.value)">
+            <select id="filterCategory" style="display:none;" onchange="loadLinks()">
+              <option value="">All Categories</option>
+            </select>
+            <div style="display:flex;gap:6px;margin-left:auto;">
+              <select class="select sm" id="sortLinks" onchange="loadLinks()">
                 <option value="newest">Sort: Newest</option>
                 <option value="oldest">Sort: Oldest</option>
                 <option value="clicks">Sort: Most Clicks</option>
                 <option value="alpha">Sort: A-Z</option>
               </select>
+              <button class="btn btn-default" onclick="openCreateSheet()">+ Create Link</button>
             </div>
           </div>
           <div class="table-wrapper">
             <table class="table links-table">
               <thead>
                 <tr>
-                  <th class="cell-checkbox"><input type="checkbox" id="selectAll" onchange="toggleSelectAll()"></th>
-                  <th>Short Link</th>
+                  <th>Short URL</th>
                   <th>Destination</th>
-                  <th>Category</th>
                   <th>Tags</th>
-                  <th>Clicks</th>
+                  <th style="text-align:right;">Clicks</th>
                   <th>Created</th>
                   <th></th>
                 </tr>
@@ -7553,7 +7571,7 @@ Create .github/workflows/update-preview-link.yml that:
       const pageLinks = allLinks.slice(start, start + perPage);
 
       if (pageLinks.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 48px; color: oklch(var(--muted-foreground));">No links found. Create your first one above!</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 48px; color: oklch(var(--muted-foreground));">No links found. Create your first one above!</td></tr>';
         document.getElementById('pagination').style.display = 'none';
         return;
       }
@@ -7566,12 +7584,10 @@ Create .github/workflows/update-preview-link.yml that:
         const safeCodeHtml = escapeHtml(link.code);
         const safeDest = escapeAttr(link.destination);
         const safeDestHtml = escapeHtml(link.destination);
-        const catBadge = link.category_name ? \`<span class="badge-cat \${escapeAttr(link.category_color)}"><span class="cat-dot \${escapeAttr(link.category_color)}"></span>\${escapeHtml(link.category_name)}</span>\` : '<span style="color: oklch(var(--muted-foreground))">-</span>';
-        const tags = link.tags.length ? link.tags.map(t => \`<span class="badge badge-outline">\${escapeHtml(t)}</span>\`).join('') : '<span style="color: oklch(var(--muted-foreground))">-</span>';
+        const tagPills = link.tags.length ? link.tags.map(t => \`<span class="tag-pill-row">\${escapeHtml(t)}</span>\`).join('') : '';
 
         return \`
           <tr data-code="\${safeCode}">
-            <td class="cell-checkbox"><input type="checkbox" class="link-checkbox" value="\${safeCode}" onchange="updateBulkSelection()"></td>
             <td>
               <div class="cell-link">
                 \${link.is_protected ? '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: oklch(var(--indigo)); flex-shrink: 0;" title="Password protected"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>' : ''}
@@ -7585,58 +7601,21 @@ Create .github/workflows/update-preview-link.yml that:
               </div>
             </td>
             <td><a href="\${safeDest}" target="_blank" class="cell-url" data-url="\${safeDest}">\${safeDestHtml}</a></td>
-            <td>\${catBadge}</td>
-            <td><div class="cell-tags">\${tags}</div></td>
-            <td>
-              <span class="cell-clicks">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
-                  <polyline points="16 7 22 7 22 13"/>
-                </svg>
-                \${parseInt(link.clicks).toLocaleString()}
-              </span>
-            </td>
+            <td><div class="cell-tags">\${tagPills}</div></td>
+            <td class="cell-clicks-new">\${parseInt(link.clicks).toLocaleString()}</td>
             <td class="cell-date">
               \${escapeHtml(date)}
               \${link.expires_at ? getExpiryBadge(link.expires_at) : ''}
             </td>
             <td>
-              <div class="cell-actions">
-                <button class="btn btn-ghost btn-icon sm" onclick="showQRCode('\${safeCode}')" title="QR Code">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <rect width="5" height="5" x="3" y="3" rx="1"/>
-                    <rect width="5" height="5" x="16" y="3" rx="1"/>
-                    <rect width="5" height="5" x="3" y="16" rx="1"/>
-                    <path d="M21 16h-3a2 2 0 0 0-2 2v3"/>
-                    <path d="M21 21v.01"/>
-                    <path d="M12 7v3a2 2 0 0 1-2 2H7"/>
-                    <path d="M3 12h.01"/>
-                    <path d="M12 3h.01"/>
-                    <path d="M12 16v.01"/>
-                    <path d="M16 12h1"/>
-                    <path d="M21 12v.01"/>
-                    <path d="M12 21v-1"/>
-                  </svg>
-                </button>
-                <button class="btn btn-ghost btn-icon sm" onclick="showLinkAnalytics('\${safeCode}')" title="Analytics">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M3 3v18h18"/>
-                    <path d="m19 9-5 5-4-4-3 3"/>
-                  </svg>
-                </button>
-                <button class="btn btn-ghost btn-icon sm" onclick='openEditModal(\${JSON.stringify(link).replace(/'/g, "&#39;")})' title="Edit">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
-                    <path d="m15 5 4 4"/>
-                  </svg>
-                </button>
-                <button class="btn btn-ghost btn-icon sm" onclick="deleteLink('\${safeCode}')" title="Delete">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M3 6h18"/>
-                    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
-                    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-                  </svg>
-                </button>
+              <div class="cell-actions action-menu-wrap">
+                <button class="action-overflow-btn" onclick="toggleRowMenu(event, '\${safeCode}')">···</button>
+                <div class="row-menu" id="menu-\${safeCode}">
+                  <button class="row-menu-item" onclick="closeRowMenus();showQRCode('\${safeCode}')">QR Code</button>
+                  <button class="row-menu-item" onclick="closeRowMenus();showLinkAnalytics('\${safeCode}')">Analytics</button>
+                  <button class="row-menu-item" onclick='closeRowMenus();openEditModal(\${JSON.stringify(link).replace(/'/g, "&#39;")})'>Edit</button>
+                  <button class="row-menu-item row-menu-danger" onclick="closeRowMenus();deleteLink('\${safeCode}')">Delete</button>
+                </div>
               </div>
             </td>
           </tr>
@@ -7669,6 +7648,27 @@ Create .github/workflows/update-preview-link.yml that:
       renderLinks();
     }
 
+    function filterLinksSearch(query) {
+      const q = query.toLowerCase().trim();
+      document.querySelectorAll('#linksTable tr[data-code]').forEach(row => {
+        const code = row.dataset.code.toLowerCase();
+        const dest = (row.querySelector('.cell-url') || {}).textContent || '';
+        row.style.display = (!q || code.includes(q) || dest.toLowerCase().includes(q)) ? '' : 'none';
+      });
+    }
+
+    function toggleRowMenu(event, code) {
+      event.stopPropagation();
+      const menu = document.getElementById('menu-' + code);
+      const isOpen = menu.classList.contains('open');
+      closeRowMenus();
+      if (!isOpen) menu.classList.add('open');
+    }
+
+    function closeRowMenus() {
+      document.querySelectorAll('.row-menu.open').forEach(m => m.classList.remove('open'));
+    }
+
     function filterByCategory(slug) {
       document.getElementById('filterCategory').value = slug || '';
       currentPage = 1;
@@ -7679,7 +7679,7 @@ Create .github/workflows/update-preview-link.yml that:
       if (!slug) {
         document.querySelector('.nav-item[data-nav="links"]').classList.add('active');
       } else {
-        const activeRow = document.querySelector(`.cat-folder-row[data-slug="${CSS.escape(slug)}"]`);
+        const activeRow = document.querySelector(\`.cat-folder-row[data-slug="\${CSS.escape(slug)}"\`);
         if (activeRow) activeRow.classList.add('active');
       }
     }
@@ -7989,6 +7989,10 @@ Create .github/workflows/update-preview-link.yml that:
 
     document.addEventListener('click', (e) => {
       if (!e.target.closest('.search')) searchDialog.classList.remove('open');
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.action-menu-wrap')) closeRowMenus();
     });
 
     document.addEventListener('keydown', (e) => {
