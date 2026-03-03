@@ -7171,6 +7171,9 @@ Create .github/workflows/update-preview-link.yml that:
           <div style="display: flex; gap: 8px; align-items: center;">
             <code id="shareModalUrl" style="flex: 1; display: block; padding: 10px 12px; background: oklch(var(--muted) / 0.5); border: 1px solid oklch(var(--border)); border-radius: var(--radius); font-size: 13px; word-break: break-all; color: oklch(var(--foreground));"></code>
             <button class="btn btn-outline" style="flex-shrink: 0;" onclick="copyShareUrl()">Copy</button>
+            <a id="shareModalOpenLink" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-icon sm" style="flex-shrink: 0;" title="Open in new tab">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+            </a>
           </div>
         </div>
         <p style="font-size: 13px; color: oklch(var(--muted-foreground)); margin-top: 12px;">This link allows anyone to view your collection without signing in.</p>
@@ -7231,6 +7234,7 @@ Create .github/workflows/update-preview-link.yml that:
       if (data.token) {
         const shareUrl = window.location.origin + '/share/' + data.token;
         document.getElementById('shareModalUrl').textContent = shareUrl;
+        document.getElementById('shareModalOpenLink').href = shareUrl;
       } else {
         document.getElementById('shareModalUrl').textContent = 'Error generating link';
       }
