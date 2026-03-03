@@ -9737,6 +9737,11 @@ Create .github/workflows/update-preview-link.yml that:
         });
 
         const data = await res.json();
+        if (data.error === 'plan_limit') {
+          closeCreateSheet();
+          showUpgradeModal(data.used, data.limit, data.plan);
+          return;
+        }
         if (!res.ok) throw new Error(data.error || 'Failed to create link');
 
         showToast('Success', 'Link created!', 'success');
