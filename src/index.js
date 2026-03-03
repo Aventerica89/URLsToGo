@@ -1681,6 +1681,48 @@ export default {
       }
     }
 
+    // === AI PROVIDERS API ===
+
+    // GET /api/ai-providers — list which providers are connected (no keys returned)
+    if (path === 'api/ai-providers' && request.method === 'GET') {
+      const rows = await env.DB.prepare(
+        'SELECT provider FROM ai_integrations WHERE user_email = ?'
+      ).bind(userEmail).all();
+      const connected = (rows.results || []).map(r => r.provider);
+      return jsonResponse({ connected });
+    }
+
+    // POST /api/ai-providers/:provider — save encrypted key
+    if (path.startsWith('api/ai-providers/') && request.method === 'POST') {
+      const provider = path.slice('api/ai-providers/'.length);
+      const VALID_PROVIDERS = ['anthropic', 'gemini', 'deepseek', 'groq'];
+      if (!VALID_PROVIDERS.includes(provider)) {
+        return jsonResponse({ error: 'Unknown provider' }, { status: 400 });
+      }
+      const body = await request.json();
+      const key = (body.key || '').trim();
+      if (!key) return jsonResponse({ error: 'API key is required' }, { status: 400 });
+
+      const { encrypted, iv } = await encryptToken(key, env.GITHUB_TOKEN_ENCRYPTION_KEY);
+      await env.DB.prepare(`
+        INSERT INTO ai_integrations (user_email, provider, key_encrypted, key_iv)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(user_email, provider) DO UPDATE SET
+          key_encrypted = excluded.key_encrypted,
+          key_iv = excluded.key_iv
+      `).bind(userEmail, provider, encrypted, iv).run();
+      return jsonResponse({ success: true });
+    }
+
+    // DELETE /api/ai-providers/:provider — remove key
+    if (path.startsWith('api/ai-providers/') && request.method === 'DELETE') {
+      const provider = path.slice('api/ai-providers/'.length);
+      await env.DB.prepare(
+        'DELETE FROM ai_integrations WHERE user_email = ? AND provider = ?'
+      ).bind(userEmail, provider).run();
+      return jsonResponse({ success: true });
+    }
+
     return new Response('Not found', { status: 404 });
   }
 };
@@ -6339,6 +6381,10 @@ function getAdminHTML(userEmail, env) {
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><path d="M2 10h20"/></svg>
           Billing
         </button>
+        <button class="settings-tab" onclick="switchSettingsTab('ai')" data-settings-tab="ai">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a5 5 0 0 1 5 5v2a5 5 0 0 1-10 0V7a5 5 0 0 1 5-5z"/><path d="M9 17.8C5.2 17.3 2 14 2 10"/><path d="M15 17.8C18.8 17.3 22 14 22 10"/><path d="M12 17v5"/><path d="M9 22h6"/></svg>
+          AI
+        </button>
       </nav>
 
       <div class="settings-content">
@@ -6759,6 +6805,17 @@ Create .github/workflows/update-preview-link.yml that:
             </div>
           </div>
         </div>
+
+        <!-- AI Providers Panel -->
+        <div class="settings-panel" id="settingsAi">
+          <div class="settings-section">
+            <div class="settings-section-title">AI Providers</div>
+            <div class="settings-section-desc">Connect your own API keys. Keys are encrypted at rest and never returned in API responses.</div>
+            <div id="aiProvidersLoading" style="padding: 24px 0; text-align: center; color: oklch(var(--muted-foreground)); font-size: 14px;">Loading...</div>
+            <div id="aiProvidersList" style="display: none; margin-top: 16px; display: flex; flex-direction: column; gap: 8px;"></div>
+          </div>
+        </div>
+
       </div>
     </div>
 
@@ -8257,7 +8314,7 @@ Create .github/workflows/update-preview-link.yml that:
       document.querySelectorAll('.settings-panel').forEach(el => el.classList.remove('active'));
       const tabBtn = document.querySelector('[data-settings-tab="' + tab + '"]');
       if (tabBtn) tabBtn.classList.add('active');
-      const panelMap = { profile: 'settingsProfile', 'git-sync': 'settingsGitSync', 'api-keys': 'settingsApiKeys', appearance: 'settingsAppearance', about: 'settingsAbout', devtools: 'settingsDevtools', billing: 'settingsBilling' };
+      const panelMap = { profile: 'settingsProfile', 'git-sync': 'settingsGitSync', 'api-keys': 'settingsApiKeys', appearance: 'settingsAppearance', about: 'settingsAbout', devtools: 'settingsDevtools', billing: 'settingsBilling', ai: 'settingsAi' };
       const panel = document.getElementById(panelMap[tab]);
       if (panel) panel.classList.add('active');
       if (tab === 'api-keys') loadApiKeys();
@@ -8265,6 +8322,7 @@ Create .github/workflows/update-preview-link.yml that:
       if (tab === 'profile') loadProfile();
       if (tab === 'devtools') loadDevtools();
       if (tab === 'billing') loadBillingStatus();
+      if (tab === 'ai') loadAiProviders();
     }
 
     function switchPanelTab(panel, tab) {
@@ -8484,6 +8542,169 @@ Create .github/workflows/update-preview-link.yml that:
       medium: { bg: 'oklch(0.28 0.06 85)', border: 'oklch(0.5 0.12 85)', text: 'oklch(0.78 0.1 85)' },
       low: { bg: 'oklch(0.25 0.06 250)', border: 'oklch(0.45 0.12 250)', text: 'oklch(0.75 0.1 250)' },
     };
+
+    // ==========================================================================
+    // AI PROVIDERS
+    // ==========================================================================
+
+    const AI_PROVIDERS_CONFIG = [
+      { id: 'anthropic', name: 'Claude',    model: 'claude-sonnet-4-6',      desc: 'Anthropic — powerful reasoning',          initial: 'A', color: '#8b5cf6' },
+      { id: 'gemini',    name: 'Gemini',    model: 'gemini-2.0-flash / pro', desc: 'Google — multimodal, large context',       initial: 'G', color: '#4285f4' },
+      { id: 'deepseek',  name: 'DeepSeek',  model: 'deepseek-chat',          desc: 'DeepSeek — cost-effective reasoning',      initial: 'D', color: '#14b8a6' },
+      { id: 'groq',      name: 'Groq',      model: 'llama-3.3-70b',          desc: 'Groq — ultra-fast inference',              initial: 'Q', color: '#f97316' },
+    ];
+
+    let aiConnected = new Set();
+    let aiExpandedProvider = null;
+
+    async function loadAiProviders() {
+      const loading = document.getElementById('aiProvidersLoading');
+      const list = document.getElementById('aiProvidersList');
+      if (!loading || !list) return;
+      loading.style.display = 'block';
+      list.style.display = 'none';
+      try {
+        const res = await fetch('/api/ai-providers', { credentials: 'include' });
+        const data = await res.json();
+        aiConnected = new Set(data.connected || []);
+        renderAiProviders();
+        loading.style.display = 'none';
+        list.style.display = 'flex';
+      } catch {
+        loading.textContent = 'Failed to load AI providers.';
+      }
+    }
+
+    function renderAiProviders() {
+      const list = document.getElementById('aiProvidersList');
+      if (!list) return;
+      list.innerHTML = '';
+      AI_PROVIDERS_CONFIG.forEach(p => {
+        const isConnected = aiConnected.has(p.id);
+        const isExpanded = aiExpandedProvider === p.id;
+        const card = document.createElement('div');
+        card.style.cssText = 'background:oklch(var(--card));border:1px solid oklch(var(--border));border-radius:10px;overflow:hidden;';
+
+        const header = document.createElement('div');
+        header.style.cssText = 'display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer;';
+        header.addEventListener('click', () => {
+          aiExpandedProvider = isExpanded ? null : p.id;
+          renderAiProviders();
+        });
+
+        const avatar = document.createElement('div');
+        avatar.textContent = p.initial;
+        avatar.style.cssText = 'width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0;background:' + p.color + ';';
+
+        const info = document.createElement('div');
+        info.style.cssText = 'flex:1;min-width:0;';
+        const nameRow = document.createElement('div');
+        nameRow.style.cssText = 'display:flex;align-items:center;gap:8px;';
+        const nameEl = document.createElement('span');
+        nameEl.textContent = p.name;
+        nameEl.style.cssText = 'font-size:14px;font-weight:500;';
+        const modelEl = document.createElement('span');
+        modelEl.textContent = p.model;
+        modelEl.style.cssText = 'font-size:11px;color:oklch(var(--muted-foreground));';
+        nameRow.appendChild(nameEl);
+        nameRow.appendChild(modelEl);
+        const descEl = document.createElement('div');
+        descEl.textContent = p.desc;
+        descEl.style.cssText = 'font-size:12px;color:oklch(var(--muted-foreground));margin-top:2px;';
+        info.appendChild(nameRow);
+        info.appendChild(descEl);
+
+        const badge = document.createElement('span');
+        badge.textContent = isConnected ? 'Connected' : 'Not connected';
+        badge.style.cssText = isConnected
+          ? 'font-size:11px;font-weight:500;padding:2px 8px;border-radius:9999px;background:oklch(0.65 0.18 145 / 0.15);color:oklch(0.65 0.18 145);'
+          : 'font-size:11px;color:oklch(var(--muted-foreground));';
+
+        const chevron = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        chevron.setAttribute('width', '14'); chevron.setAttribute('height', '14');
+        chevron.setAttribute('viewBox', '0 0 24 24'); chevron.setAttribute('fill', 'none');
+        chevron.setAttribute('stroke', 'currentColor'); chevron.setAttribute('stroke-width', '2');
+        chevron.setAttribute('stroke-linecap', 'round'); chevron.setAttribute('stroke-linejoin', 'round');
+        chevron.style.cssText = 'flex-shrink:0;color:oklch(var(--muted-foreground));transform:' + (isExpanded ? 'rotate(180deg)' : 'none') + ';transition:transform 0.15s;';
+        const chevPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        chevPath.setAttribute('d', 'm6 9 6 6 6-6');
+        chevron.appendChild(chevPath);
+
+        header.appendChild(avatar);
+        header.appendChild(info);
+        header.appendChild(badge);
+        header.appendChild(chevron);
+        card.appendChild(header);
+
+        if (isExpanded) {
+          const body = document.createElement('div');
+          body.style.cssText = 'border-top:1px solid oklch(var(--border));padding:14px 16px;display:flex;flex-direction:column;gap:10px;';
+
+          if (!isConnected) {
+            const inputRow = document.createElement('div');
+            inputRow.style.cssText = 'display:flex;gap:8px;';
+            const input = document.createElement('input');
+            input.type = 'password';
+            input.placeholder = 'Paste your ' + p.name + ' API key';
+            input.id = 'aiKeyInput_' + p.id;
+            input.className = 'input';
+            input.style.cssText = 'flex:1;font-family:monospace;font-size:12px;';
+            const saveBtn = document.createElement('button');
+            saveBtn.textContent = 'Save';
+            saveBtn.className = 'btn btn-default';
+            saveBtn.style.cssText = 'flex-shrink:0;';
+            saveBtn.addEventListener('click', () => saveAiProvider(p.id));
+            inputRow.appendChild(input);
+            inputRow.appendChild(saveBtn);
+            body.appendChild(inputRow);
+          } else {
+            const disconnectBtn = document.createElement('button');
+            disconnectBtn.textContent = 'Disconnect';
+            disconnectBtn.className = 'btn btn-outline';
+            disconnectBtn.style.cssText = 'align-self:flex-start;';
+            disconnectBtn.addEventListener('click', () => removeAiProvider(p.id));
+            body.appendChild(disconnectBtn);
+          }
+
+          card.appendChild(body);
+        }
+
+        list.appendChild(card);
+      });
+    }
+
+    async function saveAiProvider(providerId) {
+      const input = document.getElementById('aiKeyInput_' + providerId);
+      const key = (input?.value || '').trim();
+      if (!key) { showToast('Error', 'Please enter an API key', 'error'); return; }
+      try {
+        const res = await fetch('/api/ai-providers/' + providerId, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to save');
+        aiConnected.add(providerId);
+        aiExpandedProvider = null;
+        renderAiProviders();
+        showToast('Connected', providerId + ' API key saved', 'success');
+      } catch (err) {
+        showToast('Error', err.message, 'error');
+      }
+    }
+
+    async function removeAiProvider(providerId) {
+      try {
+        await fetch('/api/ai-providers/' + providerId, { method: 'DELETE', credentials: 'include' });
+        aiConnected.delete(providerId);
+        aiExpandedProvider = null;
+        renderAiProviders();
+        showToast('Disconnected', providerId + ' key removed', 'success');
+      } catch {
+        showToast('Error', 'Failed to disconnect', 'error');
+      }
+    }
 
     async function loadDevtools() {
       const loading = document.getElementById('devtoolsLoading');
