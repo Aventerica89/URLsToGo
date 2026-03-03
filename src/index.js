@@ -226,7 +226,7 @@ function htmlResponse(html, status = 200) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = url.pathname.slice(1);
 
@@ -385,23 +385,23 @@ export default {
           }
         }
 
-        // Update click count
-        await env.DB.prepare('UPDATE links SET clicks = clicks + 1 WHERE code = ?').bind(path).run();
-
-        // Log click event with details from Cloudflare headers
+        // Fire analytics writes asynchronously — redirect is not blocked
         const clickData = parseClickData(request);
-        await env.DB.prepare(`
-          INSERT INTO click_events (link_id, referrer, user_agent, country, city, device_type, browser)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).bind(
-          link.id,
-          clickData.referrer,
-          clickData.userAgent,
-          clickData.country,
-          clickData.city,
-          clickData.deviceType,
-          clickData.browser
-        ).run();
+        ctx.waitUntil(Promise.all([
+          env.DB.prepare('UPDATE links SET clicks = clicks + 1 WHERE code = ?').bind(path).run(),
+          env.DB.prepare(`
+            INSERT INTO click_events (link_id, referrer, user_agent, country, city, device_type, browser)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `).bind(
+            link.id,
+            clickData.referrer,
+            clickData.userAgent,
+            clickData.country,
+            clickData.city,
+            clickData.deviceType,
+            clickData.browser
+          ).run()
+        ]));
 
         return new Response(null, {
           status: 302,
