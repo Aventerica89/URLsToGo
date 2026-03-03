@@ -41,12 +41,16 @@ const STATIC_ASSETS = [
   '/manifest.json'
 ];
 
-// Install - cache static assets
+// Install - cache static assets (do NOT skipWaiting — update banner handles this)
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
   );
-  self.skipWaiting();
+});
+
+// Message - allow page to trigger skip waiting
+self.addEventListener('message', (event) => {
+  if (event.data === 'SKIP_WAITING') self.skipWaiting();
 });
 
 // Activate - clean old caches
@@ -151,7 +155,7 @@ const HTML_SECURITY_HEADERS = {
   'Content-Security-Policy': [
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://static.cloudflareinsights.com",
-    "worker-src blob:",
+    "worker-src 'self' blob:",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: https:",
@@ -9776,9 +9780,60 @@ Create .github/workflows/update-preview-link.yml that:
     // Init
     init();
 
-    // Register Service Worker for PWA
+    // Register Service Worker + show update banner when new version is waiting
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(() => {});
+      let reloading = false;
+
+      function showUpdateBanner(waitingWorker) {
+        if (document.getElementById('updateBanner')) return;
+        const banner = document.createElement('div');
+        banner.id = 'updateBanner';
+        banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:10000;display:flex;align-items:center;justify-content:center;gap:12px;background:#7c3aed;color:#fff;padding:10px 16px;font-size:13px;font-weight:500;box-shadow:0 2px 8px rgba(0,0,0,.4);';
+
+        const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        icon.setAttribute('width', '14'); icon.setAttribute('height', '14');
+        icon.setAttribute('viewBox', '0 0 24 24'); icon.setAttribute('fill', 'none');
+        icon.setAttribute('stroke', 'currentColor'); icon.setAttribute('stroke-width', '2');
+        icon.setAttribute('stroke-linecap', 'round'); icon.setAttribute('stroke-linejoin', 'round');
+        const p1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        p1.setAttribute('d', 'M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2');
+        icon.appendChild(p1);
+
+        const label = document.createElement('span');
+        label.textContent = 'URLsToGo has been updated';
+
+        const btn = document.createElement('button');
+        btn.textContent = 'Update';
+        btn.style.cssText = 'background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.4);color:#fff;border-radius:999px;padding:3px 12px;font-size:12px;font-weight:600;cursor:pointer;';
+        btn.addEventListener('click', () => {
+          btn.textContent = 'Reloading\u2026';
+          waitingWorker.postMessage('SKIP_WAITING');
+        });
+
+        banner.appendChild(icon);
+        banner.appendChild(label);
+        banner.appendChild(btn);
+        document.body.prepend(banner);
+      }
+
+      navigator.serviceWorker.register('/sw.js').then((reg) => {
+        if (reg.waiting) showUpdateBanner(reg.waiting);
+        reg.addEventListener('updatefound', () => {
+          const newWorker = reg.installing;
+          if (!newWorker) return;
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              showUpdateBanner(newWorker);
+            }
+          });
+        });
+      }).catch(() => {});
+
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (reloading) return;
+        reloading = true;
+        window.location.reload();
+      });
     }
   </script>
 </body>
