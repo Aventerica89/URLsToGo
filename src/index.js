@@ -550,41 +550,52 @@ export default {
       const categoryFilter = url.searchParams.get('category');
       const tagFilter = url.searchParams.get('tag');
       const sort = url.searchParams.get('sort') || 'newest';
+      const pageLimit = Math.min(parseInt(url.searchParams.get('limit') || '500', 10), 1000);
+      const pageOffset = Math.max(parseInt(url.searchParams.get('offset') || '0', 10), 0);
 
-      let query = `
-        SELECT l.id, l.code, l.destination, l.clicks, l.user_email, l.category_id, l.created_at, l.expires_at,
-               l.description, CASE WHEN l.password_hash IS NOT NULL THEN 1 ELSE 0 END as is_protected,
-               c.name as category_name, c.slug as category_slug, c.color as category_color,
-               GROUP_CONCAT(t.name) as tags
-        FROM links l
-        LEFT JOIN categories c ON l.category_id = c.id
-        LEFT JOIN link_tags lt ON l.id = lt.link_id
-        LEFT JOIN tags t ON lt.tag_id = t.id
-        WHERE l.user_email = ?
-      `;
+      let whereClause = 'WHERE l.user_email = ?';
       const params = [userEmail];
 
       if (categoryFilter) {
-        query += ' AND c.slug = ?';
+        whereClause += ' AND c.slug = ?';
         params.push(categoryFilter);
       }
 
       if (tagFilter) {
-        query += ' AND l.id IN (SELECT lt2.link_id FROM link_tags lt2 JOIN tags t2 ON lt2.tag_id = t2.id WHERE t2.name = ? AND t2.user_email = ?)';
+        whereClause += ' AND l.id IN (SELECT lt2.link_id FROM link_tags lt2 JOIN tags t2 ON lt2.tag_id = t2.id WHERE t2.name = ? AND t2.user_email = ?)';
         params.push(tagFilter, userEmail);
       }
 
-      query += ' GROUP BY l.id';
-
-      // Sorting
+      let orderClause;
       switch (sort) {
-        case 'oldest': query += ' ORDER BY l.created_at ASC'; break;
-        case 'clicks': query += ' ORDER BY l.clicks DESC'; break;
-        case 'alpha': query += ' ORDER BY l.code ASC'; break;
-        default: query += ' ORDER BY l.created_at DESC';
+        case 'oldest': orderClause = 'ORDER BY l.created_at ASC'; break;
+        case 'clicks': orderClause = 'ORDER BY l.clicks DESC'; break;
+        case 'alpha': orderClause = 'ORDER BY l.code ASC'; break;
+        default: orderClause = 'ORDER BY l.created_at DESC';
       }
 
-      const { results } = await env.DB.prepare(query).bind(...params).all();
+      const [{ results }, countRow] = await Promise.all([
+        env.DB.prepare(`
+          SELECT l.id, l.code, l.destination, l.clicks, l.user_email, l.category_id, l.created_at, l.expires_at,
+                 l.description, CASE WHEN l.password_hash IS NOT NULL THEN 1 ELSE 0 END as is_protected,
+                 c.name as category_name, c.slug as category_slug, c.color as category_color,
+                 GROUP_CONCAT(t.name) as tags
+          FROM links l
+          LEFT JOIN categories c ON l.category_id = c.id
+          LEFT JOIN link_tags lt ON l.id = lt.link_id
+          LEFT JOIN tags t ON lt.tag_id = t.id
+          ${whereClause}
+          GROUP BY l.id
+          ${orderClause}
+          LIMIT ? OFFSET ?
+        `).bind(...params, pageLimit, pageOffset).all(),
+        env.DB.prepare(`
+          SELECT COUNT(DISTINCT l.id) as total
+          FROM links l
+          LEFT JOIN categories c ON l.category_id = c.id
+          ${whereClause}
+        `).bind(...params).first(),
+      ]);
 
       // Parse tags string into array
       const links = results.map(link => ({
@@ -592,7 +603,12 @@ export default {
         tags: link.tags ? link.tags.split(',') : []
       }));
 
-      return jsonResponse(links, { headers: { 'Cache-Control': 'private, max-age=30' } });
+      return jsonResponse(links, {
+        headers: {
+          'Cache-Control': 'private, max-age=30',
+          'X-Total-Count': String(countRow?.total ?? links.length),
+        }
+      });
     }
 
     // Search links
