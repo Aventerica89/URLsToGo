@@ -1007,11 +1007,13 @@ export default {
     // === STATS API ===
 
     if (path === 'api/stats' && request.method === 'GET') {
-      const linksResult = await env.DB.prepare('SELECT COUNT(*) as count, SUM(clicks) as clicks FROM links WHERE user_email = ?').bind(userEmail).first();
-      const categoriesResult = await env.DB.prepare('SELECT COUNT(*) as count FROM categories WHERE user_email = ?').bind(userEmail).first();
-      const tagsResult = await env.DB.prepare('SELECT COUNT(DISTINCT t.id) as count FROM tags t JOIN link_tags lt ON t.id = lt.tag_id JOIN links l ON lt.link_id = l.id WHERE l.user_email = ?').bind(userEmail).first();
-      const todayResult = await env.DB.prepare("SELECT COUNT(*) as count FROM click_events ce JOIN links l ON ce.link_id = l.id WHERE l.user_email = ? AND ce.clicked_at >= date('now')").bind(userEmail).first();
-      const yesterdayResult = await env.DB.prepare("SELECT COUNT(*) as count FROM click_events ce JOIN links l ON ce.link_id = l.id WHERE l.user_email = ? AND ce.clicked_at >= date('now', '-1 day') AND ce.clicked_at < date('now')").bind(userEmail).first();
+      const [linksResult, categoriesResult, tagsResult, todayResult, yesterdayResult] = await Promise.all([
+        env.DB.prepare('SELECT COUNT(*) as count, SUM(clicks) as clicks FROM links WHERE user_email = ?').bind(userEmail).first(),
+        env.DB.prepare('SELECT COUNT(*) as count FROM categories WHERE user_email = ?').bind(userEmail).first(),
+        env.DB.prepare('SELECT COUNT(DISTINCT t.id) as count FROM tags t JOIN link_tags lt ON t.id = lt.tag_id JOIN links l ON lt.link_id = l.id WHERE l.user_email = ?').bind(userEmail).first(),
+        env.DB.prepare("SELECT COUNT(*) as count FROM click_events ce JOIN links l ON ce.link_id = l.id WHERE l.user_email = ? AND ce.clicked_at >= date('now')").bind(userEmail).first(),
+        env.DB.prepare("SELECT COUNT(*) as count FROM click_events ce JOIN links l ON ce.link_id = l.id WHERE l.user_email = ? AND ce.clicked_at >= date('now', '-1 day') AND ce.clicked_at < date('now')").bind(userEmail).first(),
+      ]);
 
       return jsonResponse({
         links: linksResult?.count || 0,
