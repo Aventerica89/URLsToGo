@@ -1765,8 +1765,10 @@ async function getUserEmail(request, env) {
 
     if (!payload) return null;
 
-    // Get user details from Clerk API to fetch email
-    // Email is not included in JWT by default for security
+    // Prefer email from JWT custom claims (set via Clerk session customization)
+    // Falls back to a Clerk API call only when the claim is absent
+    if (payload.email) return payload.email;
+
     const userId = payload.sub;
     if (!userId) return null;
 
