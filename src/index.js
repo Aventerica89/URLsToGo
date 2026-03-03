@@ -178,8 +178,8 @@ const CORS_HEADERS = {
 // =============================================================================
 
 const PLAN_LIMITS = {
-  free: { links: 25 },
-  pro:  { links: 200 },
+  free: { links: 9999 },
+  pro:  { links: 9999 },
 };
 
 const STRIPE_API_BASE = 'https://api.stripe.com/v1';
