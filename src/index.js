@@ -192,13 +192,17 @@ function getCorsHeaders(request) {
 }
 
 // JSON response with CORS headers (for API endpoints)
+// statusOrOpts may be a number (status code) or { status, headers }
 function jsonResponse(data, statusOrOpts = 200) {
-  const status = typeof statusOrOpts === 'object' ? (statusOrOpts.status ?? 200) : statusOrOpts;
+  const isObj = typeof statusOrOpts === 'object';
+  const status = isObj ? (statusOrOpts.status ?? 200) : statusOrOpts;
+  const extraHeaders = isObj ? (statusOrOpts.headers ?? {}) : {};
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       'Content-Type': 'application/json',
-      ...CORS_HEADERS
+      ...CORS_HEADERS,
+      ...extraHeaders,
     }
   });
 }
@@ -422,7 +426,14 @@ export default {
       if (!userEmail) {
         return Response.redirect(new URL('/login', url.origin).toString(), 302);
       }
-      return htmlResponse(getAdminHTML(userEmail, env));
+      const adminHtml = getAdminHTML(userEmail, env);
+      return new Response(adminHtml, {
+        headers: {
+          'Content-Type': 'text/html; charset=UTF-8',
+          'Cache-Control': 'private, max-age=300',
+          ...HTML_SECURITY_HEADERS,
+        },
+      });
     }
 
     // === WAITLIST API (public — no auth required) ===
@@ -581,7 +592,7 @@ export default {
         tags: link.tags ? link.tags.split(',') : []
       }));
 
-      return jsonResponse(links);
+      return jsonResponse(links, { headers: { 'Cache-Control': 'private, max-age=30' } });
     }
 
     // Search links
@@ -923,7 +934,7 @@ export default {
         GROUP BY c.id
         ORDER BY c.name ASC
       `).bind(userEmail).all();
-      return jsonResponse(results);
+      return jsonResponse(results, { headers: { 'Cache-Control': 'private, max-age=30' } });
     }
 
     // Create category
@@ -1001,7 +1012,7 @@ export default {
         GROUP BY t.id
         ORDER BY link_count DESC
       `).bind(userEmail).all();
-      return jsonResponse(results);
+      return jsonResponse(results, { headers: { 'Cache-Control': 'private, max-age=30' } });
     }
 
     // === STATS API ===
@@ -1022,7 +1033,7 @@ export default {
         tags: tagsResult?.count || 0,
         today_clicks: todayResult?.count || 0,
         yesterday_clicks: yesterdayResult?.count || 0
-      });
+      }, { headers: { 'Cache-Control': 'private, max-age=30' } });
     }
 
     // === ANALYTICS API ===
