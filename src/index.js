@@ -346,6 +346,8 @@ export default {
       if (link) {
         // Rate limit check for redirects (by IP)
         const clientIP = request.headers.get('CF-Connecting-IP') || 'unknown';
+        // Prune stale rate-limit rows in the background — not on the critical path
+        ctx.waitUntil(env.DB.prepare('DELETE FROM rate_limits WHERE window_start < datetime("now", "-5 minutes")').run());
         const rateLimit = await checkRateLimit(env, clientIP, 'redirect');
         if (!rateLimit.allowed) {
           return new Response('Too many requests. Please try again later.', {
@@ -2074,42 +2076,38 @@ function getRateLimits(env) {
 }
 
 // Check rate limit - returns { allowed: boolean, remaining: number, resetAt: Date }
+// Single-query upsert: atomically increments counter or creates a fresh window.
+// Stale-window cleanup is deferred to ctx.waitUntil() in the caller to avoid
+// blocking the hot redirect path.
 async function checkRateLimit(env, identifier, endpoint) {
   const rateLimits = getRateLimits(env);
   const config = rateLimits[endpoint] || rateLimits['default'];
   const windowStart = new Date(Date.now() - config.windowSeconds * 1000).toISOString();
 
-  // Clean up old entries (older than 5 minutes)
-  await env.DB.prepare('DELETE FROM rate_limits WHERE window_start < datetime("now", "-5 minutes")').run();
+  // Upsert: insert fresh row or bump counter if still within window
+  const row = await env.DB.prepare(`
+    INSERT INTO rate_limits (identifier, endpoint, request_count, window_start)
+    VALUES (?, ?, 1, CURRENT_TIMESTAMP)
+    ON CONFLICT(identifier, endpoint) DO UPDATE SET
+      request_count = CASE
+        WHEN window_start > ? THEN request_count + 1
+        ELSE 1
+      END,
+      window_start = CASE
+        WHEN window_start > ? THEN window_start
+        ELSE CURRENT_TIMESTAMP
+      END
+    RETURNING request_count, window_start
+  `).bind(identifier, endpoint, windowStart, windowStart).first();
 
-  // Get current count
-  const existing = await env.DB.prepare(`
-    SELECT request_count, window_start FROM rate_limits
-    WHERE identifier = ? AND endpoint = ? AND window_start > ?
-  `).bind(identifier, endpoint, windowStart).first();
+  const count = row?.request_count ?? 1;
 
-  if (existing) {
-    if (existing.request_count >= config.limit) {
-      const resetAt = new Date(new Date(existing.window_start).getTime() + config.windowSeconds * 1000);
-      return { allowed: false, remaining: 0, resetAt };
-    }
-
-    // Increment counter
-    await env.DB.prepare(`
-      UPDATE rate_limits SET request_count = request_count + 1
-      WHERE identifier = ? AND endpoint = ?
-    `).bind(identifier, endpoint).run();
-
-    return { allowed: true, remaining: config.limit - existing.request_count - 1, resetAt: null };
+  if (count > config.limit) {
+    const resetAt = new Date(new Date(row.window_start).getTime() + config.windowSeconds * 1000);
+    return { allowed: false, remaining: 0, resetAt };
   }
 
-  // Create new entry
-  await env.DB.prepare(`
-    INSERT OR REPLACE INTO rate_limits (identifier, endpoint, request_count, window_start)
-    VALUES (?, ?, 1, CURRENT_TIMESTAMP)
-  `).bind(identifier, endpoint).run();
-
-  return { allowed: true, remaining: config.limit - 1, resetAt: null };
+  return { allowed: true, remaining: config.limit - count, resetAt: null };
 }
 
 // Get rate limit response headers
