@@ -554,8 +554,13 @@ export default {
       const categoryFilter = url.searchParams.get('category');
       const tagFilter = url.searchParams.get('tag');
       const sort = url.searchParams.get('sort') || 'newest';
-      const pageLimit = Math.min(parseInt(url.searchParams.get('limit') || '500', 10), 1000);
-      const pageOffset = Math.max(parseInt(url.searchParams.get('offset') || '0', 10), 0);
+      const parsedLimit = parseInt(url.searchParams.get('limit') || '500', 10);
+      const parsedOffset = parseInt(url.searchParams.get('offset') || '0', 10);
+      if (isNaN(parsedLimit) || isNaN(parsedOffset)) {
+        return jsonResponse({ error: 'Invalid pagination parameters: limit and offset must be numeric' }, { status: 400 });
+      }
+      const pageLimit = Math.min(parsedLimit, 1000);
+      const pageOffset = Math.max(parsedOffset, 0);
 
       let whereClause = 'WHERE l.user_email = ?';
       const params = [userEmail];
@@ -700,13 +705,9 @@ export default {
         // Handle tags
         if (tags && Array.isArray(tags) && tags.length > 0) {
           for (const tagName of tags) {
-            // Get or create tag
-            let tag = await env.DB.prepare('SELECT id FROM tags WHERE name = ? AND user_email = ?').bind(tagName.toLowerCase(), userEmail).first();
-            if (!tag) {
-              const tagResult = await env.DB.prepare('INSERT INTO tags (name, user_email) VALUES (?, ?)').bind(tagName.toLowerCase(), userEmail).run();
-              tag = { id: tagResult.meta.last_row_id };
-            }
-            // Link tag to link
+            // Atomic upsert: INSERT OR IGNORE avoids race condition, then SELECT fetches the id
+            await env.DB.prepare('INSERT OR IGNORE INTO tags (name, user_email) VALUES (?, ?)').bind(tagName.toLowerCase(), userEmail).run();
+            const tag = await env.DB.prepare('SELECT id FROM tags WHERE name = ? AND user_email = ?').bind(tagName.toLowerCase(), userEmail).first();
             await env.DB.prepare('INSERT OR IGNORE INTO link_tags (link_id, tag_id) VALUES (?, ?)').bind(linkId, tag.id).run();
           }
         }
@@ -759,11 +760,9 @@ export default {
         // Add new tags
         if (Array.isArray(tags)) {
           for (const tagName of tags) {
-            let tag = await env.DB.prepare('SELECT id FROM tags WHERE name = ? AND user_email = ?').bind(tagName.toLowerCase(), userEmail).first();
-            if (!tag) {
-              const tagResult = await env.DB.prepare('INSERT INTO tags (name, user_email) VALUES (?, ?)').bind(tagName.toLowerCase(), userEmail).run();
-              tag = { id: tagResult.meta.last_row_id };
-            }
+            // Atomic upsert: INSERT OR IGNORE avoids race condition, then SELECT fetches the id
+            await env.DB.prepare('INSERT OR IGNORE INTO tags (name, user_email) VALUES (?, ?)').bind(tagName.toLowerCase(), userEmail).run();
+            const tag = await env.DB.prepare('SELECT id FROM tags WHERE name = ? AND user_email = ?').bind(tagName.toLowerCase(), userEmail).first();
             await env.DB.prepare('INSERT OR IGNORE INTO link_tags (link_id, tag_id) VALUES (?, ?)').bind(link.id, tag.id).run();
           }
         }
@@ -1278,11 +1277,9 @@ export default {
           // Handle tags
           if (link.tags && Array.isArray(link.tags)) {
             for (const tagName of link.tags) {
-              let tag = await env.DB.prepare('SELECT id FROM tags WHERE name = ? AND user_email = ?').bind(tagName.toLowerCase(), userEmail).first();
-              if (!tag) {
-                const tagResult = await env.DB.prepare('INSERT INTO tags (name, user_email) VALUES (?, ?)').bind(tagName.toLowerCase(), userEmail).run();
-                tag = { id: tagResult.meta.last_row_id };
-              }
+              // Atomic upsert: INSERT OR IGNORE avoids race condition, then SELECT fetches the id
+              await env.DB.prepare('INSERT OR IGNORE INTO tags (name, user_email) VALUES (?, ?)').bind(tagName.toLowerCase(), userEmail).run();
+              const tag = await env.DB.prepare('SELECT id FROM tags WHERE name = ? AND user_email = ?').bind(tagName.toLowerCase(), userEmail).first();
               await env.DB.prepare('INSERT OR IGNORE INTO link_tags (link_id, tag_id) VALUES (?, ?)').bind(result.meta.last_row_id, tag.id).run();
             }
           }
@@ -2155,19 +2152,26 @@ function getRateLimits(env) {
 }
 
 // Check rate limit - returns { allowed: boolean, remaining: number, resetAt: Date }
-// Single-query upsert: atomically increments counter or creates a fresh window.
-// Stale-window cleanup is deferred to ctx.waitUntil() in the caller to avoid
-// blocking the hot redirect path.
+// Implements a sliding window counter approximation using two fixed windows (current + previous).
+// Estimated count = prev_count * (1 - elapsed/windowSeconds) + request_count
+// This prevents the fixed-window burst vulnerability where 2×limit requests could pass
+// at window boundaries. Stale-window cleanup is deferred to ctx.waitUntil() in the caller.
 async function checkRateLimit(env, identifier, endpoint) {
   const rateLimits = getRateLimits(env);
   const config = rateLimits[endpoint] || rateLimits['default'];
-  const windowStart = new Date(Date.now() - config.windowSeconds * 1000).toISOString();
+  const now = Date.now();
+  const windowMs = config.windowSeconds * 1000;
+  const windowStart = new Date(now - windowMs).toISOString();
 
-  // Upsert: insert fresh row or bump counter if still within window
+  // Upsert: insert fresh row or bump counter. On window expiry, roll current → prev.
   const row = await env.DB.prepare(`
-    INSERT INTO rate_limits (identifier, endpoint, request_count, window_start)
-    VALUES (?, ?, 1, CURRENT_TIMESTAMP)
+    INSERT INTO rate_limits (identifier, endpoint, request_count, prev_count, window_start)
+    VALUES (?, ?, 1, 0, CURRENT_TIMESTAMP)
     ON CONFLICT(identifier, endpoint) DO UPDATE SET
+      prev_count = CASE
+        WHEN window_start > ? THEN prev_count
+        ELSE request_count
+      END,
       request_count = CASE
         WHEN window_start > ? THEN request_count + 1
         ELSE 1
@@ -2176,17 +2180,24 @@ async function checkRateLimit(env, identifier, endpoint) {
         WHEN window_start > ? THEN window_start
         ELSE CURRENT_TIMESTAMP
       END
-    RETURNING request_count, window_start
-  `).bind(identifier, endpoint, windowStart, windowStart).first();
+    RETURNING request_count, prev_count, window_start
+  `).bind(identifier, endpoint, windowStart, windowStart, windowStart).first();
 
-  const count = row?.request_count ?? 1;
+  const currCount = row?.request_count ?? 1;
+  const prevCount = row?.prev_count ?? 0;
+  const winStart = row?.window_start ? new Date(row.window_start).getTime() : now;
 
-  if (count > config.limit) {
-    const resetAt = new Date(new Date(row.window_start).getTime() + config.windowSeconds * 1000);
+  // Sliding window estimate: weight previous window by fraction of window remaining
+  const elapsed = now - winStart;
+  const prevWeight = Math.max(0, 1 - elapsed / windowMs);
+  const slidingCount = Math.ceil(prevCount * prevWeight) + currCount;
+
+  if (slidingCount > config.limit) {
+    const resetAt = new Date(winStart + windowMs);
     return { allowed: false, remaining: 0, resetAt };
   }
 
-  return { allowed: true, remaining: config.limit - count, resetAt: null };
+  return { allowed: true, remaining: config.limit - slidingCount, resetAt: null };
 }
 
 // Get rate limit response headers
