@@ -1717,6 +1717,10 @@ export default {
     // DELETE /api/ai-providers/:provider — remove key
     if (path.startsWith('api/ai-providers/') && request.method === 'DELETE') {
       const provider = path.slice('api/ai-providers/'.length);
+      const VALID_PROVIDERS = ['anthropic', 'gemini', 'deepseek', 'groq'];
+      if (!VALID_PROVIDERS.includes(provider)) {
+        return jsonResponse({ error: 'Unknown provider' }, { status: 400 });
+      }
       await env.DB.prepare(
         'DELETE FROM ai_integrations WHERE user_email = ? AND provider = ?'
       ).bind(userEmail, provider).run();
@@ -6812,7 +6816,7 @@ Create .github/workflows/update-preview-link.yml that:
             <div class="settings-section-title">AI Providers</div>
             <div class="settings-section-desc">Connect your own API keys. Keys are encrypted at rest and never returned in API responses.</div>
             <div id="aiProvidersLoading" style="padding: 24px 0; text-align: center; color: oklch(var(--muted-foreground)); font-size: 14px;">Loading...</div>
-            <div id="aiProvidersList" style="display: none; margin-top: 16px; display: flex; flex-direction: column; gap: 8px;"></div>
+            <div id="aiProvidersList" style="display: none; margin-top: 16px; flex-direction: column; gap: 8px;"></div>
           </div>
         </div>
 
@@ -8680,6 +8684,7 @@ Create .github/workflows/update-preview-link.yml that:
       try {
         const res = await fetch('/api/ai-providers/' + providerId, {
           method: 'POST',
+          credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ key })
         });
@@ -8688,7 +8693,8 @@ Create .github/workflows/update-preview-link.yml that:
         aiConnected.add(providerId);
         aiExpandedProvider = null;
         renderAiProviders();
-        showToast('Connected', providerId + ' API key saved', 'success');
+        const providerName = AI_PROVIDERS_CONFIG.find(p => p.id === providerId)?.name || providerId;
+        showToast('Connected', providerName + ' API key saved', 'success');
       } catch (err) {
         showToast('Error', err.message, 'error');
       }
@@ -8696,11 +8702,13 @@ Create .github/workflows/update-preview-link.yml that:
 
     async function removeAiProvider(providerId) {
       try {
-        await fetch('/api/ai-providers/' + providerId, { method: 'DELETE', credentials: 'include' });
+        const res = await fetch('/api/ai-providers/' + providerId, { method: 'DELETE', credentials: 'include' });
+        if (!res.ok) throw new Error('Failed to disconnect');
         aiConnected.delete(providerId);
         aiExpandedProvider = null;
         renderAiProviders();
-        showToast('Disconnected', providerId + ' key removed', 'success');
+        const providerName = AI_PROVIDERS_CONFIG.find(p => p.id === providerId)?.name || providerId;
+        showToast('Disconnected', providerName + ' key removed', 'success');
       } catch {
         showToast('Error', 'Failed to disconnect', 'error');
       }
