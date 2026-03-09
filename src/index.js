@@ -182,8 +182,8 @@ const CORS_HEADERS = {
 // =============================================================================
 
 const PLAN_LIMITS = {
-  free: { links: 9999 },
-  pro:  { links: 9999 },
+  free: { links: 25 },
+  pro:  { links: 200 },
 };
 
 const STRIPE_API_BASE = 'https://api.stripe.com/v1';
@@ -838,6 +838,9 @@ export default {
       if (!codes || !Array.isArray(codes) || codes.length === 0) {
         return jsonResponse({ error: 'No links specified' }, { status: 400 });
       }
+      if (codes.length > 100) {
+        return jsonResponse({ error: 'Maximum 100 links per bulk operation' }, { status: 400 });
+      }
 
       // Verify category exists and belongs to user (or null to remove category)
       if (category_id) {
@@ -1001,7 +1004,7 @@ export default {
         return jsonResponse({ token: existing.token });
       }
 
-      const token = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+      const token = crypto.randomUUID().replace(/-/g, '');
       await env.DB.prepare('INSERT INTO category_shares (token, user_email, category_id) VALUES (?, ?, ?)').bind(token, userEmail, category.id).run();
       return jsonResponse({ token });
     }
@@ -1351,6 +1354,13 @@ export default {
         return jsonResponse({ error: 'Name must be 100 characters or less' }, { status: 400 });
       }
 
+      const VALID_SCOPES = new Set(['read', 'write']);
+      const scopeList = (scopes || 'read,write').split(',').map(s => s.trim()).filter(s => VALID_SCOPES.has(s));
+      if (scopeList.length === 0) {
+        return jsonResponse({ error: 'Invalid scopes. Valid values: read, write' }, { status: 400 });
+      }
+      const validatedScopes = scopeList.join(',');
+
       // Generate key and hash it
       const apiKey = generateApiKey();
       const keyHash = await hashApiKey(apiKey);
@@ -1359,7 +1369,7 @@ export default {
       await env.DB.prepare(`
         INSERT INTO api_keys (user_email, name, key_hash, key_prefix, scopes, expires_at)
         VALUES (?, ?, ?, ?, ?, ?)
-      `).bind(userEmail, name, keyHash, keyPrefix, scopes || 'read,write', expires_at || null).run();
+      `).bind(userEmail, name, keyHash, keyPrefix, validatedScopes, expires_at || null).run();
 
       // Return the full key only once (it can never be retrieved again)
       return jsonResponse({
@@ -2336,7 +2346,11 @@ function validateCode(code) {
   }
 
   // Reserved paths
-  const reserved = ['admin', 'api', 'static', 'assets', 'favicon', 'robots', 'sitemap'];
+  const reserved = [
+    'admin', 'api', 'static', 'assets', 'favicon', 'robots', 'sitemap',
+    'login', 'signup', 'share', 'sw', 'manifest', 'design-system', 'mobile-mockup',
+    'icon-192', 'icon-512',
+  ];
   if (reserved.includes(code.toLowerCase())) {
     return { valid: false, error: 'This short code is reserved' };
   }
@@ -8013,7 +8027,7 @@ Create .github/workflows/update-preview-link.yml that:
       // Populate category dropdown
       const catSelect = document.getElementById('editCategory');
       catSelect.innerHTML = '<option value="">No category</option>' + allCategories.map(cat =>
-        \`<option value="\${cat.id}" \${cat.id === link.category_id ? 'selected' : ''}>\${cat.name}</option>\`
+        \`<option value="\${escapeHtml(String(cat.id))}" \${cat.id === link.category_id ? 'selected' : ''}>\${escapeHtml(cat.name)}</option>\`
       ).join('');
 
       // Set tags
