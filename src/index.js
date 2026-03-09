@@ -713,7 +713,8 @@ export default {
 
         return jsonResponse({ success: true, code, destination, id: linkId });
       } catch (e) {
-        return jsonResponse({ error: 'Failed to create link: ' + e.message }, { status: 500 });
+        console.error('Link creation error:', e.message);
+        return jsonResponse({ error: 'Failed to create link' }, { status: 500 });
       }
     }
 
@@ -963,13 +964,18 @@ export default {
       if (!name) {
         return jsonResponse({ error: 'Missing name' }, { status: 400 });
       }
+      if (name.length > 100) {
+        return jsonResponse({ error: 'Category name must be 100 characters or less' }, { status: 400 });
+      }
+      const VALID_CATEGORY_COLORS = ['gray','violet','pink','cyan','orange','green','red','blue','yellow'];
+      const safeColor = VALID_CATEGORY_COLORS.includes(color) ? color : 'gray';
 
       const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
       try {
         await env.DB.prepare('INSERT INTO categories (name, slug, color, user_email) VALUES (?, ?, ?, ?)')
-          .bind(name, slug, color || 'gray', userEmail).run();
-        return jsonResponse({ success: true, name, slug });
+          .bind(name, slug, safeColor, userEmail).run();
+        return jsonResponse({ success: true, name, slug, color: safeColor });
       } catch (e) {
         return jsonResponse({ error: 'Category already exists' }, { status: 409 });
       }
@@ -1061,7 +1067,8 @@ export default {
     // Get analytics for a specific link
     if (path.startsWith('api/analytics/') && path !== 'api/analytics/overview' && request.method === 'GET') {
       const code = path.replace('api/analytics/', '');
-      const days = parseInt(url.searchParams.get('days') || '30');
+      const rawDays = parseInt(url.searchParams.get('days') || '30', 10);
+      const days = isNaN(rawDays) ? 30 : Math.min(Math.max(rawDays, 1), 365);
 
       // Get the link
       const link = await env.DB.prepare('SELECT id, code, destination, clicks FROM links WHERE code = ? AND user_email = ?')
@@ -1143,7 +1150,8 @@ export default {
 
     // Get overview analytics for all links
     if (path === 'api/analytics/overview' && request.method === 'GET') {
-      const days = parseInt(url.searchParams.get('days') || '30');
+      const rawDays2 = parseInt(url.searchParams.get('days') || '30', 10);
+      const days = isNaN(rawDays2) ? 30 : Math.min(Math.max(rawDays2, 1), 365);
 
       // Total clicks in period
       const totalInPeriod = await env.DB.prepare(`
@@ -1259,10 +1267,33 @@ export default {
 
         const links = data.links || data; // Support both v1 and v2
 
+        // Check plan limit once before the loop
+        const importPlan = await getUserPlan(env, userEmail);
+        const importPlanLimit = PLAN_LIMITS[importPlan].links;
+
         for (const link of links) {
           if (!link.code || !link.destination) continue;
 
-          const existing = await env.DB.prepare('SELECT code FROM links WHERE code = ?').bind(link.code).first();
+          // Validate code
+          const importCodeValidation = validateCode(link.code);
+          if (!importCodeValidation.valid) { skipped++; continue; }
+
+          // Validate URL
+          const importUrlValidation = validateUrl(link.destination);
+          if (!importUrlValidation.valid) { skipped++; continue; }
+
+          // Enforce plan limit per-link
+          const { count: currentCount } = await env.DB.prepare(
+            'SELECT COUNT(*) as count FROM links WHERE user_email = ?'
+          ).bind(userEmail).first();
+          if (currentCount >= importPlanLimit) {
+            return jsonResponse({
+              success: true, imported, skipped,
+              warning: `Plan limit of ${importPlanLimit} links reached. Remaining links were skipped.`
+            });
+          }
+
+          const existing = await env.DB.prepare('SELECT code FROM links WHERE code = ?').bind(importCodeValidation.code).first();
           if (existing) { skipped++; continue; }
 
           // Get category ID if specified
@@ -1273,7 +1304,7 @@ export default {
           }
 
           const result = await env.DB.prepare('INSERT INTO links (code, destination, user_email, clicks, category_id) VALUES (?, ?, ?, ?, ?)')
-            .bind(link.code, link.destination, userEmail, link.clicks || 0, categoryId).run();
+            .bind(importCodeValidation.code, importUrlValidation.url, userEmail, 0, categoryId).run();
 
           // Handle tags
           if (link.tags && Array.isArray(link.tags)) {
@@ -1366,6 +1397,37 @@ export default {
       }
 
       return jsonResponse({ success: true });
+    }
+
+    // === DEVTOOLS PROXY API ===
+    // Server-side proxy so the DEVTOOLS_API_KEY is never exposed to the browser.
+
+    if (path.startsWith('api/devtools/') && request.method === 'GET') {
+      const devKey = env?.DEVTOOLS_API_KEY || '';
+      if (!devKey) {
+        return jsonResponse({ error: 'DEVTOOLS_API_KEY not configured' }, { status: 503 });
+      }
+      const DEVTOOLS_API_BASE = 'https://devtools.jbcloud.app';
+      const DEVTOOLS_PROJECT_ID = 'urlstogo';
+      const subPath = path.replace('api/devtools/', '');
+      let targetUrl;
+      if (subPath === 'bugs') {
+        targetUrl = `${DEVTOOLS_API_BASE}/api/bugs?project=${DEVTOOLS_PROJECT_ID}&status=open`;
+      } else if (subPath === 'ideas') {
+        targetUrl = `${DEVTOOLS_API_BASE}/api/ideas?projectId=${DEVTOOLS_PROJECT_ID}`;
+      } else {
+        return jsonResponse({ error: 'Unknown devtools endpoint' }, { status: 404 });
+      }
+      try {
+        const resp = await fetch(targetUrl, { headers: { 'x-devtools-api-key': devKey } });
+        const body = await resp.text();
+        return new Response(body, {
+          status: resp.status,
+          headers: { 'Content-Type': 'application/json', ...CORS_HEADERS }
+        });
+      } catch (e) {
+        return jsonResponse({ error: 'Failed to reach DevTools API' }, { status: 502 });
+      }
     }
 
     // === SETTINGS API ===
@@ -1703,7 +1765,8 @@ export default {
       const key = (body.key || '').trim();
       if (!key) return jsonResponse({ error: 'API key is required' }, { status: 400 });
 
-      const { encrypted, iv } = await encryptToken(key, env.GITHUB_TOKEN_ENCRYPTION_KEY);
+      const aiEncKey = env.AI_KEY_ENCRYPTION_KEY || env.GITHUB_TOKEN_ENCRYPTION_KEY;
+      const { encrypted, iv } = await encryptToken(key, aiEncKey);
       await env.DB.prepare(`
         INSERT INTO ai_integrations (user_email, provider, key_encrypted, key_iv)
         VALUES (?, ?, ?, ?)
@@ -4503,7 +4566,6 @@ function getExpiredHTML() {
 
 function getAdminHTML(userEmail, env) {
   const clerkPublishableKey = env?.CLERK_PUBLISHABLE_KEY || '';
-  const devtoolsApiKey = env?.DEVTOOLS_API_KEY || '';
 
   return `<!DOCTYPE html>
 <html lang="en" class="dark">
@@ -7297,9 +7359,6 @@ Create .github/workflows/update-preview-link.yml that:
     const baseUrl = window.location.origin;
     const shortlinkBase = 'https://go.urlstogo.cloud';
     const CLERK_PUBLISHABLE_KEY = '${clerkPublishableKey}';
-    const DEVTOOLS_API_KEY = '${devtoolsApiKey}';
-    const DEVTOOLS_PROJECT_ID = 'urlstogo';
-    const DEVTOOLS_API_BASE = 'https://devtools.jbcloud.app';
     let allLinks = [];
     let allCategories = [];
     let allTags = [];
@@ -8708,24 +8767,14 @@ Create .github/workflows/update-preview-link.yml that:
       const errorEl = document.getElementById('devtoolsError');
       const content = document.getElementById('devtoolsContent');
 
-      if (!DEVTOOLS_API_KEY) {
-        loading.style.display = 'none';
-        errorEl.style.display = 'block';
-        errorEl.textContent = 'DEVTOOLS_API_KEY not configured. Add it in the Cloudflare dashboard.';
-        content.style.display = 'none';
-        return;
-      }
-
       loading.style.display = '';
       errorEl.style.display = 'none';
       content.style.display = 'none';
 
-      const headers = { 'x-devtools-api-key': DEVTOOLS_API_KEY };
-
       try {
         const [bugsRes, ideasRes] = await Promise.all([
-          fetch(DEVTOOLS_API_BASE + '/api/bugs?project=' + DEVTOOLS_PROJECT_ID + '&status=open', { headers }),
-          fetch(DEVTOOLS_API_BASE + '/api/ideas?projectId=' + DEVTOOLS_PROJECT_ID, { headers }),
+          fetch('/api/devtools/bugs'),
+          fetch('/api/devtools/ideas'),
         ]);
 
         devtoolsBugs = bugsRes.ok ? (await bugsRes.json()) || [] : [];
