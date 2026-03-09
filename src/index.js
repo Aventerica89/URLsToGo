@@ -1877,35 +1877,6 @@ async function getUserEmailWithFallback(request, env) {
   const apiKeyResult = await validateApiKey(request, env);
   if (apiKeyResult) return { email: apiKeyResult.email, scopes: apiKeyResult.scopes };
 
-  // Fallback to Cloudflare Access for backwards compatibility
-  const cfJwt = request.headers.get('Cf-Access-Jwt-Assertion');
-  if (cfJwt) {
-    try {
-      const parts = cfJwt.split('.');
-      if (parts.length === 3) {
-        const payload = JSON.parse(base64UrlDecode(parts[1]));
-        if (payload.email) return { email: payload.email, scopes: null };
-      }
-    } catch (e) {
-      // Ignore errors
-    }
-  }
-
-  // Also check CF_Authorization cookie (set by Cloudflare Access)
-  const cookies = request.headers.get('Cookie') || '';
-  const cfAuthCookie = cookies.match(/CF_Authorization=([^;]+)/);
-  if (cfAuthCookie) {
-    try {
-      const parts = cfAuthCookie[1].split('.');
-      if (parts.length === 3) {
-        const payload = JSON.parse(base64UrlDecode(parts[1]));
-        if (payload.email) return { email: payload.email, scopes: null };
-      }
-    } catch (e) {
-      // Ignore errors
-    }
-  }
-
   return null;
 }
 
@@ -4387,6 +4358,7 @@ function getLandingPageHTML() {
 }
 
 function get404HTML(code) {
+  const safeCode = escapeHtml(String(code || ''));
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -4461,7 +4433,7 @@ function get404HTML(code) {
     <div class="code-404">404</div>
     <h1>Link Not Found</h1>
     <p>The short link you're looking for doesn't exist or may have been removed.</p>
-    <div class="code-display">/${code}</div>
+    <div class="code-display">/${safeCode}</div>
     <div>
       <a href="/" class="home-link">
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -7936,18 +7908,35 @@ Create .github/workflows/update-preview-link.yml that:
       const container = document.getElementById('toastContainer');
       const toast = document.createElement('div');
       toast.className = 'toast';
-      toast.innerHTML = \`
-        <div class="toast-icon \${type}">
-          \${type === 'success' ? '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>' : '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>'}
-        </div>
-        <div class="toast-content">
-          <div class="toast-title">\${title}</div>
-          <div class="toast-description">\${description}</div>
-        </div>
-        <button class="toast-close" onclick="this.parentElement.remove()">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-        </button>
-      \`;
+
+      const iconDiv = document.createElement('div');
+      iconDiv.className = 'toast-icon ' + type;
+      iconDiv.innerHTML = type === 'success'
+        ? '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>'
+        : '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>';
+
+      const contentDiv = document.createElement('div');
+      contentDiv.className = 'toast-content';
+
+      const titleEl = document.createElement('div');
+      titleEl.className = 'toast-title';
+      titleEl.textContent = title;
+
+      const descEl = document.createElement('div');
+      descEl.className = 'toast-description';
+      descEl.textContent = description;
+
+      contentDiv.appendChild(titleEl);
+      contentDiv.appendChild(descEl);
+
+      const closeBtn = document.createElement('button');
+      closeBtn.className = 'toast-close';
+      closeBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+      closeBtn.addEventListener('click', () => toast.remove());
+
+      toast.appendChild(iconDiv);
+      toast.appendChild(contentDiv);
+      toast.appendChild(closeBtn);
       container.appendChild(toast);
       setTimeout(() => toast.remove(), 5000);
     }
