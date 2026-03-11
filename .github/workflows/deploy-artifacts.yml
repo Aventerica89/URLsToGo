@@ -15,11 +15,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Load secrets from 1Password
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          CLOUDFLARE_API_TOKEN: op://App Dev/cloudflare/CLOUDFLARE_API_TOKEN
+          CLOUDFLARE_ACCOUNT_ID: op://App Dev/cloudflare/CLOUDFLARE_ACCOUNT_ID
+          URLSTOGO_API_KEY: op://App Dev/urlstogo/URLSTOGO_API_KEY
+
       - name: Run D1 Migrations
         uses: cloudflare/wrangler-action@v3
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          apiToken: ${{ env.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: '3.90.0'
           workingDirectory: 'artifacts-app'
           command: d1 execute artifact-manager --remote --file=migrations.sql
@@ -28,8 +38,8 @@ jobs:
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          apiToken: ${{ env.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: '3.90.0'
           workingDirectory: 'artifacts-app'
           command: deploy
