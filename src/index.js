@@ -5284,7 +5284,8 @@ function getAdminHTML(userEmail, env) {
       .links-table th:nth-child(5), .links-table td:nth-child(5) { display: none; } /* Created */
       .cell-link a { padding: 3px 6px; font-size: 12px; }
       .cell-link .copy-btn { display: none; }
-      .cell-actions { opacity: 1; }
+      .cell-actions { opacity: 1; gap: 2px; }
+      .cell-actions .icon-btn { width: 44px; height: 44px; min-width: 44px; }
       .action-overflow-btn { opacity: 1; }
       .pagination { padding: 12px 16px; flex-wrap: wrap; gap: 8px; }
       .pagination-info { font-size: 12px; }
