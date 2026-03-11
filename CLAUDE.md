@@ -44,12 +44,12 @@ User only needs to set these GitHub secrets once:
 | File | Purpose |
 |------|---------|
 | `src/index.js` | Main worker (npm-based, uses @clerk/backend) |
-| `worker-multiuser.js` | Legacy file (kept for reference, not deployed) |
+| `archive/worker-multiuser.js` | Legacy file (kept for reference, not deployed) |
 | `package.json` | npm dependencies (@clerk/backend, wrangler) |
 | `migrations.sql` | Core schema (append-only) |
 | `migrations-billing.sql` | Stripe subscriptions schema |
-| `schema-multiuser.sql` | Full schema reference |
-| `design-system.html` | UI playground for testing changes |
+| `archive/schema-multiuser.sql` | Full schema reference |
+| `design/design-system.html` | UI playground for testing changes |
 | `.github/workflows/deploy.yml` | CI/CD pipeline (includes npm ci) |
 
 ---
@@ -97,7 +97,7 @@ UPDATE tags SET user_email = 'YOUR_GOOGLE_EMAIL' WHERE user_email = 'admin@jbmdc
 ### Design System
 
 The UI uses Shadcn-style CSS variables. To test UI changes:
-1. Edit `design-system.html`
+1. Edit `design/design-system.html`
 2. Open in browser to preview
 3. Copy styles to `src/index.js` when ready
 4. Push to main to deploy
