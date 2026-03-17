@@ -14,10 +14,6 @@ binding = "DB"
 database_name = "url-shortener"
 database_id = "b47f73ea-a441-4f8f-986b-5080a7d2a1c9"
 
-[[routes]]
-pattern = "urlstogo.cloud"
-custom_domain = true
-
-[[routes]]
-pattern = "go.urlstogo.cloud"
-custom_domain = true
+# Custom domains (urlstogo.cloud, go.urlstogo.cloud) are configured in the
+# Cloudflare dashboard and do not need wrangler to manage them on each deploy.
+# Keeping them here would require Zone > Workers Routes permission on the API token.
