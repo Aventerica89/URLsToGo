@@ -554,8 +554,10 @@ export default {
       const categoryFilter = url.searchParams.get('category');
       const tagFilter = url.searchParams.get('tag');
       const sort = url.searchParams.get('sort') || 'newest';
-      const pageLimit = Math.min(parseInt(url.searchParams.get('limit') || '500', 10), 1000);
-      const pageOffset = Math.max(parseInt(url.searchParams.get('offset') || '0', 10), 0);
+      const parsedLimit = parseInt(url.searchParams.get('limit') || '500', 10);
+      const parsedOffset = parseInt(url.searchParams.get('offset') || '0', 10);
+      const pageLimit = Math.min(isNaN(parsedLimit) ? 500 : parsedLimit, 1000);
+      const pageOffset = Math.max(isNaN(parsedOffset) ? 0 : parsedOffset, 0);
 
       let whereClause = 'WHERE l.user_email = ?';
       const params = [userEmail];
@@ -700,12 +702,9 @@ export default {
         // Handle tags
         if (tags && Array.isArray(tags) && tags.length > 0) {
           for (const tagName of tags) {
-            // Get or create tag
-            let tag = await env.DB.prepare('SELECT id FROM tags WHERE name = ? AND user_email = ?').bind(tagName.toLowerCase(), userEmail).first();
-            if (!tag) {
-              const tagResult = await env.DB.prepare('INSERT INTO tags (name, user_email) VALUES (?, ?)').bind(tagName.toLowerCase(), userEmail).run();
-              tag = { id: tagResult.meta.last_row_id };
-            }
+            // Get or create tag atomically to avoid race condition
+            await env.DB.prepare('INSERT OR IGNORE INTO tags (name, user_email) VALUES (?, ?)').bind(tagName.toLowerCase(), userEmail).run();
+            const tag = await env.DB.prepare('SELECT id FROM tags WHERE name = ? AND user_email = ?').bind(tagName.toLowerCase(), userEmail).first();
             // Link tag to link
             await env.DB.prepare('INSERT OR IGNORE INTO link_tags (link_id, tag_id) VALUES (?, ?)').bind(linkId, tag.id).run();
           }
@@ -760,11 +759,8 @@ export default {
         // Add new tags
         if (Array.isArray(tags)) {
           for (const tagName of tags) {
-            let tag = await env.DB.prepare('SELECT id FROM tags WHERE name = ? AND user_email = ?').bind(tagName.toLowerCase(), userEmail).first();
-            if (!tag) {
-              const tagResult = await env.DB.prepare('INSERT INTO tags (name, user_email) VALUES (?, ?)').bind(tagName.toLowerCase(), userEmail).run();
-              tag = { id: tagResult.meta.last_row_id };
-            }
+            await env.DB.prepare('INSERT OR IGNORE INTO tags (name, user_email) VALUES (?, ?)').bind(tagName.toLowerCase(), userEmail).run();
+            const tag = await env.DB.prepare('SELECT id FROM tags WHERE name = ? AND user_email = ?').bind(tagName.toLowerCase(), userEmail).first();
             await env.DB.prepare('INSERT OR IGNORE INTO link_tags (link_id, tag_id) VALUES (?, ?)').bind(link.id, tag.id).run();
           }
         }
@@ -1312,11 +1308,8 @@ export default {
           // Handle tags
           if (link.tags && Array.isArray(link.tags)) {
             for (const tagName of link.tags) {
-              let tag = await env.DB.prepare('SELECT id FROM tags WHERE name = ? AND user_email = ?').bind(tagName.toLowerCase(), userEmail).first();
-              if (!tag) {
-                const tagResult = await env.DB.prepare('INSERT INTO tags (name, user_email) VALUES (?, ?)').bind(tagName.toLowerCase(), userEmail).run();
-                tag = { id: tagResult.meta.last_row_id };
-              }
+              await env.DB.prepare('INSERT OR IGNORE INTO tags (name, user_email) VALUES (?, ?)').bind(tagName.toLowerCase(), userEmail).run();
+              const tag = await env.DB.prepare('SELECT id FROM tags WHERE name = ? AND user_email = ?').bind(tagName.toLowerCase(), userEmail).first();
               await env.DB.prepare('INSERT OR IGNORE INTO link_tags (link_id, tag_id) VALUES (?, ?)').bind(result.meta.last_row_id, tag.id).run();
             }
           }
