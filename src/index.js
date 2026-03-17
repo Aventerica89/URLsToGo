@@ -147,25 +147,33 @@ const ALLOWED_ORIGINS = [
 ];
 
 // Security headers applied to every HTML response
-const HTML_SECURITY_HEADERS = {
-  'X-Frame-Options': 'DENY',
-  'X-Content-Type-Options': 'nosniff',
-  'Referrer-Policy': 'strict-origin-when-cross-origin',
-  'Permissions-Policy': 'geolocation=(), microphone=(), camera=()',
-  'Content-Security-Policy': [
-    "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://static.cloudflareinsights.com",
-    "worker-src 'self' blob:",
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "font-src 'self' https://fonts.gstatic.com",
-    "img-src 'self' data: https:",
-    "connect-src 'self' https://*.clerk.accounts.dev https://api.clerk.dev https://static.cloudflareinsights.com",
-    "frame-ancestors 'none'",
-    "base-uri 'self'",
-    "form-action 'self'",
-    "object-src 'none'",
-  ].join('; '),
-};
+function generateNonce() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return btoa(String.fromCharCode(...bytes));
+}
+
+function getSecurityHeaders(nonce) {
+  return {
+    'X-Frame-Options': 'DENY',
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'Permissions-Policy': 'geolocation=(), microphone=(), camera=()',
+    'Content-Security-Policy': [
+      "default-src 'self'",
+      `script-src 'nonce-${nonce}' 'strict-dynamic' https://cdn.jsdelivr.net https://static.cloudflareinsights.com`,
+      "worker-src 'self' blob:",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' https://fonts.gstatic.com",
+      "img-src 'self' data: https:",
+      "connect-src 'self' https://*.clerk.accounts.dev https://api.clerk.dev https://static.cloudflareinsights.com",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "object-src 'none'",
+    ].join('; '),
+  };
+}
 
 // Static CORS headers used on API responses (primary origin)
 const CORS_HEADERS = {
@@ -223,12 +231,13 @@ function errorResponse(message, status = 400) {
 }
 
 // HTML response with full security headers applied
-function htmlResponse(html, status = 200) {
-  return new Response(html, {
+function htmlResponse(html, status = 200, nonce = null) {
+  const n = nonce || generateNonce();
+  return new Response(typeof html === 'function' ? html(n) : html, {
     status,
     headers: {
       'Content-Type': 'text/html; charset=UTF-8',
-      ...HTML_SECURITY_HEADERS,
+      ...getSecurityHeaders(n),
     },
   });
 }
@@ -263,12 +272,12 @@ export default {
 
     // Public landing page at root
     if (path === '') {
-      return htmlResponse(getLandingPageHTML());
+      return htmlResponse((nonce) => getLandingPageHTML(nonce));
     }
 
     // Clerk login/signup pages
     if (path === 'login' || path === 'signup') {
-      return htmlResponse(getAuthPageHTML(env, path));
+      return htmlResponse((nonce) => getAuthPageHTML(env, path, nonce));
     }
 
     // Serve design resource pages (no auth required)
@@ -320,7 +329,7 @@ export default {
       `).bind(share.category_id, share.user_email).all();
 
       const isOwner = userEmail === share.user_email;
-      return htmlResponse(getSharePageHTML(share, links, isOwner));
+      return htmlResponse((nonce) => getSharePageHTML(share, links, isOwner, nonce));
     }
 
     // Public API - shared collection data (JSON)
@@ -430,12 +439,13 @@ export default {
       if (!userEmail) {
         return Response.redirect(new URL('/login', url.origin).toString(), 302);
       }
-      const adminHtml = getAdminHTML(userEmail, env);
+      const adminNonce = generateNonce();
+      const adminHtml = getAdminHTML(userEmail, env, adminNonce);
       return new Response(adminHtml, {
         headers: {
           'Content-Type': 'text/html; charset=UTF-8',
           'Cache-Control': 'private, max-age=300',
-          ...HTML_SECURITY_HEADERS,
+          ...getSecurityHeaders(adminNonce),
         },
       });
     }
@@ -2541,7 +2551,7 @@ function getPasswordHTML(code, error = false) {
 }
 
 // Generate HTML for login/signup pages with Clerk
-function getAuthPageHTML(env, mode = 'login') {
+function getAuthPageHTML(env, mode = 'login', nonce = '') {
   const publishableKey = env.CLERK_PUBLISHABLE_KEY || '';
   const isSignup = mode === 'signup';
 
@@ -2847,7 +2857,7 @@ function getAuthPageHTML(env, mode = 'login') {
   </div>
 
   <!-- Clerk JS SDK -->
-  <script>
+  <script nonce="${nonce}">
     // Configuration
     const CLERK_PUBLISHABLE_KEY = '${publishableKey}';
 
@@ -2953,7 +2963,7 @@ function getAuthPageHTML(env, mode = 'login') {
 
 // Generate HTML for 404 page
 // Generate HTML for public landing page
-function getLandingPageHTML() {
+function getLandingPageHTML(nonce = '') {
   // Reusable SVG icons to reduce duplication
   const LINK_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
 
@@ -4026,7 +4036,7 @@ function getLandingPageHTML() {
               Already have access? <a href="/admin">Sign in</a>
             </p>
           </div>
-          <script>
+          <script nonce="${nonce}">
             async function submitWaitlist(e) {
               e.preventDefault();
               const email = document.getElementById('waitlist-email').value.trim();
@@ -4571,7 +4581,7 @@ function getExpiredHTML() {
 </html>`;
 }
 
-function getAdminHTML(userEmail, env) {
+function getAdminHTML(userEmail, env, nonce = '') {
   const clerkPublishableKey = env?.CLERK_PUBLISHABLE_KEY || '';
 
   return `<!DOCTYPE html>
@@ -7292,7 +7302,7 @@ Create .github/workflows/update-preview-link.yml that:
     </div>
   </div>
 
-  <script>
+  <script nonce="${nonce}">
     // XSS Prevention - Escape functions for safe HTML rendering
     function escapeHtml(str) {
       if (str === null || str === undefined) return '';
@@ -10116,7 +10126,7 @@ Create .github/workflows/update-preview-link.yml that:
 }
 
 // Public Shared Collection Page
-function getSharePageHTML(share, links, isOwner = false) {
+function getSharePageHTML(share, links, isOwner = false, nonce = '') {
   const totalLinks = links.filter(l => !l.is_archived).length;
   const categoryName = escapeHtml(share.category_name);
   const featured = links.filter(l => l.is_featured && !l.is_archived);
@@ -10261,7 +10271,7 @@ function getSharePageHTML(share, links, isOwner = false) {
     </div>` : '';
 
   const ownerJS = isOwner ? `
-  <script>
+  <script nonce="${nonce}">
     function openEdit(code, btn) {
       const card = btn.closest('.card');
       card.querySelector('.card-static').style.display = 'none';
