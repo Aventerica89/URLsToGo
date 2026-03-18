@@ -6043,6 +6043,77 @@ function getAdminHTML(userEmail, env) {
     .link-card:nth-child(3) { animation-delay: 100ms; }
     .link-card:nth-child(4) { animation-delay: 150ms; }
     .link-card:nth-child(5) { animation-delay: 200ms; }
+
+    /* Onboarding Tour */
+    .tour-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      pointer-events: auto;
+    }
+    .tour-spotlight {
+      position: fixed;
+      z-index: 10001;
+      border-radius: 8px;
+      box-shadow: 0 0 0 9999px rgba(9, 9, 11, 0.8);
+      pointer-events: none;
+      transition: all 0.3s ease;
+    }
+    .tour-popover {
+      position: fixed;
+      z-index: 10002;
+      background: #111113;
+      border: 1px solid #27272a;
+      border-radius: 8px;
+      padding: 16px;
+      max-width: 320px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .tour-popover.visible { opacity: 1; }
+    .tour-step-counter {
+      font-size: 12px;
+      color: #71717a;
+      margin-bottom: 8px;
+    }
+    .tour-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #ffffff;
+      margin-bottom: 6px;
+    }
+    .tour-description {
+      font-size: 14px;
+      color: #a1a1aa;
+      line-height: 1.5;
+      margin-bottom: 16px;
+    }
+    .tour-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .tour-skip {
+      background: none;
+      border: none;
+      color: #71717a;
+      font-size: 13px;
+      cursor: pointer;
+      padding: 0;
+    }
+    .tour-skip:hover { color: #8b5cf6; }
+    .tour-next {
+      background: #8b5cf6;
+      color: #ffffff;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 16px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .tour-next:hover { background: #7c3aed; }
   </style>
 </head>
 <body>
