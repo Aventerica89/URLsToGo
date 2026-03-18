@@ -161,7 +161,7 @@ function getSecurityHeaders(nonce) {
     'Permissions-Policy': 'geolocation=(), microphone=(), camera=()',
     'Content-Security-Policy': [
       "default-src 'self'",
-      `script-src 'nonce-${nonce}' 'strict-dynamic' https://cdn.jsdelivr.net https://static.cloudflareinsights.com`,
+      `script-src 'nonce-${nonce}' 'unsafe-inline' 'unsafe-hashes' https://cdn.jsdelivr.net https://static.cloudflareinsights.com`,
       "worker-src 'self' blob:",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com",
