@@ -6311,11 +6311,6 @@ function getAdminHTML(userEmail, env, nonce = '') {
           </div>
         </div>
 
-        <div class="nav-group">
-          <div class="nav-group-label">Tags</div>
-          <div id="tagsNav" class="tags-cloud"></div>
-        </div>
-
         <div class="sidebar-stats-widget">
           <div class="sidebar-stats-label">Today</div>
           <div class="sidebar-stats-number" id="sidebarTodayClicks">—</div>
