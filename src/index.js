@@ -6274,6 +6274,12 @@ function getAdminHTML(userEmail, env, nonce = '') {
         </div>
         <div style="margin-bottom: 12px; border-top: 1px solid oklch(var(--border));"></div>
 
+        <div class="sidebar-stats-widget">
+          <div class="sidebar-stats-label">Today</div>
+          <div class="sidebar-stats-number" id="sidebarTodayClicks">—</div>
+          <div class="sidebar-stats-sub" id="sidebarClicksSub">clicks</div>
+        </div>
+
         <div class="nav-group">
           <div class="nav-item active" onclick="showLinksView(); filterByCategory(null)" data-nav="links">
             <span class="nav-item-icon">
@@ -6309,12 +6315,6 @@ function getAdminHTML(userEmail, env, nonce = '') {
             </span>
             <span>Add Category</span>
           </div>
-        </div>
-
-        <div class="sidebar-stats-widget">
-          <div class="sidebar-stats-label">Today</div>
-          <div class="sidebar-stats-number" id="sidebarTodayClicks">—</div>
-          <div class="sidebar-stats-sub" id="sidebarClicksSub">clicks</div>
         </div>
 
         <div class="nav-group">
@@ -7071,23 +7071,6 @@ Create .github/workflows/update-preview-link.yml that:
   </div>
   </div>
 
-  <!-- Dev Tools FAB -->
-  <div class="dev-tools-fab" id="devToolsFab">
-    <button class="dev-tools-btn" onclick="toggleDevTools()" title="Design Tools">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
-    </button>
-    <div class="dev-tools-menu">
-      <div class="dev-tools-menu-title">Design Resources</div>
-      <a href="/design-system" target="_blank" class="dev-tools-menu-item">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
-        Design System
-      </a>
-      <a href="/mobile-mockup" target="_blank" class="dev-tools-menu-item">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/></svg>
-        Mobile App Mockup
-      </a>
-    </div>
-  </div>
 
   <div class="toast-container" id="toastContainer"></div>
 
