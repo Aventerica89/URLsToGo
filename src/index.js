@@ -32,9 +32,12 @@ const PWA_MANIFEST = {
   ]
 };
 
+// Deploy version — unique per Worker instance (changes on each deploy)
+const DEPLOY_VERSION = String(Date.now());
+
 // Service Worker JavaScript
 const SERVICE_WORKER_JS = `
-const CACHE_NAME = 'urlstogo-v1';
+const CACHE_NAME = 'urlstogo-${DEPLOY_VERSION}';
 const STATIC_ASSETS = [
   '${ADMIN_PATH}',
   '/login',
@@ -296,7 +299,10 @@ export default {
     }
     if (path === 'sw.js') {
       return new Response(SERVICE_WORKER_JS, {
-        headers: { 'Content-Type': 'application/javascript' }
+        headers: {
+          'Content-Type': 'application/javascript',
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
+        }
       });
     }
     if (path === 'icon-192.png' || path === 'icon-512.png') {
