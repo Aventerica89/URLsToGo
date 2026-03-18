@@ -158,6 +158,45 @@ Help view is a sibling to `<main class="main">` inside `.app-layout` (flex conta
 
 ---
 
+## ONBOARDING TOUR (March 2026)
+
+### Overview
+
+Guided spotlight tour highlighting key UI elements. Auto-triggers on first login, replayable from Help > Getting Started.
+
+### Architecture
+
+- Tour engine: vanilla JS inline in `src/index.js` (no dependencies)
+- State: `user_preferences` table in D1 tracks `onboarding_completed_at`
+- Visual: box-shadow spotlight + positioned popover tooltips
+
+### Tour Steps
+
+1. Create a Link (`.fab` button)
+2. Organize with Categories (`#sidebar .sidebar-content`)
+3. Help & Guides (`[data-nav="help"]`)
+4. Settings & API (`[data-nav="settings"]`)
+
+### API Routes
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| `GET` | `/api/onboarding/status` | Clerk | Check if onboarding completed |
+| `POST` | `/api/onboarding/complete` | Clerk | Mark onboarding done |
+
+### Key Code Locations
+
+| Location | Purpose |
+|----------|---------|
+| `migrations-onboarding.sql` | `user_preferences` table |
+| `src/index.js` | `TOUR_STEPS`, `startTour()`, `checkOnboarding()`, tour CSS |
+
+### Adding Tour Steps
+
+Add entries to the `TOUR_STEPS` array. Each step needs: `target` (CSS selector), `title`, `description`, `position` (`top`/`bottom`/`left`/`right`). Optional `fallbackTarget` for responsive alternatives.
+
+---
+
 ## URL HASH DEEP LINKING (February 2026)
 
 ### Pattern
