@@ -10163,6 +10163,238 @@ Create .github/workflows/update-preview-link.yml that:
     // Init
     init();
 
+    // Onboarding Tour
+    var TOUR_STEPS = [
+      {
+        target: '.fab',
+        fallbackTarget: '.empty-state-actions .btn-default',
+        title: 'Create a Link',
+        description: 'Paste any URL and pick a custom slug to create your first shortlink.',
+        position: 'top'
+      },
+      {
+        target: '#sidebar .sidebar-content',
+        title: 'Organize with Categories',
+        description: 'Group your links into categories for easy management.',
+        position: 'right'
+      },
+      {
+        target: '[data-nav="help"]',
+        title: 'Help & Guides',
+        description: 'Feature guides, getting started tips, and this tour \u2014 available anytime.',
+        position: 'right'
+      },
+      {
+        target: '[data-nav="settings"]',
+        title: 'Settings & API',
+        description: 'Manage API keys, billing, and integrations from Settings.',
+        position: 'right'
+      }
+    ];
+
+    var tourState = null;
+
+    function startTour() {
+      if (tourState) return;
+      tourState = { step: 0 };
+
+      var overlay = document.createElement('div');
+      overlay.className = 'tour-overlay';
+      overlay.id = 'tourOverlay';
+      overlay.addEventListener('click', function(e) {
+        if (e.target === overlay) { /* block background clicks */ }
+      });
+      document.body.appendChild(overlay);
+
+      var spotlight = document.createElement('div');
+      spotlight.className = 'tour-spotlight';
+      spotlight.id = 'tourSpotlight';
+      document.body.appendChild(spotlight);
+
+      var popover = document.createElement('div');
+      popover.className = 'tour-popover';
+      popover.id = 'tourPopover';
+      document.body.appendChild(popover);
+
+      document.addEventListener('keydown', tourKeyHandler);
+      window.addEventListener('resize', tourResizeHandler);
+      window.addEventListener('hashchange', tourCleanup);
+
+      renderTourStep();
+    }
+
+    function tourKeyHandler(e) {
+      if (e.key === 'Escape') skipTour();
+      if (e.key === 'ArrowRight') nextTourStep();
+      if (e.key === 'ArrowLeft' && tourState && tourState.step > 0) {
+        tourState.step--;
+        renderTourStep();
+      }
+    }
+
+    var tourResizeTimeout;
+    function tourResizeHandler() {
+      clearTimeout(tourResizeTimeout);
+      tourResizeTimeout = setTimeout(function() {
+        if (tourState) renderTourStep();
+      }, 100);
+    }
+
+    function getStepTarget(step) {
+      var el = document.querySelector(step.target);
+      if (!el && step.fallbackTarget) {
+        el = document.querySelector(step.fallbackTarget);
+      }
+      return el;
+    }
+
+    function renderTourStep() {
+      if (!tourState) return;
+
+      var stepConfig = TOUR_STEPS[tourState.step];
+      if (!stepConfig) { completeTour(); return; }
+
+      var target = getStepTarget(stepConfig);
+      if (!target) {
+        if (tourState.step < TOUR_STEPS.length - 1) {
+          tourState.step++;
+          renderTourStep();
+        } else {
+          completeTour();
+        }
+        return;
+      }
+
+      var rect = target.getBoundingClientRect();
+      var pad = 8;
+      var spotlight = document.getElementById('tourSpotlight');
+      spotlight.style.top = (rect.top - pad) + 'px';
+      spotlight.style.left = (rect.left - pad) + 'px';
+      spotlight.style.width = (rect.width + pad * 2) + 'px';
+      spotlight.style.height = (rect.height + pad * 2) + 'px';
+
+      var popover = document.getElementById('tourPopover');
+      var isLast = tourState.step === TOUR_STEPS.length - 1;
+      var stepNum = tourState.step + 1;
+      var totalSteps = TOUR_STEPS.length;
+
+      // Build popover content using DOM methods (content from hardcoded TOUR_STEPS, not user input)
+      var counterEl = document.createElement('div');
+      counterEl.className = 'tour-step-counter';
+      counterEl.textContent = stepNum + ' of ' + totalSteps;
+
+      var titleEl = document.createElement('div');
+      titleEl.className = 'tour-title';
+      titleEl.textContent = stepConfig.title;
+
+      var descEl = document.createElement('div');
+      descEl.className = 'tour-description';
+      descEl.textContent = stepConfig.description;
+
+      var actionsEl = document.createElement('div');
+      actionsEl.className = 'tour-actions';
+
+      var skipBtn = document.createElement('button');
+      skipBtn.className = 'tour-skip';
+      skipBtn.textContent = 'Skip tour';
+      skipBtn.onclick = skipTour;
+
+      var nextBtn = document.createElement('button');
+      nextBtn.className = 'tour-next';
+      nextBtn.textContent = isLast ? 'Done' : 'Next';
+      nextBtn.onclick = isLast ? completeTour : nextTourStep;
+
+      actionsEl.appendChild(skipBtn);
+      actionsEl.appendChild(nextBtn);
+
+      popover.replaceChildren(counterEl, titleEl, descEl, actionsEl);
+
+      positionPopover(popover, rect, stepConfig.position);
+
+      popover.classList.remove('visible');
+      requestAnimationFrame(function() {
+        requestAnimationFrame(function() {
+          popover.classList.add('visible');
+        });
+      });
+    }
+
+    function positionPopover(popover, targetRect, preferredPosition) {
+      var gap = 12;
+      var vw = window.innerWidth;
+      var vh = window.innerHeight;
+      var popW = 320;
+      var popH = 180;
+      var top, left;
+      var position = preferredPosition;
+
+      if (position === 'bottom') {
+        top = targetRect.bottom + gap + 8;
+        left = targetRect.left + (targetRect.width / 2) - (popW / 2);
+        if (top + popH > vh) position = 'top';
+      }
+      if (position === 'top') {
+        top = targetRect.top - gap - 8 - popH;
+        left = targetRect.left + (targetRect.width / 2) - (popW / 2);
+        if (top < 0) top = targetRect.bottom + gap + 8;
+      }
+      if (position === 'right') {
+        top = targetRect.top + (targetRect.height / 2) - (popH / 2);
+        left = targetRect.right + gap + 8;
+        if (left + popW > vw) left = targetRect.left - gap - 8 - popW;
+      }
+      if (position === 'left') {
+        top = targetRect.top + (targetRect.height / 2) - (popH / 2);
+        left = targetRect.left - gap - 8 - popW;
+        if (left < 0) left = targetRect.right + gap + 8;
+      }
+
+      left = Math.max(8, Math.min(left, vw - popW - 8));
+      top = Math.max(8, Math.min(top, vh - popH - 8));
+
+      popover.style.top = top + 'px';
+      popover.style.left = left + 'px';
+    }
+
+    function nextTourStep() {
+      if (!tourState) return;
+      tourState.step++;
+      if (tourState.step >= TOUR_STEPS.length) {
+        completeTour();
+      } else {
+        renderTourStep();
+      }
+    }
+
+    function skipTour() {
+      completeTour();
+    }
+
+    async function completeTour() {
+      tourCleanup();
+      try {
+        await fetch('/api/onboarding/complete', {
+          method: 'POST',
+          credentials: 'include'
+        });
+      } catch (e) {
+        // Tour completion is not critical
+      }
+    }
+
+    function tourCleanup() {
+      tourState = null;
+      var overlay = document.getElementById('tourOverlay');
+      var spotlight = document.getElementById('tourSpotlight');
+      var popover = document.getElementById('tourPopover');
+      if (overlay) overlay.remove();
+      if (spotlight) spotlight.remove();
+      if (popover) popover.remove();
+      document.removeEventListener('keydown', tourKeyHandler);
+      window.removeEventListener('resize', tourResizeHandler);
+      window.removeEventListener('hashchange', tourCleanup);
+    }
+
     // Register Service Worker + show update banner when new version is waiting
     if ('serviceWorker' in navigator) {
       let reloading = false;
