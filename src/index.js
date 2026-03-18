@@ -7014,6 +7014,7 @@ Create .github/workflows/update-preview-link.yml that:
               <div style="font-size: 13px; color: oklch(var(--muted-foreground)); line-height: 1.5;">${s.desc}</div>
             </div>
           </div>`).join('')}
+          <button class="btn btn-outline" onclick="startTour()" style="margin-top: 16px;">Take a Tour</button>
         </div>
       </div>
 
@@ -7567,6 +7568,8 @@ Create .github/workflows/update-preview-link.yml that:
         }
       } else if (hash.startsWith('help/')) {
         showHelpView(hash.slice('help/'.length) || 'getting-started');
+      } else {
+        checkOnboarding();
       }
     }
 
@@ -10393,6 +10396,19 @@ Create .github/workflows/update-preview-link.yml that:
       document.removeEventListener('keydown', tourKeyHandler);
       window.removeEventListener('resize', tourResizeHandler);
       window.removeEventListener('hashchange', tourCleanup);
+    }
+
+    async function checkOnboarding() {
+      try {
+        var res = await fetch('/api/onboarding/status', { credentials: 'include' });
+        if (!res.ok) return;
+        var data = await res.json();
+        if (!data.completed) {
+          setTimeout(function() { startTour(); }, 500);
+        }
+      } catch (e) {
+        // Silently fail
+      }
     }
 
     // Register Service Worker + show update banner when new version is waiting
