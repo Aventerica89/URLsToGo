@@ -5164,10 +5164,10 @@ function getAdminHTML(userEmail, env) {
       background: rgb(0 0 0 / 0.8);
       display: flex; align-items: center; justify-content: center;
       z-index: 100;
-      opacity: 0; visibility: hidden;
+      opacity: 0; visibility: hidden; pointer-events: none;
       transition: opacity 150ms, visibility 150ms;
     }
-    .modal-overlay.open { opacity: 1; visibility: visible; }
+    .modal-overlay.open { opacity: 1; visibility: visible; pointer-events: auto; }
     .modal {
       width: 100%; max-width: 500px;
       background: oklch(var(--card));
@@ -5914,12 +5914,14 @@ function getAdminHTML(userEmail, env) {
       z-index: 200;
       opacity: 0;
       visibility: hidden;
+      pointer-events: none;
       transition: opacity 200ms ease, visibility 200ms ease;
     }
 
     .sheet-overlay.open {
       opacity: 1;
       visibility: visible;
+      pointer-events: auto;
     }
 
     .sheet {
