@@ -1800,6 +1800,37 @@ export default {
       return jsonResponse({ success: true });
     }
 
+    // GET /api/onboarding/status
+    if (path === 'api/onboarding/status' && request.method === 'GET') {
+      const userEmail = await getUserEmail(request, env);
+      if (!userEmail) return jsonResponse({ error: 'Unauthorized' }, { status: 401 });
+
+      const row = await env.DB.prepare(
+        'SELECT onboarding_completed_at FROM user_preferences WHERE user_email = ?'
+      ).bind(userEmail).first();
+
+      return jsonResponse({
+        completed: !!(row && row.onboarding_completed_at),
+        completedAt: row ? row.onboarding_completed_at : null
+      });
+    }
+
+    // POST /api/onboarding/complete
+    if (path === 'api/onboarding/complete' && request.method === 'POST') {
+      const userEmail = await getUserEmail(request, env);
+      if (!userEmail) return jsonResponse({ error: 'Unauthorized' }, { status: 401 });
+
+      await env.DB.prepare(
+        `INSERT INTO user_preferences (user_email, onboarding_completed_at, updated_at)
+         VALUES (?, datetime('now'), datetime('now'))
+         ON CONFLICT(user_email) DO UPDATE SET
+           onboarding_completed_at = datetime('now'),
+           updated_at = datetime('now')`
+      ).bind(userEmail).run();
+
+      return jsonResponse({ success: true });
+    }
+
     return new Response('Not found', { status: 404 });
   }
 };
