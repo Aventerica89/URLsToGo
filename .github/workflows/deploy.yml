@@ -55,6 +55,14 @@ jobs:
           command: d1 execute url-shortener --remote --file=migrations-ai.sql
         continue-on-error: true  # Migrations may already be applied
 
+      - name: Run onboarding migrations
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: d1 execute url-shortener --remote --file=migrations-onboarding.sql
+        continue-on-error: true  # Migrations may already be applied
+
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         with:
