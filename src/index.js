@@ -256,6 +256,27 @@ export default {
       return new Response(null, { status: 204, headers: getCorsHeaders(request) });
     }
 
+    // Clerk Frontend API proxy — must run before auth since it enables auth
+    // Proxies /__clerk/* to Clerk's Frontend API so cookies are set on our domain
+    if (path.startsWith('__clerk')) {
+      const clerkFapi = 'https://clerk.urlstogo.cloud';
+      const proxyUrl = `${url.origin}/__clerk`;
+      const targetUrl = request.url.replace(proxyUrl, clerkFapi);
+
+      const proxyReq = new Request(targetUrl, {
+        method: request.method,
+        headers: new Headers(request.headers),
+        body: request.body,
+        redirect: 'manual',
+      });
+
+      proxyReq.headers.set('Clerk-Proxy-Url', proxyUrl);
+      proxyReq.headers.set('Clerk-Secret-Key', env.CLERK_SECRET_KEY);
+      proxyReq.headers.set('X-Forwarded-For', request.headers.get('CF-Connecting-IP') || '');
+
+      return fetch(targetUrl, proxyReq);
+    }
+
     // Get user email from Clerk JWT (with Cloudflare Access and API key fallback)
     const authContext = await getUserEmailWithFallback(request, env);
     const userEmail = authContext?.email || null;
@@ -2965,7 +2986,7 @@ function getAuthPageHTML(env, mode = 'login', nonce = '') {
         const clerk = window.Clerk;
         if (!clerk) throw new Error('Clerk not available');
 
-        await clerk.load();
+        await clerk.load({ proxyUrl: window.location.origin + '/__clerk' });
 
         // Check if already signed in
         if (clerk.user) {
@@ -7479,7 +7500,7 @@ Create .github/workflows/update-preview-link.yml that:
       if (CLERK_PUBLISHABLE_KEY && window.Clerk) {
         try {
           clerkInstance = window.Clerk;
-          await clerkInstance.load();
+          await clerkInstance.load({ proxyUrl: window.location.origin + '/__clerk' });
         } catch (e) {
           console.error('Clerk load error:', e.message);
         }
