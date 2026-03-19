@@ -5,9 +5,8 @@ compatibility_flags = ["nodejs_compat"]
 keep_vars = true  # Preserve dashboard-set environment variables during deploy
 
 [vars]
-# Clerk environment variables - set actual values in Cloudflare dashboard or use wrangler secret
-# CLERK_PUBLISHABLE_KEY = "pk_test_..." (set in dashboard)
-# CLERK_SECRET_KEY = "sk_test_..." (set as secret)
+CLERK_PUBLISHABLE_KEY = "pk_live_Y2xlcmsudXJsc3RvZ28uY2xvdWQk"
+# CLERK_SECRET_KEY is set via wrangler secret (encrypted)
 
 [[d1_databases]]
 binding = "DB"

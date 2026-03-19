@@ -164,12 +164,13 @@ function getSecurityHeaders(nonce) {
     'Permissions-Policy': 'geolocation=(), microphone=(), camera=()',
     'Content-Security-Policy': [
       "default-src 'self'",
-      "script-src 'unsafe-inline' https://cdn.jsdelivr.net https://static.cloudflareinsights.com",
+      "script-src 'unsafe-inline' https://cdn.jsdelivr.net https://static.cloudflareinsights.com https://*.clerk.accounts.dev https://clerk.urlstogo.cloud https://challenges.cloudflare.com",
       "worker-src 'self' blob:",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com",
       "img-src 'self' data: https:",
-      "connect-src 'self' https://*.clerk.accounts.dev https://api.clerk.dev https://api.github.com https://static.cloudflareinsights.com",
+      "connect-src 'self' https://*.clerk.accounts.dev https://clerk.urlstogo.cloud https://api.clerk.dev https://api.github.com https://static.cloudflareinsights.com",
+      "frame-src https://*.clerk.accounts.dev https://clerk.urlstogo.cloud https://challenges.cloudflare.com",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
@@ -253,6 +254,36 @@ export default {
     // Handle CORS preflight requests — use dynamic origin matching
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: getCorsHeaders(request) });
+    }
+
+    // Clerk Frontend API proxy — must run before auth since it enables auth
+    // Proxies /__clerk/* to Clerk's Frontend API so cookies are set on our domain
+    if (path.startsWith('__clerk')) {
+      const clerkFapi = 'https://clerk.urlstogo.cloud';
+      const proxyUrl = `${url.origin}/__clerk`;
+      const targetUrl = request.url.replace(proxyUrl, clerkFapi);
+
+      const headers = new Headers();
+      headers.set('Clerk-Proxy-Url', proxyUrl);
+      headers.set('Clerk-Secret-Key', env.CLERK_SECRET_KEY);
+      headers.set('X-Forwarded-For', request.headers.get('CF-Connecting-IP') || '');
+      const ct = request.headers.get('Content-Type');
+      if (ct) headers.set('Content-Type', ct);
+      const cookie = request.headers.get('Cookie');
+      if (cookie) headers.set('Cookie', cookie);
+      const origin = request.headers.get('Origin');
+      if (origin) headers.set('Origin', origin);
+      const accept = request.headers.get('Accept');
+      if (accept) headers.set('Accept', accept);
+
+      const proxyReq = new Request(targetUrl, {
+        method: request.method,
+        headers,
+        body: request.body,
+        redirect: 'manual',
+      });
+
+      return fetch(proxyReq);
     }
 
     // Get user email from Clerk JWT (with API key fallback)
@@ -1944,7 +1975,11 @@ async function getUserEmail(request, env) {
     }
   }
 
-  if (!token) return null;
+  if (!token) {
+    console.error('[AUTH DEBUG] No token found. Cookies present:', cookies ? cookies.substring(0, 200) : 'NONE');
+    return null;
+  }
+  console.error('[AUTH DEBUG] Token found, length:', token.length, 'source:', authHeader.startsWith('Bearer ') ? 'bearer' : cookies.includes('__session') ? '__session' : '__clerk_db_jwt');
 
   // Verify the JWT using official Clerk SDK
   const secretKey = env.CLERK_SECRET_KEY;
@@ -1956,7 +1991,6 @@ async function getUserEmail(request, env) {
   try {
     const payload = await verifyToken(token, {
       secretKey,
-      authorizedParties: ['https://urlstogo.cloud', 'https://go.urlstogo.cloud'],
     });
 
     if (!payload) return null;
@@ -1975,7 +2009,7 @@ async function getUserEmail(request, env) {
     const anyEmail = user.emailAddresses?.[0]?.emailAddress;
     return primaryEmail || anyEmail || null;
   } catch (e) {
-    console.error('Clerk user fetch error:', e.message);
+    console.error('[AUTH DEBUG] Clerk verify/fetch error:', e.message, e.stack?.substring(0, 300));
     return null;
   }
 }
@@ -2966,7 +3000,7 @@ function getAuthPageHTML(env, mode = 'login', nonce = '') {
         const clerk = window.Clerk;
         if (!clerk) throw new Error('Clerk not available');
 
-        await clerk.load();
+        await clerk.load({ proxyUrl: window.location.origin + '/__clerk' });
 
         // Check if already signed in
         if (clerk.user) {
@@ -7480,7 +7514,7 @@ Create .github/workflows/update-preview-link.yml that:
       if (CLERK_PUBLISHABLE_KEY && window.Clerk) {
         try {
           clerkInstance = window.Clerk;
-          await clerkInstance.load();
+          await clerkInstance.load({ proxyUrl: window.location.origin + '/__clerk' });
         } catch (e) {
           console.error('Clerk load error:', e.message);
         }
