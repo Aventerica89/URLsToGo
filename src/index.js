@@ -164,12 +164,13 @@ function getSecurityHeaders(nonce) {
     'Permissions-Policy': 'geolocation=(), microphone=(), camera=()',
     'Content-Security-Policy': [
       "default-src 'self'",
-      "script-src 'unsafe-inline' https://cdn.jsdelivr.net https://static.cloudflareinsights.com",
+      "script-src 'unsafe-inline' https://cdn.jsdelivr.net https://static.cloudflareinsights.com https://*.clerk.accounts.dev https://clerk.urlstogo.cloud https://challenges.cloudflare.com",
       "worker-src 'self' blob:",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com",
       "img-src 'self' data: https:",
-      "connect-src 'self' https://*.clerk.accounts.dev https://api.clerk.dev https://api.github.com https://static.cloudflareinsights.com",
+      "connect-src 'self' https://*.clerk.accounts.dev https://clerk.urlstogo.cloud https://api.clerk.dev https://api.github.com https://static.cloudflareinsights.com",
+      "frame-src https://*.clerk.accounts.dev https://clerk.urlstogo.cloud https://challenges.cloudflare.com",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
@@ -1942,7 +1943,11 @@ async function getUserEmail(request, env) {
     }
   }
 
-  if (!token) return null;
+  if (!token) {
+    console.error('[AUTH DEBUG] No token found. Cookies present:', cookies ? cookies.substring(0, 200) : 'NONE');
+    return null;
+  }
+  console.error('[AUTH DEBUG] Token found, length:', token.length, 'source:', authHeader.startsWith('Bearer ') ? 'bearer' : cookies.includes('__session') ? '__session' : '__clerk_db_jwt');
 
   // Verify the JWT using official Clerk SDK
   const secretKey = env.CLERK_SECRET_KEY;
@@ -1954,7 +1959,6 @@ async function getUserEmail(request, env) {
   try {
     const payload = await verifyToken(token, {
       secretKey,
-      authorizedParties: ['https://urlstogo.cloud', 'https://go.urlstogo.cloud'],
     });
 
     if (!payload) return null;
@@ -1973,7 +1977,7 @@ async function getUserEmail(request, env) {
     const anyEmail = user.emailAddresses?.[0]?.emailAddress;
     return primaryEmail || anyEmail || null;
   } catch (e) {
-    console.error('Clerk user fetch error:', e.message);
+    console.error('[AUTH DEBUG] Clerk verify/fetch error:', e.message, e.stack?.substring(0, 300));
     return null;
   }
 }
