@@ -1547,6 +1547,77 @@ export default {
       return jsonResponse({ success: true });
     }
 
+    // GitHub OAuth: redirect to GitHub authorization
+    if (path === 'api/github/authorize' && request.method === 'GET') {
+      const clientId = env.GITHUB_OAUTH_CLIENT_ID;
+      if (!clientId) return jsonResponse({ error: 'GitHub OAuth not configured' }, { status: 500 });
+
+      const state = crypto.randomUUID();
+      const redirectUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&scope=repo,workflow&state=${state}`;
+
+      return new Response(null, {
+        status: 302,
+        headers: {
+          'Location': redirectUrl,
+          'Set-Cookie': `gh_oauth_state=${state}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=600`,
+        },
+      });
+    }
+
+    // GitHub OAuth: callback — exchange code for token
+    if (path === 'api/github/callback' && request.method === 'GET') {
+      const code = url.searchParams.get('code');
+      const state = url.searchParams.get('state');
+
+      const cookies = request.headers.get('Cookie') || '';
+      const stateMatch = cookies.match(/gh_oauth_state=([^;]+)/);
+      const savedState = stateMatch ? stateMatch[1] : null;
+
+      if (!code || !state || state !== savedState) {
+        return htmlResponse('<html><body style="background:#09090b;color:#fafafa;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh"><div style="text-align:center"><h2>Authorization failed</h2><p>Invalid state. <a href="/admin#settings/git-sync" style="color:#8b5cf6">Try again</a></p></div></body></html>', 400);
+      }
+
+      const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
+        method: 'POST',
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: env.GITHUB_OAUTH_CLIENT_ID,
+          client_secret: env.GITHUB_OAUTH_CLIENT_SECRET,
+          code,
+        }),
+      });
+
+      const tokenData = await tokenRes.json();
+      if (tokenData.error || !tokenData.access_token) {
+        const msg = tokenData.error_description || 'Unknown error';
+        return htmlResponse(`<html><body style="background:#09090b;color:#fafafa;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh"><div style="text-align:center"><h2>Authorization failed</h2><p>${msg}. <a href="/admin#settings/git-sync" style="color:#8b5cf6">Try again</a></p></div></body></html>`, 400);
+      }
+
+      const ghRes = await fetch('https://api.github.com/user', {
+        headers: { 'Authorization': `token ${tokenData.access_token}`, 'User-Agent': 'URLsToGo/1.0' },
+      });
+      const ghUser = await ghRes.json();
+
+      const { encrypted, iv } = await encryptToken(tokenData.access_token, env.GITHUB_TOKEN_ENCRYPTION_KEY);
+      await env.DB.prepare(`
+        INSERT INTO user_settings (user_email, github_token_encrypted, github_token_iv, github_username, updated_at)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(user_email) DO UPDATE SET
+          github_token_encrypted = excluded.github_token_encrypted,
+          github_token_iv = excluded.github_token_iv,
+          github_username = excluded.github_username,
+          updated_at = CURRENT_TIMESTAMP
+      `).bind(userEmail, encrypted, iv, ghUser.login).run();
+
+      return new Response(null, {
+        status: 302,
+        headers: {
+          'Location': '/admin#settings/git-sync',
+          'Set-Cookie': 'gh_oauth_state=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0',
+        },
+      });
+    }
+
     // List GitHub repos (merged with sync status)
     if (path === 'api/github/repos' && request.method === 'GET') {
       const ghToken = await getUserGitHubToken(env, userEmail);
@@ -6597,7 +6668,7 @@ function getAdminHTML(userEmail, env, nonce = '') {
                 <div style="font-weight: 500; margin-bottom: 10px;">Setup — 3 steps, one time per repo</div>
                 <div style="display: flex; flex-direction: column; gap: 12px;">
                   ${[
-                    { n: 1, t: 'Connect GitHub above', d: 'Click "Create token on GitHub", copy the token it generates, paste it into the box, and hit Connect. You only do this once.' },
+                    { n: 1, t: 'Connect GitHub above', d: 'Click "Connect with GitHub" to authorize via OAuth. Or expand "Use a personal access token" if you prefer manual setup. You only do this once.' },
                     { n: 2, t: 'Pick a repo', d: 'Your GitHub repos will appear in a list. Find the one you want (e.g. my-app) and click Deploy.' },
                     { n: 3, t: "That's it", d: 'URLsToGo drops a workflow file in your repo and saves your API key as a GitHub secret. From now on, every push auto-updates go.urlstogo.cloud/my-app--preview.' },
                   ].map(s => `
@@ -9109,17 +9180,34 @@ Create .github/workflows/update-preview-link.yml that:
       card.appendChild(title);
 
       const desc = document.createElement('p');
-      desc.style.cssText = 'font-size:13px;color:oklch(var(--muted-foreground));margin-bottom:12px';
-      desc.textContent = 'Connect your GitHub account to automatically update preview links when you push code. You need a Personal Access Token with repo and workflow scopes.';
+      desc.style.cssText = 'font-size:13px;color:oklch(var(--muted-foreground));margin-bottom:16px';
+      desc.textContent = 'Connect your GitHub account to automatically update preview links when you push code.';
       card.appendChild(desc);
 
-      const link = document.createElement('a');
-      link.href = 'https://github.com/settings/tokens/new?scopes=repo,workflow&description=URLsToGo+Git+Sync';
-      link.target = '_blank';
-      link.rel = 'noopener';
-      link.style.cssText = 'color:oklch(var(--indigo));text-decoration:underline;font-size:13px;display:inline-block;margin-bottom:12px';
-      link.textContent = 'Create token on GitHub';
-      card.appendChild(link);
+      // OAuth button
+      const oauthBtn = document.createElement('a');
+      oauthBtn.href = '/api/github/authorize';
+      oauthBtn.className = 'btn btn-default';
+      oauthBtn.style.cssText = 'display:inline-flex;align-items:center;gap:8px;text-decoration:none;margin-bottom:16px';
+      oauthBtn.innerHTML = '<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg> Connect with GitHub';
+      card.appendChild(oauthBtn);
+
+      // PAT fallback (collapsed)
+      const toggle = document.createElement('div');
+      toggle.style.cssText = 'font-size:12px;color:oklch(var(--muted-foreground));cursor:pointer;margin-bottom:8px';
+      toggle.textContent = 'Or use a personal access token instead';
+      const patSection = document.createElement('div');
+      patSection.style.display = 'none';
+      toggle.onclick = () => { patSection.style.display = patSection.style.display === 'none' ? 'block' : 'none'; };
+      card.appendChild(toggle);
+
+      const patLink = document.createElement('a');
+      patLink.href = 'https://github.com/settings/tokens/new?scopes=repo,workflow&description=URLsToGo+Git+Sync';
+      patLink.target = '_blank';
+      patLink.rel = 'noopener';
+      patLink.style.cssText = 'color:oklch(var(--indigo));text-decoration:underline;font-size:13px;display:inline-block;margin-bottom:8px';
+      patLink.textContent = 'Create token on GitHub';
+      patSection.appendChild(patLink);
 
       const row = document.createElement('div');
       row.style.cssText = 'display:flex;gap:8px';
@@ -9135,8 +9223,9 @@ Create .github/workflows/update-preview-link.yml that:
       btn.textContent = 'Connect';
       btn.onclick = saveGitHubToken;
       row.appendChild(btn);
-      card.appendChild(row);
+      patSection.appendChild(row);
 
+      card.appendChild(patSection);
       container.appendChild(card);
     }
 
