@@ -116,6 +116,37 @@ The UI uses Shadcn-style CSS variables. To test UI changes:
 
 ---
 
+## CLERK FRONTEND API PROXY (March 2026)
+
+### Overview
+
+Clerk production sets cookies on `.clerk.urlstogo.cloud`, not `.urlstogo.cloud`. Worker can't read cross-subdomain cookies. Fixed via Frontend API proxy at `/__clerk/*`.
+
+### Architecture
+
+- Worker route `/__clerk/*` proxies to `frontend-api.clerk.services` (NOT `clerk.urlstogo.cloud` — same CF zone fetch loops back)
+- Clean headers only: `Clerk-Proxy-Url`, `Clerk-Secret-Key`, `X-Forwarded-For`, plus forwarded `Content-Type`/`Cookie`/`Origin`/`Accept`
+- `proxyUrl: window.location.origin + '/__clerk'` passed to `clerk.load()` on both login and admin pages
+- Proxy registered via Clerk Backend API: `PATCH /v1/domains/dmn_3B6tiz713MDr395h761QH6Pu8m4`
+
+### Google OAuth
+
+Redirect URI: `https://urlstogo.cloud/__clerk/v1/oauth_callback` (was `clerk.urlstogo.cloud/v1/oauth_callback`)
+
+### Key Code Locations
+
+| Location | Purpose |
+|----------|---------|
+| `src/index.js:~261` | `/__clerk/*` proxy route (runs before auth) |
+| `src/index.js:~2985` | Login page `clerk.load({ proxyUrl })` |
+| `src/index.js:~7503` | Admin page `clerkInstance.load({ proxyUrl })` |
+
+### 1Password
+
+Clerk production keys stored in `urlstogo` item (App Dev vault): `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`
+
+---
+
 ## GIT WORKFLOW
 
 **Cannot push directly to `main`** — branch is protected.
@@ -564,3 +595,11 @@ if (path.startsWith('api/categories/') && !path.endsWith('/share') && request.me
 - Archived section: owner-only compact table, `#0d0d0f` row bg, muted zinc palette
 - Restore button: zinc default → purple hover
 - All inline CSS (no external stylesheets) — standalone page, no CSS variable dependencies
+
+<!-- llmstxt:start -->
+## Installed Documentation (llmstxt)
+
+When working with these technologies, read the corresponding skill for detailed reference:
+
+- Clerk: .agents/skills/clerk/SKILL.md
+<!-- llmstxt:end -->

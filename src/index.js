@@ -1975,11 +1975,7 @@ async function getUserEmail(request, env) {
     }
   }
 
-  if (!token) {
-    console.error('[AUTH DEBUG] No token found. Cookies present:', cookies ? cookies.substring(0, 200) : 'NONE');
-    return null;
-  }
-  console.error('[AUTH DEBUG] Token found, length:', token.length, 'source:', authHeader.startsWith('Bearer ') ? 'bearer' : cookies.includes('__session') ? '__session' : '__clerk_db_jwt');
+  if (!token) return null;
 
   // Verify the JWT using official Clerk SDK
   const secretKey = env.CLERK_SECRET_KEY;
@@ -2009,7 +2005,7 @@ async function getUserEmail(request, env) {
     const anyEmail = user.emailAddresses?.[0]?.emailAddress;
     return primaryEmail || anyEmail || null;
   } catch (e) {
-    console.error('[AUTH DEBUG] Clerk verify/fetch error:', e.message, e.stack?.substring(0, 300));
+    console.error('Clerk auth error:', e.message);
     return null;
   }
 }
