@@ -259,22 +259,34 @@ export default {
     // Clerk Frontend API proxy — must run before auth since it enables auth
     // Proxies /__clerk/* to Clerk's Frontend API so cookies are set on our domain
     if (path.startsWith('__clerk')) {
+      // Proxy to Clerk's Frontend API so cookies are set on our domain
       const clerkFapi = 'https://clerk.urlstogo.cloud';
       const proxyUrl = `${url.origin}/__clerk`;
       const targetUrl = request.url.replace(proxyUrl, clerkFapi);
 
+      // Build clean headers — don't copy Host from original request
+      const headers = new Headers();
+      headers.set('Clerk-Proxy-Url', proxyUrl);
+      headers.set('Clerk-Secret-Key', env.CLERK_SECRET_KEY);
+      headers.set('X-Forwarded-For', request.headers.get('CF-Connecting-IP') || '');
+      // Forward content-type and cookies from original request
+      const ct = request.headers.get('Content-Type');
+      if (ct) headers.set('Content-Type', ct);
+      const cookie = request.headers.get('Cookie');
+      if (cookie) headers.set('Cookie', cookie);
+      const origin = request.headers.get('Origin');
+      if (origin) headers.set('Origin', origin);
+      const accept = request.headers.get('Accept');
+      if (accept) headers.set('Accept', accept);
+
       const proxyReq = new Request(targetUrl, {
         method: request.method,
-        headers: new Headers(request.headers),
+        headers,
         body: request.body,
         redirect: 'manual',
       });
 
-      proxyReq.headers.set('Clerk-Proxy-Url', proxyUrl);
-      proxyReq.headers.set('Clerk-Secret-Key', env.CLERK_SECRET_KEY);
-      proxyReq.headers.set('X-Forwarded-For', request.headers.get('CF-Connecting-IP') || '');
-
-      return fetch(targetUrl, proxyReq);
+      return fetch(proxyReq);
     }
 
     // Get user email from Clerk JWT (with Cloudflare Access and API key fallback)
