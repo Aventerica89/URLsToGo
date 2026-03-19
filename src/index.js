@@ -183,7 +183,7 @@ function getSecurityHeaders(nonce) {
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': ALLOWED_ORIGINS[0],
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Cf-Access-Jwt-Assertion, Authorization',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key',
   'Access-Control-Max-Age': '86400',
   'Vary': 'Origin',
 };
@@ -259,17 +259,14 @@ export default {
     // Clerk Frontend API proxy — must run before auth since it enables auth
     // Proxies /__clerk/* to Clerk's Frontend API so cookies are set on our domain
     if (path.startsWith('__clerk')) {
-      // Proxy to Clerk's Frontend API so cookies are set on our domain
       const clerkFapi = 'https://clerk.urlstogo.cloud';
       const proxyUrl = `${url.origin}/__clerk`;
       const targetUrl = request.url.replace(proxyUrl, clerkFapi);
 
-      // Build clean headers — don't copy Host from original request
       const headers = new Headers();
       headers.set('Clerk-Proxy-Url', proxyUrl);
       headers.set('Clerk-Secret-Key', env.CLERK_SECRET_KEY);
       headers.set('X-Forwarded-For', request.headers.get('CF-Connecting-IP') || '');
-      // Forward content-type and cookies from original request
       const ct = request.headers.get('Content-Type');
       if (ct) headers.set('Content-Type', ct);
       const cookie = request.headers.get('Cookie');
@@ -289,7 +286,7 @@ export default {
       return fetch(proxyReq);
     }
 
-    // Get user email from Clerk JWT (with Cloudflare Access and API key fallback)
+    // Get user email from Clerk JWT (with API key fallback)
     const authContext = await getUserEmailWithFallback(request, env);
     const userEmail = authContext?.email || null;
     // scopes is null for Clerk/CF auth (full access); string[] for API key auth
@@ -1115,6 +1112,8 @@ export default {
 
     // Get analytics for a specific link
     if (path.startsWith('api/analytics/') && path !== 'api/analytics/overview' && request.method === 'GET') {
+      const rateLimit = await checkRateLimit(env, userEmail, 'api/analytics');
+      if (!rateLimit.allowed) return jsonResponse({ error: 'Rate limit exceeded' }, { status: 429 });
       const code = path.replace('api/analytics/', '');
       const rawDays = parseInt(url.searchParams.get('days') || '30', 10);
       const days = isNaN(rawDays) ? 30 : Math.min(Math.max(rawDays, 1), 365);
@@ -1199,6 +1198,8 @@ export default {
 
     // Get overview analytics for all links
     if (path === 'api/analytics/overview' && request.method === 'GET') {
+      const rateLimit = await checkRateLimit(env, userEmail, 'api/analytics');
+      if (!rateLimit.allowed) return jsonResponse({ error: 'Rate limit exceeded' }, { status: 429 });
       const rawDays2 = parseInt(url.searchParams.get('days') || '30', 10);
       const days = isNaN(rawDays2) ? 30 : Math.min(Math.max(rawDays2, 1), 365);
 
@@ -1265,6 +1266,8 @@ export default {
 
     // Export
     if (path === 'api/export' && request.method === 'GET') {
+      const rateLimit = await checkRateLimit(env, userEmail, 'api/export');
+      if (!rateLimit.allowed) return jsonResponse({ error: 'Rate limit exceeded' }, { status: 429 });
       const { results: links } = await env.DB.prepare(`
         SELECT l.code, l.destination, l.clicks, l.created_at, c.slug as category,
                GROUP_CONCAT(t.name) as tags
@@ -1737,6 +1740,8 @@ export default {
 
     // POST /api/billing/checkout — create Stripe Checkout session
     if (path === 'api/billing/checkout' && request.method === 'POST') {
+      const rateLimit = await checkRateLimit(env, userEmail, 'api/billing');
+      if (!rateLimit.allowed) return jsonResponse({ error: 'Rate limit exceeded' }, { status: 429 });
       if (!env.STRIPE_SECRET_KEY) {
         return jsonResponse({ error: 'Billing not configured' }, { status: 503 });
       }
@@ -1774,6 +1779,8 @@ export default {
 
     // GET /api/billing/portal — Stripe Customer Portal (manage/cancel)
     if (path === 'api/billing/portal' && request.method === 'GET') {
+      const rateLimit = await checkRateLimit(env, userEmail, 'api/billing');
+      if (!rateLimit.allowed) return jsonResponse({ error: 'Rate limit exceeded' }, { status: 429 });
       if (!env.STRIPE_SECRET_KEY) {
         return jsonResponse({ error: 'Billing not configured' }, { status: 503 });
       }
@@ -1939,14 +1946,6 @@ async function verifyStripeSignature(payload, sigHeader, secret) {
   const sigBytes = new Uint8Array(signature.match(/.{2}/g).map(b => parseInt(b, 16)));
   return crypto.subtle.verify('HMAC', key, sigBytes, new TextEncoder().encode(signedPayload));
 }
-// Base64URL decode helper (for Cloudflare Access fallback)
-function base64UrlDecode(str) {
-  str = str.replace(/-/g, '+').replace(/_/g, '/');
-  const pad = str.length % 4;
-  if (pad) str += '='.repeat(4 - pad);
-  return atob(str);
-}
-
 // Get user info from Clerk session using official SDK
 async function getUserEmail(request, env) {
   // Check for Clerk session token in cookie or Authorization header
@@ -2011,8 +2010,7 @@ async function getUserEmail(request, env) {
   }
 }
 
-// Legacy support: Also check Cloudflare Access JWT and API keys
-// Returns { email, scopes } where scopes is null for Clerk/CF auth (full access)
+// Returns { email, scopes } where scopes is null for Clerk auth (full access)
 // or string[] for API key auth (enforced at gateway)
 async function getUserEmailWithFallback(request, env) {
   // First try Clerk
@@ -2264,6 +2262,10 @@ function getRateLimits(env) {
     'api/preview-links:PUT': { limit: parseInt(env?.RATE_LIMIT_PREVIEW) || 30, windowSeconds },
     'api/search': { limit: parseInt(env?.RATE_LIMIT_SEARCH) || 60, windowSeconds },
     'api/import': { limit: parseInt(env?.RATE_LIMIT_IMPORT) || 5, windowSeconds },
+    'api/export': { limit: 10, windowSeconds },
+    'api/analytics': { limit: 30, windowSeconds },
+    'api/billing': { limit: 10, windowSeconds },
+    'api/links:GET': { limit: 60, windowSeconds },
     'api/waitlist': { limit: 5, windowSeconds: 3600 }, // 5 signups per IP per hour
     'redirect': { limit: parseInt(env?.RATE_LIMIT_REDIRECT) || 300, windowSeconds },
     'redirect:password': { limit: 10, windowSeconds: 300 }, // 10 password attempts per IP per 5 min
@@ -7701,6 +7703,9 @@ Create .github/workflows/update-preview-link.yml that:
       renderLinks();
     }
 
+    // Link data store — avoids serializing objects into inline onclick handlers (XSS prevention)
+    const linkDataMap = new Map();
+
     function renderLinks() {
       const tbody = document.getElementById('linksTable');
       const start = (currentPage - 1) * perPage;
@@ -7711,6 +7716,9 @@ Create .github/workflows/update-preview-link.yml that:
         document.getElementById('pagination').style.display = 'none';
         return;
       }
+
+      // Store link data by code for safe retrieval
+      pageLinks.forEach(link => linkDataMap.set(link.code, link));
 
       tbody.innerHTML = pageLinks.map(link => {
         const createdDate = new Date(link.created_at);
@@ -7749,7 +7757,7 @@ Create .github/workflows/update-preview-link.yml that:
                 <div class="row-menu" id="menu-\${safeCode}">
                   <button class="row-menu-item" onclick="closeRowMenus();showQRCode('\${safeCode}')">QR Code</button>
                   <button class="row-menu-item" onclick="closeRowMenus();showLinkAnalytics('\${safeCode}')">Analytics</button>
-                  <button class="row-menu-item" onclick='closeRowMenus();openEditModal(\${JSON.stringify(link).replace(/'/g, "&#39;")})'>Edit</button>
+                  <button class="row-menu-item" onclick="closeRowMenus();openEditModal(linkDataMap.get('\${safeCode}'))">Edit</button>
                   <button class="row-menu-item row-menu-danger" onclick="closeRowMenus();deleteLink('\${safeCode}')">Delete</button>
                 </div>
               </div>
@@ -7958,8 +7966,8 @@ Create .github/workflows/update-preview-link.yml that:
           console.error('Clerk signOut error:', e.message);
         }
       }
-      // Fallback to Cloudflare Access logout
-      window.location.href = '/cdn-cgi/access/logout';
+      // Redirect to login page after signout
+      window.location.href = '/login';
     }
 
     async function importLinks(event) {
