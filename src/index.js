@@ -6559,6 +6559,9 @@ function getAdminHTML(userEmail, env, nonce = '') {
             Import
           </button>
           <input type="file" id="importFile" accept=".json" class="hidden-input">
+          <button class="btn btn-sm" id="headerUpgradeCta" style="display:none;background:#8b5cf6;color:#fafafa;font-weight:600;font-size:12px;padding:5px 12px;border-radius:6px;border:none;cursor:pointer;white-space:nowrap;" onclick="showSettingsView('billing')">
+            <span id="headerUpgradeText">Upgrade</span>
+          </button>
         </div>
       </header>
 
@@ -7670,6 +7673,26 @@ Create .github/workflows/update-preview-link.yml that:
         checkOnboarding();
       }
     }
+
+    // Header upgrade CTA — show for free users only
+    (async function initHeaderUpgrade() {
+      try {
+        var statusRes = await fetch('/api/billing/status', { credentials: 'include' });
+        var statusData = await statusRes.json();
+        if (statusData.plan === 'pro') return;
+        var ctaEl = document.getElementById('headerUpgradeCta');
+        var textEl = document.getElementById('headerUpgradeText');
+        if (!ctaEl) return;
+        var foundingRes = await fetch('/api/billing/founding');
+        var founding = await foundingRes.json();
+        if (founding.available) {
+          textEl.textContent = 'Founding 100 \u2014 ' + founding.spots_remaining + ' left';
+        } else {
+          textEl.textContent = 'Upgrade to Pro';
+        }
+        ctaEl.style.display = '';
+      } catch (e) { /* silent */ }
+    })();
 
     // Handle hash-based navigation from <a href="/admin#..."> links
     window.addEventListener('hashchange', () => {
