@@ -195,11 +195,12 @@ const CORS_HEADERS = {
 
 const PLAN_LIMITS = {
   free: { links: 25 },
-  pro:  { links: 200 },
+  pro:  { links: 500 },
 };
 
 const STRIPE_API_BASE = 'https://api.stripe.com/v1';
 const STRIPE_PRO_PRICE_ID = 'price_1T5Jz1H6aZ92e8Txu9tLJnRI';
+const STRIPE_FOUNDING_COUPON_ID = 'v4YhDxgz';
 // Dynamic CORS headers for preflight — echoes the requesting origin if allowed
 function getCorsHeaders(request) {
   const origin = request?.headers?.get('Origin') || '';
@@ -1790,6 +1791,32 @@ export default {
 
     // === BILLING API ===
 
+    // GET /api/billing/founding — founding 100 spot availability (no auth required for landing page)
+    if (path === 'api/billing/founding' && request.method === 'GET') {
+      if (!env.STRIPE_SECRET_KEY) {
+        return jsonResponse({ spots_total: 100, spots_claimed: 0, spots_remaining: 100, available: true });
+      }
+      try {
+        const coupon = await stripeRequest('GET', '/coupons/' + STRIPE_FOUNDING_COUPON_ID, null, env);
+        if (coupon.error || !coupon.valid) {
+          return jsonResponse({ spots_total: 100, spots_claimed: 100, spots_remaining: 0, available: false });
+        }
+        const claimed = coupon.times_redeemed || 0;
+        const total = coupon.max_redemptions || 100;
+        return jsonResponse({
+          spots_total: total,
+          spots_claimed: claimed,
+          spots_remaining: total - claimed,
+          available: claimed < total,
+          price_display: '$9/mo',
+          regular_price: '$12/mo',
+          discount_percent: 25,
+        });
+      } catch (e) {
+        return jsonResponse({ spots_total: 100, spots_claimed: 0, spots_remaining: 100, available: true });
+      }
+    }
+
     // GET /api/billing/status — current plan + link usage
     if (path === 'api/billing/status' && request.method === 'GET') {
       const plan = await getUserPlan(env, userEmail);
@@ -1831,7 +1858,8 @@ export default {
         }
         const successUrl = new URL('/admin', url.origin).toString() + '#billing?upgraded=1';
         const cancelUrl = new URL('/admin', url.origin).toString() + '#billing';
-        const session = await stripeRequest('POST', '/checkout/sessions', {
+        // Check if founding spots remain — auto-apply coupon if so
+        const checkoutParams = {
           customer: customerId,
           mode: 'subscription',
           'line_items[0][price]': STRIPE_PRO_PRICE_ID,
@@ -1840,7 +1868,14 @@ export default {
           cancel_url: cancelUrl,
           'subscription_data[metadata][app]': 'urlstogo',
           'subscription_data[metadata][user_email]': userEmail,
-        }, env);
+        };
+        try {
+          const coupon = await stripeRequest('GET', '/coupons/' + STRIPE_FOUNDING_COUPON_ID, null, env);
+          if (coupon.valid && (coupon.times_redeemed || 0) < (coupon.max_redemptions || 100)) {
+            checkoutParams['discounts[0][coupon]'] = STRIPE_FOUNDING_COUPON_ID;
+          }
+        } catch (_) { /* proceed without coupon if check fails */ }
+        const session = await stripeRequest('POST', '/checkout/sessions', checkoutParams, env);
         if (session.error) return jsonResponse({ error: session.error.message || 'Checkout session failed' }, { status: 500 });
         return jsonResponse({ url: session.url });
       } catch (e) {
@@ -7947,22 +7982,80 @@ Create .github/workflows/update-preview-link.yml that:
       const modal = document.createElement('div');
       modal.id = 'upgradeModal';
       modal.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);';
-      modal.innerHTML =
-        '<div style="background:oklch(0.13 0.01 260);border:1px solid oklch(0.25 0.02 260);border-radius:14px;padding:28px;max-width:400px;width:calc(100% - 48px);box-shadow:0 24px 60px rgba(0,0,0,.5);">' +
-        '<div style="font-size:18px;font-weight:700;margin-bottom:8px;">Link limit reached</div>' +
-        '<div style="font-size:14px;color:oklch(0.65 0.02 260);margin-bottom:20px;">You have used ' + used + ' of ' + limit + ' links on the Free plan.</div>' +
-        '<div style="background:oklch(0.1 0.01 260);border-radius:10px;padding:16px;margin-bottom:20px;">' +
-        '<div style="font-size:13px;font-weight:600;color:oklch(0.85 0.14 290);margin-bottom:10px;">URLsToGo Pro — $12 / month</div>' +
-        '<div style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:oklch(0.7 0.02 260);">' +
-        '<div>200 short links</div>' +
-        '<div>Full analytics (geo, device, browser)</div>' +
-        '<div>Unlimited categories &amp; tags</div>' +
-        '</div></div>' +
-        '<div style="display:flex;gap:8px;">' +
-        '<button onclick="startCheckout()" style="flex:1;padding:10px;background:oklch(0.6 0.2 290);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">Upgrade to Pro</button>' +
-        '<button onclick="document.getElementById(\\'upgradeModal\\').remove()" style="padding:10px 16px;background:oklch(0.2 0.01 260);color:oklch(0.7 0.02 260);border:none;border-radius:8px;font-size:14px;cursor:pointer;">Cancel</button>' +
-        '</div></div>';
-      modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+      fetch('/api/billing/founding').then(function(r) { return r.json(); }).then(function(f) {
+        var isFounding = f.available;
+        var spotsLeft = f.spots_remaining;
+        var spotBar = '';
+        if (isFounding) {
+          var pct = Math.round((f.spots_claimed / f.spots_total) * 100);
+          var barWidth = Math.max(8, Math.round(pct * 3.5));
+          spotBar =
+            '<div style="background:#18181b;border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px;">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+            '<span style="font-size:13px;font-weight:500;color:#a1a1aa;">Founding spots</span>' +
+            '<span style="font-size:13px;font-weight:600;color:#fafafa;">' + spotsLeft + ' of ' + f.spots_total + ' remaining</span></div>' +
+            '<div style="position:relative;height:8px;background:#3f3f46;border-radius:999px;overflow:hidden;">' +
+            '<div style="position:absolute;top:0;left:0;height:8px;width:' + barWidth + 'px;background:#4ade80;border-radius:999px;"></div>' +
+            '</div></div>';
+        }
+        var priceCard = '';
+        if (isFounding) {
+          priceCard =
+            '<div style="background:#18181b;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:8px;">' +
+            '<div style="display:flex;align-items:flex-end;gap:10px;">' +
+            '<span style="font-size:24px;font-weight:500;color:#71717a;">$12</span>' +
+            '<span style="font-size:42px;font-weight:700;color:#fafafa;">$9</span>' +
+            '<span style="font-size:16px;font-weight:500;color:#a1a1aa;">/month</span></div>' +
+            '<div style="font-size:13px;font-weight:500;color:#4ade80;">25% off forever as a founding member</div></div>';
+        } else {
+          priceCard =
+            '<div style="background:#18181b;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:8px;">' +
+            '<div style="display:flex;align-items:flex-end;gap:10px;">' +
+            '<span style="font-size:42px;font-weight:700;color:#fafafa;">$12</span>' +
+            '<span style="font-size:16px;font-weight:500;color:#a1a1aa;">/month</span></div></div>';
+        }
+        var featureRow = function(text) {
+          return '<div style="display:flex;gap:10px;align-items:flex-start;">' +
+            '<span style="font-size:14px;font-weight:700;color:#4ade80;flex-shrink:0;">&#10003;</span>' +
+            '<span style="font-size:14px;color:#a1a1aa;line-height:1.4;">' + text + '</span></div>';
+        };
+        modal.innerHTML =
+          '<div style="background:#111113;border-radius:14px;padding:28px;max-width:420px;width:calc(100% - 48px);box-shadow:0 8px 24px #00000055;display:flex;flex-direction:column;gap:20px;">' +
+          '<div style="display:flex;flex-direction:column;gap:8px;">' +
+          '<div style="font-size:30px;font-weight:700;color:#fafafa;">Link limit reached</div>' +
+          '<div style="font-size:14px;color:#a1a1aa;line-height:1.45;">You\\\'ve used ' + used + ' of ' + limit + ' links on the Free plan.</div></div>' +
+          spotBar +
+          priceCard +
+          '<div style="display:flex;flex-direction:column;gap:10px;">' +
+          featureRow('500 short links &#8212; total, not per month') +
+          featureRow('Full analytics (geo, device, browser)') +
+          featureRow('Unlimited categories, tags &amp; edits') +
+          featureRow('API access &amp; GitHub integration') +
+          '</div>' +
+          '<button onclick="startCheckout()" style="width:100%;height:44px;background:#8b5cf6;color:#fafafa;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">' + (isFounding ? 'Claim Founding Spot' : 'Upgrade to Pro') + '</button>' +
+          '<div style="text-align:center;"><span onclick="document.getElementById(\\'upgradeModal\\').remove()" style="font-size:13px;font-weight:500;color:#71717a;cursor:pointer;">Cancel</span></div>' +
+          '</div>';
+      }).catch(function() {
+        modal.innerHTML =
+          '<div style="background:#111113;border-radius:14px;padding:28px;max-width:420px;width:calc(100% - 48px);box-shadow:0 8px 24px #00000055;display:flex;flex-direction:column;gap:20px;">' +
+          '<div style="display:flex;flex-direction:column;gap:8px;">' +
+          '<div style="font-size:30px;font-weight:700;color:#fafafa;">Link limit reached</div>' +
+          '<div style="font-size:14px;color:#a1a1aa;line-height:1.45;">You\\\'ve used ' + used + ' of ' + limit + ' links on the Free plan.</div></div>' +
+          '<div style="background:#18181b;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:8px;">' +
+          '<div style="display:flex;align-items:flex-end;gap:10px;">' +
+          '<span style="font-size:42px;font-weight:700;color:#fafafa;">$12</span>' +
+          '<span style="font-size:16px;font-weight:500;color:#a1a1aa;">/month</span></div></div>' +
+          '<div style="display:flex;flex-direction:column;gap:10px;">' +
+          '<div style="display:flex;gap:10px;"><span style="font-size:14px;font-weight:700;color:#4ade80;">&#10003;</span><span style="font-size:14px;color:#a1a1aa;">500 short links &#8212; total, not per month</span></div>' +
+          '<div style="display:flex;gap:10px;"><span style="font-size:14px;font-weight:700;color:#4ade80;">&#10003;</span><span style="font-size:14px;color:#a1a1aa;">Full analytics (geo, device, browser)</span></div>' +
+          '<div style="display:flex;gap:10px;"><span style="font-size:14px;font-weight:700;color:#4ade80;">&#10003;</span><span style="font-size:14px;color:#a1a1aa;">Unlimited categories, tags &amp; edits</span></div>' +
+          '<div style="display:flex;gap:10px;"><span style="font-size:14px;font-weight:700;color:#4ade80;">&#10003;</span><span style="font-size:14px;color:#a1a1aa;">API access &amp; GitHub integration</span></div>' +
+          '</div>' +
+          '<button onclick="startCheckout()" style="width:100%;height:44px;background:#8b5cf6;color:#fafafa;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">Upgrade to Pro</button>' +
+          '<div style="text-align:center;"><span onclick="document.getElementById(\\'upgradeModal\\').remove()" style="font-size:13px;font-weight:500;color:#71717a;cursor:pointer;">Cancel</span></div>' +
+          '</div>';
+      });
+      modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
       document.body.appendChild(modal);
     }
 
@@ -8596,8 +8689,12 @@ Create .github/workflows/update-preview-link.yml that:
       if (!container) return;
 
       try {
-        const res = await fetch('/api/billing/status', { credentials: 'include' });
+        const [res, foundingRes] = await Promise.all([
+          fetch('/api/billing/status', { credentials: 'include' }),
+          fetch('/api/billing/founding'),
+        ]);
         const data = await res.json();
+        const founding = await foundingRes.json().catch(function() { return { available: false, spots_remaining: 0, spots_total: 100, spots_claimed: 100 }; });
 
         const isPro = data.plan === 'pro';
         const used = Number(data.links_used) || 0;
@@ -8618,7 +8715,12 @@ Create .github/workflows/update-preview-link.yml that:
         const planHeader = billingMakeEl('div', 'display: flex; align-items: center; justify-content: space-between;');
         const planInfo = document.createElement('div');
         planInfo.appendChild(billingMakeEl('div', 'font-size: 15px; font-weight: 600;' + (isPro ? ' color: oklch(var(--accent-violet));' : ''), isPro ? 'Pro Plan' : 'Free Plan'));
-        planInfo.appendChild(billingMakeEl('div', 'font-size: 13px; color: oklch(var(--muted-foreground)); margin-top: 2px;', isPro ? '$12 / month' : 'Up to ' + limit + ' links'));
+        var planPriceText = isPro ? '$12 / month' : 'Up to ' + limit + ' links';
+        if (isPro && data.status === 'active') {
+          // Check if this user has the founding coupon applied (Stripe shows discounted amount)
+          planPriceText = '$12 / month';
+        }
+        planInfo.appendChild(billingMakeEl('div', 'font-size: 13px; color: oklch(var(--muted-foreground)); margin-top: 2px;', planPriceText));
         planHeader.appendChild(planInfo);
 
         const badge = billingMakeEl('span', isPro
@@ -8678,63 +8780,83 @@ Create .github/workflows/update-preview-link.yml that:
           manageBtn.onclick = () => openBillingPortal();
           actionsEl.appendChild(manageBtn);
         } else {
-          // Variant B — pricecn Classic (recommended elevated card)
+          // V2 (Stripe) design — matches Pencil V2
           const upgradeCard = document.createElement('div');
-          upgradeCard.style.cssText = 'background: oklch(var(--card)); border: 1px solid oklch(var(--indigo) / 0.5); border-radius: var(--radius); box-shadow: 0 0 0 1px oklch(var(--indigo) / 0.15), 0 8px 32px oklch(var(--indigo) / 0.15); padding: 24px; margin-bottom: 0;';
+          upgradeCard.style.cssText = 'background: #111113; border: 1px solid #27272a; border-radius: 14px; box-shadow: 0 8px 24px #00000055; padding: 28px; display: flex; flex-direction: column; gap: 20px;';
 
-          // Plan name + badge
-          const topRow = billingMakeEl('div', 'display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;');
-          topRow.appendChild(billingMakeEl('div', 'font-size: 16px; font-weight: 700;', 'Pro'));
-          topRow.appendChild(billingMakeEl('span', 'font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 10px; border-radius: 99px; background: linear-gradient(135deg, oklch(var(--indigo)) 0%, oklch(var(--purple)) 100%); color: #fff;', 'Most popular'));
+          // Header: Pro + badge
+          const topRow = billingMakeEl('div', 'display: flex; align-items: center; justify-content: space-between;');
+          topRow.appendChild(billingMakeEl('div', 'font-size: 24px; font-weight: 600; color: #fafafa;', 'Pro'));
+          const badge = billingMakeEl('span', 'font-size: 11px; font-weight: 600; letter-spacing: 0.4px; padding: 4px 10px; border-radius: 999px; border: 1px solid #8b5cf6; color: #8b5cf6;', 'MOST POPULAR');
+          topRow.appendChild(badge);
           upgradeCard.appendChild(topRow);
 
-          // Price
-          const priceRow = billingMakeEl('div', 'display: flex; align-items: baseline; gap: 4px; margin-bottom: 4px;');
-          priceRow.appendChild(billingMakeEl('div', 'font-size: 42px; font-weight: 800; letter-spacing: -0.04em; line-height: 1;', '$12'));
-          priceRow.appendChild(billingMakeEl('div', 'font-size: 14px; color: oklch(var(--muted-foreground));', '/ month'));
-          upgradeCard.appendChild(priceRow);
-          upgradeCard.appendChild(billingMakeEl('div', 'font-size: 13px; color: oklch(var(--muted-foreground)); margin-bottom: 20px;', 'For serious link creators'));
+          // Pricing section
+          const pricingSection = billingMakeEl('div', 'display: flex; flex-direction: column; gap: 10px;');
+          const priceRow = billingMakeEl('div', 'display: flex; align-items: flex-end; gap: 10px;');
+          if (founding.available) {
+            priceRow.appendChild(billingMakeEl('span', 'font-size: 20px; font-weight: 500; color: #71717a;', '$12'));
+            const newPriceWrap = billingMakeEl('div', 'display: flex; align-items: flex-end; gap: 4px;');
+            newPriceWrap.appendChild(billingMakeEl('span', 'font-size: 46px; font-weight: 700; color: #fafafa; line-height: 1;', '$9'));
+            newPriceWrap.appendChild(billingMakeEl('span', 'font-size: 16px; font-weight: 500; color: #a1a1aa;', '/month'));
+            priceRow.appendChild(newPriceWrap);
+          } else {
+            priceRow.appendChild(billingMakeEl('span', 'font-size: 46px; font-weight: 700; color: #fafafa; line-height: 1;', '$12'));
+            priceRow.appendChild(billingMakeEl('span', 'font-size: 16px; font-weight: 500; color: #a1a1aa;', '/month'));
+          }
+          pricingSection.appendChild(priceRow);
+          if (founding.available) {
+            pricingSection.appendChild(billingMakeEl('div', 'font-size: 14px; font-weight: 500; color: #4ade80;', 'Founding 100 \u2014 25% off forever'));
+            var foundingPct = Math.round((founding.spots_claimed / founding.spots_total) * 100);
+            var barWidth = Math.max(8, Math.round(foundingPct * 3.5));
+            const progressWrap = billingMakeEl('div', 'display: flex; flex-direction: column; gap: 8px;');
+            const progressMeta = billingMakeEl('div', 'display: flex; justify-content: space-between;');
+            progressMeta.appendChild(billingMakeEl('span', 'font-size: 13px; font-weight: 500; color: #a1a1aa;', founding.spots_claimed + ' claimed'));
+            progressMeta.appendChild(billingMakeEl('span', 'font-size: 13px; font-weight: 500; color: #71717a;', founding.spots_remaining + ' left'));
+            progressWrap.appendChild(progressMeta);
+            const track = billingMakeEl('div', 'position: relative; height: 8px; background: #18181b; border-radius: 999px; overflow: hidden;');
+            const fill = billingMakeEl('div', 'position: absolute; top: 0; left: 0; height: 8px; width: ' + barWidth + 'px; background: #4ade80; border-radius: 999px;');
+            track.appendChild(fill);
+            progressWrap.appendChild(track);
+            pricingSection.appendChild(progressWrap);
+          } else {
+            pricingSection.appendChild(billingMakeEl('div', 'font-size: 14px; color: #a1a1aa;', 'For serious link creators'));
+          }
+          upgradeCard.appendChild(pricingSection);
 
           // Divider
-          upgradeCard.appendChild(billingMakeEl('div', 'height: 1px; background: oklch(var(--border)); margin-bottom: 16px;'));
+          upgradeCard.appendChild(billingMakeEl('div', 'height: 1px; background: #27272a;'));
 
           // Features
           const proFeatures = [
-            { text: '200 short links', sub: 'vs 25 on Free' },
-            { text: 'Full analytics', sub: 'geo, device, browser' },
-            { text: 'Unlimited categories & tags', sub: null },
-            { text: 'Custom slugs & bulk import', sub: null },
-            { text: 'Priority support', sub: null },
+            { text: '500 short links', sub: 'total, not per month' },
+            { text: 'Full analytics (geo, device, browser)', sub: null },
+            { text: 'Unlimited categories, tags & edits', sub: null },
+            { text: 'API access & GitHub integration', sub: null },
           ];
 
-          const featureList = billingMakeEl('div', 'display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;');
-          proFeatures.forEach(function(f) {
+          const featureList = billingMakeEl('div', 'display: flex; flex-direction: column; gap: 14px;');
+          proFeatures.forEach(function(feat) {
             const row = billingMakeEl('div', 'display: flex; align-items: flex-start; gap: 10px;');
-            const checkWrap = billingMakeEl('div', 'flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%; background: oklch(0.65 0.18 145 / 0.12); display: flex; align-items: center; justify-content: center; margin-top: 1px;');
-            const checkSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            checkSvg.setAttribute('width', '11'); checkSvg.setAttribute('height', '11');
-            checkSvg.setAttribute('viewBox', '0 0 24 24'); checkSvg.setAttribute('fill', 'none');
-            checkSvg.setAttribute('stroke', 'oklch(0.65 0.18 145)'); checkSvg.setAttribute('stroke-width', '3');
-            checkSvg.setAttribute('stroke-linecap', 'round'); checkSvg.setAttribute('stroke-linejoin', 'round');
-            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            path.setAttribute('d', 'M20 6 9 17l-5-5');
-            checkSvg.appendChild(path);
-            checkWrap.appendChild(checkSvg);
-            row.appendChild(checkWrap);
-            const textWrap = billingMakeEl('div', '');
-            textWrap.appendChild(billingMakeEl('div', 'font-size: 13px; font-weight: 500;', f.text));
-            if (f.sub) textWrap.appendChild(billingMakeEl('div', 'font-size: 12px; color: oklch(var(--muted-foreground)); margin-top: 1px;', f.sub));
-            row.appendChild(textWrap);
+            row.appendChild(billingMakeEl('span', 'font-size: 14px; font-weight: 600; color: #4ade80; flex-shrink: 0;', '\u2713'));
+            if (feat.sub) {
+              const textWrap = billingMakeEl('div', 'display: flex; flex-direction: column; gap: 2px;');
+              textWrap.appendChild(billingMakeEl('span', 'font-size: 14px; font-weight: 600; color: #fafafa;', feat.text));
+              textWrap.appendChild(billingMakeEl('span', 'font-size: 13px; color: #71717a;', feat.sub));
+              row.appendChild(textWrap);
+            } else {
+              row.appendChild(billingMakeEl('span', 'font-size: 14px; font-weight: 500; color: #a1a1aa;', feat.text));
+            }
             featureList.appendChild(row);
           });
           upgradeCard.appendChild(featureList);
 
           // CTA
           const upgradeBtn = document.createElement('button');
-          upgradeBtn.style.cssText = 'width: 100%; background: linear-gradient(135deg, oklch(var(--indigo)) 0%, oklch(var(--purple)) 100%); color: #fff; font-weight: 700; font-size: 14px; padding: 12px 16px; border-radius: calc(var(--radius) - 2px); border: none; cursor: pointer; box-shadow: 0 4px 20px oklch(var(--indigo) / 0.4); transition: all 0.2s; letter-spacing: 0.01em;';
-          upgradeBtn.textContent = 'Upgrade to Pro \u2192';
-          upgradeBtn.onmouseenter = () => { upgradeBtn.style.transform = 'translateY(-2px)'; upgradeBtn.style.boxShadow = '0 8px 30px oklch(var(--indigo) / 0.5)'; };
-          upgradeBtn.onmouseleave = () => { upgradeBtn.style.transform = ''; upgradeBtn.style.boxShadow = '0 4px 20px oklch(var(--indigo) / 0.4)'; };
+          upgradeBtn.style.cssText = 'width: 100%; height: 48px; background: #8b5cf6; color: #fafafa; font-weight: 600; font-size: 15px; border-radius: 8px; border: none; cursor: pointer; transition: opacity 0.2s;';
+          upgradeBtn.textContent = founding.available ? 'Claim Founding Spot \u2192' : 'Upgrade to Pro \u2192';
+          upgradeBtn.onmouseenter = () => { upgradeBtn.style.opacity = '0.9'; };
+          upgradeBtn.onmouseleave = () => { upgradeBtn.style.opacity = '1'; };
           upgradeBtn.onclick = () => startCheckout();
           upgradeCard.appendChild(upgradeBtn);
 
