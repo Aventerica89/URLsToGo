@@ -6559,9 +6559,32 @@ function getAdminHTML(userEmail, env, nonce = '') {
             Import
           </button>
           <input type="file" id="importFile" accept=".json" class="hidden-input">
-          <button class="btn btn-sm" id="headerUpgradeCta" style="display:none;background:#8b5cf6;color:#fafafa;font-weight:600;font-size:12px;padding:5px 12px;border-radius:6px;border:none;cursor:pointer;white-space:nowrap;" onclick="showSettingsView('billing')">
-            <span id="headerUpgradeText">Upgrade</span>
-          </button>
+          <div id="headerUpgradeCta" style="display:none;cursor:pointer;position:relative;" onclick="showSettingsView('billing')">
+            <div style="position:absolute;inset:-6px;background:#c084fc1a;border-radius:18px;opacity:0.14;pointer-events:none;"></div>
+            <div style="position:absolute;inset:-2px;background:#8b5cf622;border-radius:16px;opacity:0.28;pointer-events:none;"></div>
+            <div style="display:flex;align-items:center;background:linear-gradient(90deg,#1a0a2e,#0f0520);border:1px solid #7c3aed;border-radius:14px;padding:0 0 0 8px;position:relative;overflow:hidden;" id="headerCtaInner">
+              <div style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:radial-gradient(circle,#c084fc33,#c084fc00);position:relative;">
+                <div style="width:18px;height:18px;background:linear-gradient(135deg,#c084fc,#8b5cf6,#6d28d9);border-radius:3px;transform:rotate(45deg);display:flex;align-items:center;justify-content:center;">
+                  <span style="font-size:8px;font-weight:900;color:#e9d5ff;transform:rotate(-45deg);line-height:1;">&#9670;</span>
+                </div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:3px;padding:8px 0;flex:1;min-width:0;">
+                <span id="headerCtaHeadline" style="font-size:13px;font-weight:600;color:#faf5ff;white-space:nowrap;">Founding 100</span>
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <span id="headerCtaProgress" style="font-size:10px;font-weight:500;color:#c4b5fd;white-space:nowrap;">0% claimed</span>
+                  <div style="flex:1;height:4px;background:#2a1842;border-radius:999px;overflow:hidden;min-width:40px;">
+                    <div id="headerCtaBar" style="height:100%;width:0%;background:linear-gradient(90deg,#c084fc,#8b5cf6);border-radius:999px;"></div>
+                  </div>
+                </div>
+              </div>
+              <div style="width:1px;height:24px;background:#a78bfa55;flex-shrink:0;margin:0 4px;"></div>
+              <div style="padding:7px 12px;flex-shrink:0;">
+                <div style="background:linear-gradient(135deg,#8b5cf6,#7c3aed);border:1px solid #d8b4fe66;border-radius:999px;padding:6px 12px;white-space:nowrap;">
+                  <span id="headerCtaBtn" style="font-size:11px;font-weight:600;color:#fdf4ff;">$9/mo Forever &#8594;</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -7674,21 +7697,31 @@ Create .github/workflows/update-preview-link.yml that:
       }
     }
 
-    // Header upgrade CTA — show for free users only
+    // Header upgrade CTA — V11 diamond badge, show for free users only
     (async function initHeaderUpgrade() {
       try {
         var statusRes = await fetch('/api/billing/status', { credentials: 'include' });
         var statusData = await statusRes.json();
         if (statusData.plan === 'pro') return;
         var ctaEl = document.getElementById('headerUpgradeCta');
-        var textEl = document.getElementById('headerUpgradeText');
         if (!ctaEl) return;
         var foundingRes = await fetch('/api/billing/founding');
         var founding = await foundingRes.json();
+        var headline = document.getElementById('headerCtaHeadline');
+        var progress = document.getElementById('headerCtaProgress');
+        var bar = document.getElementById('headerCtaBar');
+        var btn = document.getElementById('headerCtaBtn');
         if (founding.available) {
-          textEl.textContent = 'Founding 100 \u2014 ' + founding.spots_remaining + ' left';
+          var pct = Math.round((founding.spots_claimed / founding.spots_total) * 100);
+          headline.textContent = 'Founding 100 \u2014 ' + founding.spots_remaining + ' spots left';
+          progress.textContent = pct + '% claimed';
+          bar.style.width = pct + '%';
+          btn.textContent = '$9/mo Forever \u2192';
         } else {
-          textEl.textContent = 'Upgrade to Pro';
+          headline.textContent = 'Upgrade to Pro';
+          progress.textContent = '';
+          bar.style.width = '100%';
+          btn.textContent = 'Upgrade \u2192';
         }
         ctaEl.style.display = '';
       } catch (e) { /* silent */ }
