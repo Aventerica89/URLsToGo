@@ -3172,1343 +3172,315 @@ function getLandingPageHTML(nonce = '') {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>URLsToGo - Short Links Built for Developers</title>
-  <meta name="description" content="The developer's shortlink app. 500 links total, not per month. API-first, GitHub Actions integration, full analytics. Starting free.">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>URLsToGo — Variant A: Immersive Gradient World</title>
+  <meta name="description" content="The developer\'s shortlink app. 500 links total, not per month. API-first, GitHub Actions integration, full analytics.">
   <meta property="og:title" content="URLsToGo - Short Links Built for Developers">
-  <meta property="og:description" content="500 links. Not per month — total. Edit, swap, redirect whenever. Starting free.">
+  <meta property="og:description" content="500 links. Not per month — total. Edit, swap, redirect whenever.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://urlstogo.cloud">
-  <link rel="icon" href="${ADMIN_FAVICON}">
+<link rel="icon" href="${ADMIN_FAVICON}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    :root {
-      --bg-primary: #09090b;
-      --bg-secondary: #18181b;
-      --bg-tertiary: #27272a;
-      --text-primary: #fafafa;
-      --text-secondary: #a1a1aa;
-      --text-muted: #71717a;
-      --accent-indigo: #6366f1;
-      --accent-purple: #a855f7;
-      --accent-violet: #8b5cf6;
-      --accent-green: #4ade80;
-      --accent-blue: #38bdf8;
-      --accent-amber: #fbbf24;
-      --accent-rose: #fb7185;
-      --border-color: #27272a;
-      --gradient-primary: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
-      --gradient-blue: linear-gradient(135deg, #3b82f6 0%, #38bdf8 100%);
-      --gradient-amber: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%);
-      --gradient-rose: linear-gradient(135deg, #e11d48 0%, #fb7185 100%);
-      --gradient-green: linear-gradient(135deg, #059669 0%, #34d399 100%);
-      --gradient-cyan: linear-gradient(135deg, #0891b2 0%, #22d3ee 100%);
-    }
-
-    body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: var(--bg-primary);
-      color: var(--text-primary);
-      min-height: 100vh;
-      overflow-x: hidden;
-      line-height: 1.6;
-    }
-
-    /* Animated gradient background */
-    .hero {
-      position: relative;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-
-    .hero::before {
-      content: '';
-      position: absolute;
-      top: -50%;
-      left: -50%;
-      width: 200%;
-      height: 200%;
-      background:
-        radial-gradient(ellipse at 20% 30%, rgba(99, 102, 241, 0.15) 0%, transparent 50%),
-        radial-gradient(ellipse at 80% 70%, rgba(168, 85, 247, 0.15) 0%, transparent 50%),
-        radial-gradient(ellipse at 50% 50%, rgba(139, 92, 246, 0.1) 0%, transparent 60%);
-      animation: gradientShift 15s ease-in-out infinite;
-      pointer-events: none;
-    }
-
-    @keyframes gradientShift {
-      0%, 100% { transform: translate(0, 0) rotate(0deg); }
-      33% { transform: translate(2%, 2%) rotate(1deg); }
-      66% { transform: translate(-2%, -1%) rotate(-1deg); }
-    }
-
-    .hero::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background-image:
-        linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
-      background-size: 60px 60px;
-      pointer-events: none;
-    }
-
-    /* Navigation */
-    .nav {
-      position: relative;
-      z-index: 10;
-      padding: 20px 24px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      max-width: 1200px;
-      margin: 0 auto;
-      width: 100%;
-    }
-
-    .nav-brand {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      text-decoration: none;
-      color: var(--text-primary);
-    }
-
-    .nav-logo {
-      width: 40px;
-      height: 40px;
-      background: var(--gradient-primary);
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .nav-logo svg { width: 22px; height: 22px; color: white; }
-
-    .nav-title {
-      font-size: 20px;
-      font-weight: 700;
-      background: var(--gradient-primary);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-
-    .nav-links {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .nav-link {
-      padding: 10px 18px;
-      color: var(--text-secondary);
-      text-decoration: none;
-      font-size: 14px;
-      font-weight: 500;
-      border-radius: 8px;
-      transition: all 0.2s;
-    }
-
-    .nav-link:hover {
-      color: var(--text-primary);
-      background: var(--bg-secondary);
-    }
-
-    .nav-cta {
-      padding: 10px 20px;
-      background: var(--gradient-primary);
-      color: white;
-      text-decoration: none;
-      font-size: 14px;
-      font-weight: 600;
-      border-radius: 8px;
-      transition: all 0.2s;
-    }
-
-    .nav-cta:hover { opacity: 0.9; transform: translateY(-1px); }
-
-    /* Hero content */
-    .hero-content {
-      position: relative;
-      z-index: 10;
-      flex: 1;
-      display: flex;
-      align-items: center;
-      padding: 40px 24px 80px;
-      max-width: 1200px;
-      margin: 0 auto;
-      width: 100%;
-    }
-
-    .hero-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 60px;
-      align-items: center;
-      width: 100%;
-    }
-
-    @media (max-width: 968px) {
-      .hero-grid { grid-template-columns: 1fr; text-align: center; gap: 48px; }
-    }
-
-    .hero-text { max-width: 560px; }
-
-    @media (max-width: 968px) {
-      .hero-text { max-width: 100%; margin: 0 auto; }
-    }
-
-    .hero-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 14px;
-      background: rgba(139, 92, 246, 0.1);
-      border: 1px solid rgba(139, 92, 246, 0.2);
-      border-radius: 100px;
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--accent-violet);
-      margin-bottom: 24px;
-    }
-
-    .hero-badge-dot {
-      width: 6px;
-      height: 6px;
-      background: var(--accent-violet);
-      border-radius: 50%;
-      animation: pulse 2s infinite;
-    }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.5; }
-    }
-
-    .hero-title {
-      font-size: clamp(36px, 5vw, 56px);
-      font-weight: 700;
-      line-height: 1.1;
-      margin-bottom: 24px;
-      letter-spacing: -0.02em;
-    }
-
-    .hero-title-gradient {
-      background: var(--gradient-primary);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-
-    .hero-description {
-      font-size: 18px;
-      color: var(--text-secondary);
-      margin-bottom: 36px;
-      line-height: 1.7;
-    }
-
-    .hero-actions {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      margin-bottom: 32px;
-    }
-
-    .hero-actions-row {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-    }
-
-    @media (max-width: 968px) {
-      .hero-actions-row { justify-content: center; flex-wrap: wrap; }
-    }
-
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      padding: 14px 28px;
-      font-size: 15px;
-      font-weight: 600;
-      text-decoration: none;
-      border-radius: 10px;
-      transition: all 0.2s;
-      cursor: pointer;
-      border: none;
-    }
-
-    .btn-primary {
-      background: var(--gradient-primary);
-      color: white;
-      box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3);
-    }
-
-    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 30px rgba(99, 102, 241, 0.4); }
-
-    .btn-founding {
-      background: transparent;
-      color: var(--accent-violet);
-      border: 1px solid rgba(139, 92, 246, 0.3);
-      padding: 14px 24px;
-      font-size: 14px;
-    }
-
-    .btn-founding:hover { background: rgba(139, 92, 246, 0.05); border-color: var(--accent-violet); }
-
-    .founding-hero-note {
-      font-size: 13px;
-      color: var(--text-muted);
-    }
-
-    .founding-hero-note span { color: var(--accent-violet); font-weight: 600; }
-
-    /* Dashboard mockup */
-    .hero-visual { position: relative; }
-
-    .dashboard-mockup {
-      position: relative;
-      background: var(--bg-secondary);
-      border: 1px solid var(--border-color);
-      border-radius: 16px;
-      overflow: hidden;
-      box-shadow:
-        0 0 0 1px rgba(255,255,255,0.05),
-        0 20px 50px rgba(0,0,0,0.5),
-        0 0 100px rgba(99, 102, 241, 0.1);
-      transform: perspective(1000px) rotateY(-5deg) rotateX(2deg);
-      transition: transform 0.5s ease;
-    }
-
-    .dashboard-mockup:hover { transform: perspective(1000px) rotateY(-2deg) rotateX(1deg); }
-
-    @media (max-width: 968px) {
-      .dashboard-mockup { transform: none; max-width: 500px; margin: 0 auto; }
-      .dashboard-mockup:hover { transform: none; }
-    }
-
-    .mockup-header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 12px 16px;
-      background: var(--bg-primary);
-      border-bottom: 1px solid var(--border-color);
-    }
-
-    .mockup-dot { width: 10px; height: 10px; border-radius: 50%; }
-    .mockup-dot.red { background: #ff5f57; }
-    .mockup-dot.yellow { background: #febc2e; }
-    .mockup-dot.green { background: #28c840; }
-
-    .mockup-url {
-      flex: 1;
-      text-align: center;
-      font-size: 12px;
-      color: var(--text-muted);
-      background: var(--bg-secondary);
-      padding: 6px 12px;
-      border-radius: 6px;
-      margin-left: 16px;
-    }
-
-    .mockup-content { padding: 20px; }
-
-    .mockup-sidebar { display: flex; gap: 20px; }
-
-    .mockup-nav {
-      width: 180px;
-      padding-right: 20px;
-      border-right: 1px solid var(--border-color);
-    }
-
-    .mockup-nav-item {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 10px 12px;
-      border-radius: 8px;
-      font-size: 13px;
-      color: var(--text-secondary);
-      margin-bottom: 4px;
-    }
-
-    .mockup-nav-item.active {
-      background: rgba(139, 92, 246, 0.1);
-      color: var(--accent-violet);
-    }
-
-    .mockup-nav-icon { width: 18px; height: 18px; border-radius: 4px; background: var(--bg-tertiary); }
-    .mockup-nav-item.active .mockup-nav-icon { background: var(--accent-violet); }
-    .mockup-main { flex: 1; }
-
-    .mockup-card {
-      background: var(--bg-primary);
-      border: 1px solid var(--border-color);
-      border-radius: 12px;
-      padding: 16px;
-      margin-bottom: 12px;
-    }
-
-    .mockup-card-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 16px;
-    }
-
-    .mockup-card-title { font-size: 14px; font-weight: 600; color: var(--text-primary); }
-
-    .mockup-badge {
-      font-size: 11px;
-      padding: 4px 10px;
-      background: rgba(40, 200, 64, 0.1);
-      color: #28c840;
-      border-radius: 100px;
-      font-weight: 500;
-    }
-
-    .mockup-links { display: flex; flex-direction: column; gap: 10px; }
-
-    .mockup-link {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 12px;
-      background: var(--bg-secondary);
-      border-radius: 8px;
-    }
-
-    .mockup-link-left { display: flex; align-items: center; gap: 12px; }
-
-    .mockup-link-icon {
-      width: 32px;
-      height: 32px;
-      background: var(--gradient-primary);
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .mockup-link-icon svg { width: 16px; height: 16px; color: white; }
-    .mockup-link-text { font-size: 13px; color: var(--text-primary); font-weight: 500; }
-    .mockup-link-url { font-size: 11px; color: var(--text-muted); }
-    .mockup-link-clicks { font-size: 12px; color: var(--accent-violet); font-weight: 600; }
-
-    .floating-card {
-      position: absolute;
-      background: var(--bg-secondary);
-      border: 1px solid var(--border-color);
-      border-radius: 12px;
-      padding: 14px 18px;
-      box-shadow: 0 10px 40px rgba(0,0,0,0.4);
-      animation: float 6s ease-in-out infinite;
-    }
-
-    @keyframes float {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-10px); }
-    }
-
-    .floating-card-1 { top: -20px; right: -30px; animation-delay: -2s; }
-    .floating-card-2 { bottom: 40px; left: -40px; animation-delay: -4s; }
-
-    @media (max-width: 968px) { .floating-card { display: none; } }
-
-    .floating-stat { display: flex; align-items: center; gap: 10px; }
-
-    .floating-stat-icon {
-      width: 36px;
-      height: 36px;
-      background: rgba(40, 200, 64, 0.1);
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #28c840;
-    }
-
-    .floating-stat-icon--indigo { background: rgba(99, 102, 241, 0.1); color: #6366f1; }
-    .floating-stat-value { font-size: 16px; font-weight: 700; color: var(--text-primary); }
-    .floating-stat-label { font-size: 11px; color: var(--text-muted); }
-
-    /* Social proof bar */
-    .social-proof {
-      position: relative;
-      z-index: 10;
-      padding: 40px 24px;
-      border-top: 1px solid var(--border-color);
-      border-bottom: 1px solid var(--border-color);
-      background: linear-gradient(180deg, var(--bg-secondary) 0%, var(--bg-primary) 100%);
-      overflow: hidden;
-    }
-
-    .social-proof::before {
-      content: '';
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 600px;
-      height: 200px;
-      background: radial-gradient(ellipse at center, rgba(139, 92, 246, 0.08) 0%, transparent 70%);
-      pointer-events: none;
-    }
-
-    .social-proof-grid {
-      max-width: 1200px;
-      margin: 0 auto;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 48px;
-      flex-wrap: wrap;
-      position: relative;
-    }
-
-    .proof-item {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      color: var(--text-secondary);
-      font-size: 14px;
-      font-weight: 500;
-    }
-
-    .proof-icon {
-      width: 44px;
-      height: 44px;
-      border-radius: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      position: relative;
-    }
-
-    .proof-icon svg { width: 20px; height: 20px; color: white; position: relative; z-index: 1; }
-    .proof-icon--purple { background: var(--gradient-primary); box-shadow: 0 6px 20px rgba(99, 102, 241, 0.35); }
-    .proof-icon--blue { background: var(--gradient-blue); box-shadow: 0 6px 20px rgba(56, 189, 248, 0.35); }
-    .proof-icon--amber { background: var(--gradient-amber); box-shadow: 0 6px 20px rgba(245, 158, 11, 0.35); }
-    .proof-icon--rose { background: var(--gradient-rose); box-shadow: 0 6px 20px rgba(251, 113, 133, 0.35); }
-    .proof-item strong { color: var(--text-primary); }
-
-    /* Section styles */
-    .section {
-      position: relative;
-      z-index: 10;
-      padding: 100px 24px;
-      overflow: hidden;
-    }
-
-    /* Background orbs on every section */
-    .section::before {
-      content: '';
-      position: absolute;
-      top: -200px;
-      right: -200px;
-      width: 600px;
-      height: 600px;
-      background: radial-gradient(ellipse at center, rgba(99, 102, 241, 0.08) 0%, transparent 70%);
-      pointer-events: none;
-    }
-
-    .section::after {
-      content: '';
-      position: absolute;
-      bottom: -200px;
-      left: -200px;
-      width: 600px;
-      height: 600px;
-      background: radial-gradient(ellipse at center, rgba(168, 85, 247, 0.06) 0%, transparent 70%);
-      pointer-events: none;
-    }
-
-    .section--alt {
-      background: var(--bg-secondary);
-      border-top: 1px solid var(--border-color);
-    }
-
-    .section--alt::before {
-      background: radial-gradient(ellipse at center, rgba(168, 85, 247, 0.08) 0%, transparent 70%);
-      top: -100px;
-      left: -200px;
-      right: auto;
-    }
-
-    .section--alt::after {
-      background: radial-gradient(ellipse at center, rgba(56, 189, 248, 0.06) 0%, transparent 70%);
-      bottom: -100px;
-      right: -200px;
-      left: auto;
-    }
-
-    .section-container { max-width: 1200px; margin: 0 auto; position: relative; z-index: 1; }
-
-    .section-header {
-      text-align: center;
-      margin-bottom: 60px;
-    }
-
-    .section-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 16px;
-      background: rgba(99, 102, 241, 0.1);
-      border: 1px solid rgba(99, 102, 241, 0.2);
-      border-radius: 100px;
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--accent-indigo);
-      margin-bottom: 20px;
-    }
-
-    .section-title {
-      font-size: 40px;
-      font-weight: 700;
-      margin-bottom: 16px;
-      letter-spacing: -0.02em;
-    }
-
-    .section-subtitle {
-      font-size: 18px;
-      color: var(--text-secondary);
-      max-width: 600px;
-      margin: 0 auto;
-    }
-
-    /* Features grid */
-    .features-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 24px;
-    }
-
-    .feature-card {
-      background: rgba(17, 17, 19, 0.6);
-      backdrop-filter: blur(12px);
-      border: 1px solid rgba(39, 39, 42, 0.8);
-      border-radius: 16px;
-      padding: 28px;
-      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-      position: relative;
-      overflow: hidden;
-    }
-
-    .section--alt .feature-card {
-      background: rgba(39, 39, 42, 0.4);
-      backdrop-filter: blur(12px);
-    }
-
-    /* Colored glow orb behind each card */
-    .feature-card::before {
-      content: '';
-      position: absolute;
-      top: -80px;
-      right: -80px;
-      width: 200px;
-      height: 200px;
-      border-radius: 50%;
-      opacity: 0.07;
-      transition: all 0.4s;
-      filter: blur(40px);
-    }
-
-    .feature-card:hover::before { opacity: 0.18; filter: blur(60px); }
-
-    .feature-card:nth-child(1)::before { background: #6366f1; }
-    .feature-card:nth-child(2)::before { background: #a855f7; }
-    .feature-card:nth-child(3)::before { background: #38bdf8; }
-    .feature-card:nth-child(4)::before { background: #fbbf24; }
-    .feature-card:nth-child(5)::before { background: #fb7185; }
-    .feature-card:nth-child(6)::before { background: #22d3ee; }
-
-    .feature-card:hover {
-      border-color: rgba(139, 92, 246, 0.3);
-      transform: translateY(-6px);
-      box-shadow:
-        0 20px 40px rgba(0, 0, 0, 0.4),
-        0 0 40px rgba(139, 92, 246, 0.06);
-    }
-
-    .feature-icon {
-      width: 56px;
-      height: 56px;
-      border-radius: 16px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 20px;
-      position: relative;
-    }
-
-    .feature-icon svg { width: 26px; height: 26px; color: white; position: relative; z-index: 1; }
-
-    .feature-icon--indigo { background: var(--gradient-primary); box-shadow: 0 8px 30px rgba(99, 102, 241, 0.4); }
-    .feature-icon--purple { background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%); box-shadow: 0 8px 30px rgba(168, 85, 247, 0.4); }
-    .feature-icon--blue { background: var(--gradient-blue); box-shadow: 0 8px 30px rgba(56, 189, 248, 0.4); }
-    .feature-icon--amber { background: var(--gradient-amber); box-shadow: 0 8px 30px rgba(245, 158, 11, 0.4); }
-    .feature-icon--rose { background: var(--gradient-rose); box-shadow: 0 8px 30px rgba(251, 113, 133, 0.4); }
-    .feature-icon--cyan { background: var(--gradient-cyan); box-shadow: 0 8px 30px rgba(34, 211, 238, 0.4); }
-    .feature-name { font-size: 18px; font-weight: 600; margin-bottom: 10px; color: var(--text-primary); }
-    .feature-desc { font-size: 14px; color: var(--text-secondary); line-height: 1.6; }
-
-    /* Pricing section */
-    .pricing-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 24px;
-      max-width: 800px;
-      margin: 0 auto 48px;
-    }
-
-    @media (max-width: 700px) { .pricing-grid { grid-template-columns: 1fr; } }
-
-    .pricing-card {
-      background: rgba(24, 24, 27, 0.8);
-      backdrop-filter: blur(12px);
-      border: 1px solid var(--border-color);
-      border-radius: 16px;
-      padding: 32px;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .pricing-card--pro {
-      border-color: rgba(139, 92, 246, 0.5);
-      box-shadow:
-        0 0 80px rgba(139, 92, 246, 0.15),
-        0 0 160px rgba(139, 92, 246, 0.05),
-        inset 0 1px 0 rgba(139, 92, 246, 0.2);
-      background: linear-gradient(180deg, rgba(139, 92, 246, 0.08) 0%, rgba(24, 24, 27, 0.9) 50%);
-    }
-
-    /* Glow orb behind Pro card */
-    .pricing-card--pro::before {
-      content: '';
-      position: absolute;
-      top: -100px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 300px;
-      height: 300px;
-      background: radial-gradient(circle, rgba(139, 92, 246, 0.15) 0%, transparent 70%);
-      pointer-events: none;
-      filter: blur(40px);
-    }
-
-    .pricing-card-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 8px;
-      position: relative;
-    }
-
-    .pricing-plan { font-size: 24px; font-weight: 600; }
-
-    .pricing-popular {
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 0.4px;
-      color: var(--accent-violet);
-      border: 1px solid rgba(139, 92, 246, 0.4);
-      border-radius: 999px;
-      padding: 4px 12px;
-      background: rgba(139, 92, 246, 0.1);
-    }
-
-    .pricing-price { margin-bottom: 8px; display: flex; align-items: flex-end; gap: 4px; position: relative; }
-    .pricing-amount { font-size: 48px; font-weight: 700; line-height: 1; }
-    .pricing-old { font-size: 20px; font-weight: 500; color: var(--text-muted); margin-right: 8px; text-decoration: line-through; }
-    .pricing-period { font-size: 16px; color: var(--text-muted); margin-bottom: 8px; }
-    .pricing-founding { font-size: 14px; color: var(--accent-violet); font-weight: 500; margin-bottom: 16px; }
-
-    .pricing-features {
-      list-style: none;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      margin-bottom: 24px;
-      position: relative;
-    }
-
-    .pricing-features li {
-      display: flex;
-      align-items: flex-start;
-      gap: 10px;
-      font-size: 14px;
-      color: var(--text-secondary);
-      line-height: 1.5;
-    }
-
-    .pricing-features li svg { color: var(--accent-violet); flex-shrink: 0; margin-top: 2px; }
-
-    .pricing-features li .sub { display: block; font-size: 13px; color: var(--text-muted); }
-
-    .pricing-btn {
-      display: block;
-      width: 100%;
-      text-align: center;
-      padding: 14px;
-      border-radius: 10px;
-      font-size: 15px;
-      font-weight: 600;
-      text-decoration: none;
-      transition: all 0.3s;
-      border: none;
-      cursor: pointer;
-      position: relative;
-    }
-
-    .pricing-btn--free {
-      background: var(--bg-tertiary);
-      color: var(--text-primary);
-    }
-
-    .pricing-btn--free:hover { background: #3f3f46; }
-
-    .pricing-btn--pro {
-      background: var(--gradient-primary);
-      color: white;
-      box-shadow: 0 4px 24px rgba(99, 102, 241, 0.4);
-    }
-
-    .pricing-btn--pro:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 32px rgba(99, 102, 241, 0.5);
-    }
-
-    /* Founding spots bar */
-    .founding-bar {
-      margin-bottom: 20px;
-      position: relative;
-    }
-
-    .founding-bar-labels {
-      display: flex;
-      justify-content: space-between;
-      font-size: 13px;
-      margin-bottom: 8px;
-    }
-
-    .founding-bar-labels span:first-child { color: var(--text-secondary); }
-    .founding-bar-labels span:last-child { color: var(--text-muted); }
-
-    .founding-bar-track {
-      height: 8px;
-      background: var(--bg-primary);
-      border-radius: 999px;
-      overflow: hidden;
-    }
-
-    .founding-bar-fill {
-      height: 100%;
-      background: var(--accent-green);
-      border-radius: 999px;
-      transition: width 0.6s ease;
-      box-shadow: 0 0 12px rgba(74, 222, 128, 0.4);
-    }
-
-    /* Competitor comparison */
-    .competitor-row {
-      max-width: 800px;
-      margin: 0 auto;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 32px;
-      flex-wrap: wrap;
-      padding: 28px;
-      background: rgba(24, 24, 27, 0.6);
-      backdrop-filter: blur(12px);
-      border: 1px solid var(--border-color);
-      border-radius: 16px;
-      position: relative;
-    }
-
-    .competitor {
-      text-align: center;
-      font-size: 14px;
-      color: var(--text-muted);
-    }
-
-    .competitor strong { display: block; font-size: 22px; margin-bottom: 4px; font-weight: 700; }
-    .competitor--you { color: var(--text-primary); }
-    .competitor--you strong {
-      background: var(--gradient-primary);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      font-size: 26px;
-    }
-    .competitor-vs { color: var(--text-muted); font-size: 13px; font-weight: 500; }
-
-    /* How it works */
-    .steps-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 24px;
-    }
-
-    @media (max-width: 768px) {
-      .steps-grid { grid-template-columns: 1fr; max-width: 400px; margin: 0 auto; }
-    }
-
-    .step-card {
-      text-align: center;
-      padding: 32px 24px;
-      position: relative;
-      border-radius: 16px;
-      transition: all 0.3s;
-    }
-
-    .step-card:hover {
-      background: rgba(139, 92, 246, 0.03);
-    }
-
-    .step-number-wrap {
-      position: relative;
-      width: 80px;
-      height: 80px;
-      margin: 0 auto 24px;
-    }
-
-    .step-number {
-      width: 80px;
-      height: 80px;
-      background: var(--bg-secondary);
-      border: 2px solid var(--border-color);
-      border-radius: 20px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 32px;
-      font-weight: 700;
-      background: var(--gradient-primary);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      position: relative;
-      transition: all 0.3s;
-    }
-
-    /* Glow ring behind step numbers */
-    .step-number-wrap::before {
-      content: '';
-      position: absolute;
-      inset: -4px;
-      border-radius: 24px;
-      background: var(--gradient-primary);
-      opacity: 0;
-      filter: blur(16px);
-      transition: opacity 0.3s;
-    }
-
-    .step-card:hover .step-number-wrap::before { opacity: 0.25; }
-
-    .step-card:hover .step-number {
-      border-color: var(--accent-violet);
-      box-shadow: 0 0 40px rgba(139, 92, 246, 0.15);
-    }
-
-    .step-title { font-size: 20px; font-weight: 600; margin-bottom: 12px; }
-    .step-desc { font-size: 15px; color: var(--text-secondary); line-height: 1.6; max-width: 280px; margin: 0 auto; }
-
-    /* API demo */
-    .api-demo {
-      max-width: 700px;
-      margin: 0 auto;
-      background: rgba(24, 24, 27, 0.8);
-      backdrop-filter: blur(12px);
-      border: 1px solid rgba(39, 39, 42, 0.8);
-      border-radius: 16px;
-      overflow: hidden;
-      box-shadow:
-        0 20px 60px rgba(0, 0, 0, 0.4),
-        0 0 60px rgba(99, 102, 241, 0.06);
-    }
-
-    .api-demo-header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 14px 18px;
-      background: rgba(9, 9, 11, 0.8);
-      border-bottom: 1px solid var(--border-color);
-      font-size: 13px;
-      font-family: 'JetBrains Mono', monospace;
-      color: var(--text-muted);
-    }
-
-    .api-demo-dot { width: 10px; height: 10px; border-radius: 50%; }
-    .api-demo-dot.r { background: #ff5f57; }
-    .api-demo-dot.y { background: #febc2e; }
-    .api-demo-dot.g { background: #28c840; }
-
-    .api-demo pre {
-      padding: 28px;
-      overflow-x: auto;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 13px;
-      line-height: 1.8;
-      color: var(--text-secondary);
-    }
-
-    .api-demo .cmd { color: var(--accent-blue); }
-    .api-demo .flag { color: var(--accent-violet); }
-    .api-demo .str { color: #fbbf24; }
-    .api-demo .key { color: var(--accent-indigo); }
-    .api-demo .comment { color: var(--text-muted); }
-
-    /* Feedback section */
-    .feedback-form-container {
-      max-width: 600px;
-      margin: 0 auto;
-      position: relative;
-    }
-
-    .feedback-textarea {
-      width: 100%;
-      min-height: 120px;
-      padding: 16px;
-      background: rgba(9, 9, 11, 0.8);
-      border: 1px solid var(--border-color);
-      border-radius: 12px;
-      color: var(--text-primary);
-      font-family: inherit;
-      font-size: 15px;
-      resize: vertical;
-      outline: none;
-      transition: all 0.3s;
-      margin-bottom: 12px;
-    }
-
-    .feedback-textarea::placeholder { color: var(--text-muted); }
-    .feedback-textarea:focus {
-      border-color: var(--accent-violet);
-      box-shadow: 0 0 24px rgba(139, 92, 246, 0.1);
-    }
-
-    .feedback-row {
-      display: flex;
-      gap: 12px;
-      align-items: center;
-    }
-
-    .feedback-email {
-      flex: 1;
-      padding: 12px 16px;
-      background: rgba(9, 9, 11, 0.8);
-      border: 1px solid var(--border-color);
-      border-radius: 10px;
-      color: var(--text-primary);
-      font-family: inherit;
-      font-size: 14px;
-      outline: none;
-      transition: all 0.3s;
-    }
-
-    .feedback-email::placeholder { color: var(--text-muted); }
-    .feedback-email:focus {
-      border-color: var(--accent-violet);
-      box-shadow: 0 0 24px rgba(139, 92, 246, 0.1);
-    }
-
-    .feedback-submit {
-      padding: 12px 24px;
-      background: var(--gradient-primary);
-      color: white;
-      font-size: 14px;
-      font-weight: 600;
-      font-family: inherit;
-      border: none;
-      border-radius: 10px;
-      cursor: pointer;
-      white-space: nowrap;
-      transition: all 0.3s;
-      box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3);
-    }
-
-    .feedback-submit:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 28px rgba(99, 102, 241, 0.4);
-    }
-    .feedback-submit:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
-
-    .feedback-success {
-      display: none;
-      padding: 16px;
-      background: rgba(139, 92, 246, 0.1);
-      border: 1px solid rgba(139, 92, 246, 0.2);
-      border-radius: 10px;
-      color: var(--accent-violet);
-      font-size: 14px;
-      text-align: center;
-    }
-
-    /* Footer */
-    .footer {
-      position: relative;
-      z-index: 10;
-      padding: 60px 24px 40px;
-      border-top: 1px solid var(--border-color);
-    }
-
-    .footer-content {
-      max-width: 1200px;
-      margin: 0 auto;
-      text-align: center;
-    }
-
-    .footer-cta {
-      margin-bottom: 32px;
-    }
-
-    .footer-links {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 24px;
-      margin-bottom: 24px;
-    }
-
-    .footer-links a {
-      color: var(--text-muted);
-      text-decoration: none;
-      font-size: 14px;
-      transition: color 0.2s;
-    }
-
-    .footer-links a:hover { color: var(--text-primary); }
-
-    .footer-credit {
-      color: var(--text-muted);
-      font-size: 13px;
-    }
-
-    .footer-credit a { color: var(--accent-violet); text-decoration: none; }
-
-    /* Exit intent modal */
-    .exit-modal {
-      display: none;
-      position: fixed;
-      inset: 0;
-      z-index: 1000;
-      background: rgba(0,0,0,0.7);
-      backdrop-filter: blur(4px);
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
-    }
-
-    .exit-modal.active { display: flex; }
-
-    .exit-modal-content {
-      background: var(--bg-secondary);
-      border: 1px solid var(--border-color);
-      border-radius: 16px;
-      padding: 32px;
-      max-width: 480px;
-      width: 100%;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
-    }
-
-    .exit-modal h3 { font-size: 20px; font-weight: 600; margin-bottom: 8px; }
-    .exit-modal p { font-size: 14px; color: var(--text-secondary); margin-bottom: 16px; }
-
-    .exit-modal textarea {
-      width: 100%;
-      min-height: 80px;
-      padding: 12px;
-      background: var(--bg-primary);
-      border: 1px solid var(--border-color);
-      border-radius: 10px;
-      color: var(--text-primary);
-      font-family: inherit;
-      font-size: 14px;
-      resize: vertical;
-      outline: none;
-      margin-bottom: 12px;
-    }
-
-    .exit-modal textarea:focus { border-color: var(--accent-violet); }
-
-    .exit-modal-actions { display: flex; gap: 12px; justify-content: flex-end; }
-
-    .exit-modal-dismiss {
-      padding: 10px 20px;
-      background: transparent;
-      color: var(--text-muted);
-      font-size: 14px;
-      font-family: inherit;
-      border: none;
-      cursor: pointer;
-    }
-
-    .exit-modal-submit {
-      padding: 10px 20px;
-      background: var(--accent-violet);
-      color: white;
-      font-size: 14px;
-      font-weight: 600;
-      font-family: inherit;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-    }
-
-    .exit-modal-submit:hover { background: #7c3aed; }
-  </style>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Inter', sans-serif; background: #09090b; color: #fafafa; overflow-x: hidden; }
+a { color: #8b5cf6; text-decoration: none; }
+
+/* ---- HERO ---- */
+.hero { position: relative; min-height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+.hero::before {
+  content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%;
+  background:
+    radial-gradient(ellipse at 20% 30%, rgba(99, 102, 241, 0.18) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 70%, rgba(168, 85, 247, 0.18) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 50%, rgba(139, 92, 246, 0.12) 0%, transparent 60%);
+  animation: heroShift 15s ease-in-out infinite; pointer-events: none;
+}
+@keyframes heroShift { 0%,100%{transform:translate(0,0) rotate(0deg);} 33%{transform:translate(2%,2%) rotate(1deg);} 66%{transform:translate(-2%,-1%) rotate(-1deg);} }
+.hero::after {
+  content: ''; position: absolute; inset: 0;
+  background-image: linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+  background-size: 60px 60px; pointer-events: none;
+}
+.nav { position: relative; z-index: 10; padding: 20px 24px; display: flex; align-items: center; justify-content: space-between; max-width: 1100px; margin: 0 auto; width: 100%; }
+.nav-brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: #fafafa; }
+.nav-logo { width: 40px; height: 40px; background: linear-gradient(135deg, #6366f1, #a855f7); border-radius: 10px; display: flex; align-items: center; justify-content: center; }
+.nav-logo svg { width: 22px; height: 22px; color: white; }
+.nav-title { font-size: 20px; font-weight: 700; background: linear-gradient(135deg, #6366f1, #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.nav-links { display: flex; align-items: center; gap: 8px; }
+.nav-link { padding: 10px 18px; color: #a1a1aa; text-decoration: none; font-size: 14px; font-weight: 500; border-radius: 8px; transition: all 0.2s; }
+.nav-link:hover { color: #fafafa; background: #18181b; }
+.nav-cta { padding: 10px 20px; background: linear-gradient(135deg, #6366f1, #a855f7); color: white; text-decoration: none; font-size: 14px; font-weight: 600; border-radius: 8px; }
+.hero-content { position: relative; z-index: 10; flex: 1; display: flex; align-items: center; padding: 40px 24px 80px; max-width: 1100px; margin: 0 auto; width: 100%; }
+.hero-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 60px; align-items: center; width: 100%; }
+@media (max-width: 968px) { .hero-grid { grid-template-columns: 1fr; text-align: center; gap: 48px; } }
+.hero-text { max-width: 540px; }
+@media (max-width: 968px) { .hero-text { max-width: 100%; margin: 0 auto; } }
+.hero-badge { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.2); border-radius: 100px; font-size: 13px; font-weight: 500; color: #8b5cf6; margin-bottom: 24px; }
+.hero-badge-dot { width: 6px; height: 6px; background: #8b5cf6; border-radius: 50%; animation: badgePulse 2s infinite; }
+@keyframes badgePulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
+.hero-h1 { font-size: clamp(36px, 5vw, 56px); font-weight: 700; line-height: 1.1; margin-bottom: 24px; letter-spacing: -0.02em; }
+.hero-h1 span { background: linear-gradient(135deg, #6366f1, #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.hero-desc { font-size: 18px; color: #a1a1aa; margin-bottom: 36px; line-height: 1.7; }
+.hero-actions { display: flex; flex-direction: column; gap: 16px; margin-bottom: 32px; }
+.hero-actions-row { display: flex; align-items: center; gap: 16px; }
+@media (max-width: 968px) { .hero-actions-row { justify-content: center; flex-wrap: wrap; } }
+.btn { display: inline-flex; align-items: center; gap: 10px; padding: 14px 28px; font-size: 15px; font-weight: 600; text-decoration: none; border-radius: 10px; transition: all 0.2s; cursor: pointer; border: none; }
+.btn-primary { background: linear-gradient(135deg, #6366f1, #a855f7); color: white; box-shadow: 0 4px 24px rgba(99, 102, 241, 0.4); }
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(99, 102, 241, 0.5); }
+.btn-secondary { background: transparent; color: #8b5cf6; border: 1px solid rgba(139, 92, 246, 0.3); padding: 14px 24px; font-size: 14px; }
+.btn-secondary:hover { background: rgba(139, 92, 246, 0.05); }
+.hero-note { font-size: 13px; color: #71717a; }
+.hero-note span { color: #8b5cf6; font-weight: 600; }
+/* Dashboard mockup */
+.hero-visual { position: relative; }
+.dashboard-mock { position: relative; background: #18181b; border: 1px solid #27272a; border-radius: 16px; overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 20px 60px rgba(0,0,0,0.5), 0 0 100px rgba(99,102,241,0.1);
+  transform: perspective(1000px) rotateY(-5deg) rotateX(2deg); transition: transform 0.5s; }
+.dashboard-mock:hover { transform: perspective(1000px) rotateY(-2deg) rotateX(1deg); }
+@media (max-width: 968px) { .dashboard-mock { transform: none; max-width: 500px; margin: 0 auto; } .dashboard-mock:hover { transform: none; } }
+.mock-bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; background: #09090b; border-bottom: 1px solid #27272a; }
+.mock-dot { width: 10px; height: 10px; border-radius: 50%; }
+.mock-dot.r { background: #ff5f57; } .mock-dot.y { background: #febc2e; } .mock-dot.g { background: #28c840; }
+.mock-url { flex: 1; text-align: center; font-size: 12px; color: #71717a; background: #18181b; padding: 6px 12px; border-radius: 6px; margin-left: 16px; }
+.mock-body { padding: 20px; display: flex; gap: 20px; }
+.mock-sidebar { width: 160px; border-right: 1px solid #27272a; padding-right: 16px; }
+.mock-nav-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; font-size: 12px; color: #a1a1aa; margin-bottom: 4px; }
+.mock-nav-item.active { background: rgba(139,92,246,0.1); color: #8b5cf6; }
+.mock-nav-dot { width: 14px; height: 14px; border-radius: 4px; background: #27272a; }
+.mock-nav-item.active .mock-nav-dot { background: #8b5cf6; }
+.mock-main { flex: 1; }
+.mock-card { background: #09090b; border: 1px solid #27272a; border-radius: 10px; padding: 14px; }
+.mock-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.mock-card-title { font-size: 13px; font-weight: 600; }
+.mock-card-badge { font-size: 10px; padding: 3px 8px; background: rgba(40,200,64,0.1); color: #28c840; border-radius: 100px; }
+.mock-row { display: flex; align-items: center; justify-content: space-between; padding: 10px; background: #18181b; border-radius: 8px; margin-bottom: 8px; }
+.mock-row-left { display: flex; align-items: center; gap: 10px; }
+.mock-row-icon { width: 28px; height: 28px; background: linear-gradient(135deg, #6366f1, #a855f7); border-radius: 6px; }
+.mock-row-text { font-size: 12px; color: #fafafa; }
+.mock-row-sub { font-size: 10px; color: #71717a; }
+.mock-row-stat { font-size: 11px; color: #8b5cf6; font-weight: 600; }
+/* Floating cards */
+.float-card { position: absolute; background: #18181b; border: 1px solid #27272a; border-radius: 12px; padding: 14px 18px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.4); animation: floatY 6s ease-in-out infinite; }
+@keyframes floatY { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-10px);} }
+.float-card-1 { top: -20px; right: -30px; animation-delay: -2s; }
+.float-card-2 { bottom: 40px; left: -40px; animation-delay: -4s; }
+@media (max-width: 968px) { .float-card { display: none; } }
+.float-stat { display: flex; align-items: center; gap: 10px; }
+.float-icon { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; }
+.float-icon svg { width: 18px; height: 18px; }
+.float-icon--green { background: rgba(40,200,64,0.1); color: #28c840; }
+.float-icon--indigo { background: rgba(99,102,241,0.1); color: #6366f1; }
+.float-val { font-size: 16px; font-weight: 700; }
+.float-label { font-size: 11px; color: #71717a; }
+
+/* ---- SHARED ---- */
+.section { position: relative; padding: 120px 24px; overflow: hidden; }
+.section-inner { max-width: 1100px; margin: 0 auto; position: relative; z-index: 2; }
+.section-title { font-size: 36px; font-weight: 700; text-align: center; margin-bottom: 16px; }
+.section-sub { font-size: 16px; color: #a1a1aa; text-align: center; margin-bottom: 64px; max-width: 560px; margin-left: auto; margin-right: auto; }
+
+/* ---- GRADIENT ORBS ---- */
+.orb { position: absolute; border-radius: 50%; filter: blur(120px); opacity: 0.35; pointer-events: none; z-index: 0; }
+
+/* ---- SOCIAL PROOF ---- */
+.social-proof { padding: 48px 24px; border-bottom: 1px solid #27272a; position: relative; overflow: hidden; }
+.social-proof .orb { width: 600px; height: 300px; background: radial-gradient(circle, #8b5cf6, transparent 70%); top: -100px; left: 50%; transform: translateX(-50%); }
+.proof-grid { display: flex; justify-content: center; gap: 48px; flex-wrap: wrap; position: relative; z-index: 2; }
+.proof-item { text-align: center; }
+.proof-value { font-size: 15px; font-weight: 600; color: #fafafa; }
+.proof-label { font-size: 13px; color: #71717a; margin-top: 2px; }
+
+/* ---- FEATURES ---- */
+.features-section { position: relative; }
+.features-section .orb-1 { width: 800px; height: 800px; background: radial-gradient(circle, #6366f1, transparent 60%); top: -200px; right: -300px; }
+.features-section .orb-2 { width: 600px; height: 600px; background: radial-gradient(circle, #a855f7, transparent 60%); bottom: -100px; left: -200px; }
+@keyframes meshShift { 0%,100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+.features-section::before {
+  content: ''; position: absolute; inset: 0; z-index: 0; opacity: 0.08;
+  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 25%, #a855f7 50%, #38bdf8 75%, #8b5cf6 100%);
+  background-size: 400% 400%; animation: meshShift 20s ease infinite;
+}
+.features-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; }
+.feature-card {
+  background: rgba(24, 24, 27, 0.5); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(139, 92, 246, 0.15); border-radius: 16px; padding: 32px;
+  transition: border-color 0.3s, transform 0.3s;
+}
+.feature-card:hover { border-color: rgba(139, 92, 246, 0.4); transform: translateY(-4px); }
+.feature-icon { width: 40px; height: 40px; margin-bottom: 16px; color: #8b5cf6; }
+.feature-card h3 { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+.feature-card p { font-size: 14px; color: #a1a1aa; line-height: 1.6; }
+
+/* ---- PRICING ---- */
+.pricing-section { position: relative; }
+.pricing-section .orb-pro { width: 700px; height: 700px; background: radial-gradient(circle, #8b5cf6, transparent 55%); top: 50%; left: 50%; transform: translate(-50%, -50%); opacity: 0.25; }
+.pricing-cards { display: flex; gap: 32px; justify-content: center; flex-wrap: wrap; align-items: flex-start; }
+.price-card {
+  background: #18181b; border: 1px solid #27272a; border-radius: 16px; padding: 40px 32px; width: 340px;
+  transition: transform 0.3s;
+}
+.price-card:hover { transform: translateY(-4px); }
+.price-card.pro { border-color: #8b5cf6; position: relative; z-index: 2; }
+.price-badge { display: inline-block; font-size: 12px; font-weight: 600; color: #fafafa; background: #8b5cf6; padding: 4px 12px; border-radius: 999px; margin-bottom: 16px; }
+.price-name { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+.price-amount { font-size: 42px; font-weight: 700; }
+.price-amount span { font-size: 16px; font-weight: 400; color: #71717a; }
+.price-was { font-size: 13px; color: #71717a; text-decoration: line-through; margin-top: 4px; }
+.price-features { list-style: none; margin: 24px 0; display: flex; flex-direction: column; gap: 12px; }
+.price-features li { font-size: 14px; color: #a1a1aa; display: flex; align-items: center; gap: 8px; }
+.price-features li svg { width: 16px; height: 16px; color: #8b5cf6; flex-shrink: 0; }
+.price-cta {
+  display: block; width: 100%; padding: 14px; border: none; border-radius: 10px; font-size: 15px; font-weight: 600;
+  cursor: pointer; text-align: center; transition: opacity 0.2s;
+}
+.price-cta.free { background: #27272a; color: #fafafa; }
+.price-cta.pro-btn { background: #8b5cf6; color: #fff; }
+.price-cta:hover { opacity: 0.85; }
+.founding { margin-top: 24px; }
+.founding-label { font-size: 13px; color: #a1a1aa; margin-bottom: 8px; }
+.founding-bar { height: 8px; background: #27272a; border-radius: 999px; overflow: hidden; }
+.founding-fill { height: 100%; width: 25%; background: #4ade80; border-radius: 999px; }
+.founding-note { font-size: 12px; color: #71717a; margin-top: 6px; }
+.competitor-row { margin-top: 40px; text-align: center; }
+.competitor-row p { font-size: 13px; color: #71717a; line-height: 1.8; }
+.competitor-row strong { color: #a1a1aa; }
+
+/* ---- HOW IT WORKS ---- */
+.steps-section .orb { width: 500px; height: 500px; background: radial-gradient(circle, #6366f1, transparent 60%); top: 0; left: -150px; }
+.steps-row { display: flex; gap: 48px; justify-content: center; flex-wrap: wrap; }
+.step { text-align: center; max-width: 240px; }
+.step-num {
+  width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-size: 24px; font-weight: 700; margin: 0 auto 20px;
+  background: radial-gradient(circle, rgba(139,92,246,0.3), transparent 70%);
+  border: 2px solid #8b5cf6; position: relative;
+}
+@keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(139,92,246,0.4); } 50% { box-shadow: 0 0 0 16px rgba(139,92,246,0); } }
+.step-num { animation: pulse 3s infinite; }
+.step h3 { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+.step p { font-size: 14px; color: #a1a1aa; }
+
+/* ---- API DEMO ---- */
+.api-section .orb { width: 600px; height: 400px; background: radial-gradient(circle, #a855f7, transparent 60%); bottom: -100px; right: -200px; }
+.terminal {
+  max-width: 720px; margin: 0 auto; background: #0c0c0e; border: 1px solid #27272a;
+  border-radius: 16px; overflow: hidden; box-shadow: 0 40px 80px rgba(0,0,0,0.6);
+}
+.terminal-bar { display: flex; gap: 8px; padding: 14px 20px; background: #18181b; }
+.terminal-dot { width: 12px; height: 12px; border-radius: 50%; }
+.terminal-dot.r { background: #fb7185; } .terminal-dot.y { background: #fbbf24; } .terminal-dot.g { background: #8b5cf6; }
+.terminal pre { padding: 24px; overflow-x: auto; font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.7; color: #a1a1aa; }
+.terminal .comment { color: #71717a; }
+.terminal .string { color: #8b5cf6; }
+.terminal .key { color: #38bdf8; }
+.terminal .bool { color: #fbbf24; }
+
+/* ---- FEEDBACK ---- */
+.feedback-section .orb { width: 400px; height: 400px; background: radial-gradient(circle, #6366f1, transparent 60%); top: -100px; right: -100px; }
+.feedback-form { max-width: 520px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+.feedback-form textarea {
+  width: 100%; min-height: 120px; background: #18181b; border: 1px solid #27272a; border-radius: 12px;
+  padding: 16px; color: #fafafa; font-family: 'Inter', sans-serif; font-size: 14px; resize: vertical;
+}
+.feedback-form textarea:focus { outline: none; border-color: #8b5cf6; }
+.feedback-form input {
+  width: 100%; background: #18181b; border: 1px solid #27272a; border-radius: 10px;
+  padding: 12px 16px; color: #fafafa; font-family: 'Inter', sans-serif; font-size: 14px;
+}
+.feedback-form input:focus { outline: none; border-color: #8b5cf6; }
+.feedback-form button {
+  align-self: flex-end; padding: 12px 32px; background: #8b5cf6; color: #fff; border: none;
+  border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.feedback-form button:hover { opacity: 0.85; }
+
+/* ---- FOOTER ---- */
+footer { padding: 64px 24px; border-top: 1px solid #27272a; text-align: center; }
+.footer-cta {
+  display: inline-block; padding: 16px 40px; background: #8b5cf6; color: #fff; border-radius: 12px;
+  font-size: 16px; font-weight: 600; margin-bottom: 32px; transition: opacity 0.2s;
+}
+.footer-cta:hover { opacity: 0.85; }
+.footer-links { display: flex; gap: 24px; justify-content: center; margin-bottom: 24px; }
+.footer-links a { font-size: 14px; color: #a1a1aa; }
+.footer-links a:hover { color: #fafafa; }
+.footer-byline { font-size: 13px; color: #71717a; }
+
+@media (max-width: 768px) {
+  .section { padding: 80px 16px; }
+  .section-title { font-size: 28px; }
+  .features-grid { grid-template-columns: 1fr; }
+  .pricing-cards { flex-direction: column; align-items: center; }
+  .steps-row { flex-direction: column; align-items: center; }
+  .proof-grid { gap: 24px; }
+}
+</style>
 </head>
 <body>
-  <div class="hero">
-    <!-- Navigation -->
-    <nav class="nav">
-      <a href="/" class="nav-brand">
-        <div class="nav-logo">${LINK_ICON}</div>
-        <span class="nav-title">URLsToGo</span>
-      </a>
-      <div class="nav-links">
-        <a href="#features" class="nav-link">Features</a>
-        <a href="#pricing" class="nav-link">Pricing</a>
-        <a href="#api-demo" class="nav-link">API</a>
-        <a href="/admin" class="nav-cta">Sign In</a>
-      </div>
-    </nav>
 
-    <!-- Hero Content -->
-    <div class="hero-content">
-      <div class="hero-grid">
-        <div class="hero-text">
-          <div class="hero-badge">
-            <span class="hero-badge-dot"></span>
-            <span id="founding-badge">Founding 100 — spots available</span>
+<!-- HERO -->
+<div class="hero">
+  <nav class="nav">
+    <a href="/" class="nav-brand">
+      <div class="nav-logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></div>
+      <span class="nav-title">URLsToGo</span>
+    </a>
+    <div class="nav-links">
+      <a href="#features" class="nav-link">Features</a>
+      <a href="#pricing" class="nav-link">Pricing</a>
+      <a href="#api" class="nav-link">API</a>
+      <a href="/admin" class="nav-cta">Sign In</a>
+    </div>
+  </nav>
+  <div class="hero-content">
+    <div class="hero-grid">
+      <div class="hero-text">
+        <div class="hero-badge"><span class="hero-badge-dot"></span> <span id="founding-badge">Founding 100 \u2014 spots available</span></div>
+        <h1 class="hero-h1">Short links built<br><span>for developers</span></h1>
+        <p class="hero-desc">500 links. Not per month &mdash; total. Edit, swap, redirect whenever. API-first with GitHub Actions integration and full click analytics.</p>
+        <div class="hero-actions">
+          <div class="hero-actions-row">
+            <a href="/admin" class="btn btn-primary">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+              Start free with Google
+            </a>
+            <a href="/admin#billing" class="btn btn-secondary">Join the Founding 100</a>
           </div>
-          <h1 class="hero-title">
-            Short links built<br>
-            <span class="hero-title-gradient">for developers</span>
-          </h1>
-          <p class="hero-description">
-            500 links. Not per month — total. Edit, swap, redirect whenever.
-            API-first with GitHub Actions integration and full click analytics.
-          </p>
-          <div class="hero-actions">
-            <div class="hero-actions-row">
-              <a href="/admin" class="btn btn-primary">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-                Start free with Google
-              </a>
-              <a href="/admin#billing" class="btn btn-founding" id="founding-cta">
-                Join the Founding 100
-              </a>
-            </div>
-            <p class="founding-hero-note" id="founding-note">
-              <span id="founding-spots">Loading...</span> founding spots at <span>$9/mo forever</span> (normally $12)
-            </p>
+          <p class="hero-note"><span id="founding-spots">Limited spots</span> at <span>$9/mo forever</span> (normally $12)</p>
+        </div>
+      </div>
+      <div class="hero-visual">
+        <div class="float-card float-card-1">
+          <div class="float-stat">
+            <div class="float-icon float-icon--green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></div>
+            <div><div class="float-val">+127%</div><div class="float-label">Click growth</div></div>
           </div>
         </div>
-
-        <div class="hero-visual">
-          <!-- Floating stats -->
-          <div class="floating-card floating-card-1">
-            <div class="floating-stat">
-              <div class="floating-stat-icon">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
-                  <polyline points="16 7 22 7 22 13"/>
-                </svg>
-              </div>
-              <div>
-                <div class="floating-stat-value">+127%</div>
-                <div class="floating-stat-label">Click growth</div>
-              </div>
-            </div>
+        <div class="float-card float-card-2">
+          <div class="float-stat">
+            <div class="float-icon float-icon--indigo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+            <div><div class="float-val">12ms</div><div class="float-label">Avg response</div></div>
           </div>
-
-          <div class="floating-card floating-card-2">
-            <div class="floating-stat">
-              <div class="floating-stat-icon floating-stat-icon--indigo">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <circle cx="12" cy="12" r="10"/>
-                  <polyline points="12 6 12 12 16 14"/>
-                </svg>
-              </div>
-              <div>
-                <div class="floating-stat-value">12ms</div>
-                <div class="floating-stat-label">Avg response</div>
-              </div>
+        </div>
+        <div class="dashboard-mock">
+          <div class="mock-bar"><span class="mock-dot r"></span><span class="mock-dot y"></span><span class="mock-dot g"></span><span class="mock-url">urlstogo.cloud/admin</span></div>
+          <div class="mock-body">
+            <div class="mock-sidebar">
+              <div class="mock-nav-item active"><div class="mock-nav-dot"></div>All Links</div>
+              <div class="mock-nav-item"><div class="mock-nav-dot"></div>Categories</div>
+              <div class="mock-nav-item"><div class="mock-nav-dot"></div>Analytics</div>
+              <div class="mock-nav-item"><div class="mock-nav-dot"></div>Settings</div>
             </div>
-          </div>
-
-          <!-- Dashboard mockup (preserved) -->
-          <div class="dashboard-mockup">
-            <div class="mockup-header">
-              <div class="mockup-dot red"></div>
-              <div class="mockup-dot yellow"></div>
-              <div class="mockup-dot green"></div>
-              <div class="mockup-url">urlstogo.cloud/admin</div>
-            </div>
-            <div class="mockup-content">
-              <div class="mockup-sidebar">
-                <div class="mockup-nav">
-                  <div class="mockup-nav-item active">
-                    <div class="mockup-nav-icon"></div>
-                    <span>All Links</span>
-                  </div>
-                  <div class="mockup-nav-item">
-                    <div class="mockup-nav-icon"></div>
-                    <span>Categories</span>
-                  </div>
-                  <div class="mockup-nav-item">
-                    <div class="mockup-nav-icon"></div>
-                    <span>Analytics</span>
-                  </div>
-                  <div class="mockup-nav-item">
-                    <div class="mockup-nav-icon"></div>
-                    <span>Settings</span>
-                  </div>
-                </div>
-                <div class="mockup-main">
-                  <div class="mockup-card">
-                    <div class="mockup-card-header">
-                      <div class="mockup-card-title">Recent Links</div>
-                      <div class="mockup-badge">Live</div>
-                    </div>
-                    <div class="mockup-links">
-                      <div class="mockup-link">
-                        <div class="mockup-link-left">
-                          <div class="mockup-link-icon">${LINK_ICON}</div>
-                          <div>
-                            <div class="mockup-link-text">urlstogo.cloud/abc123</div>
-                            <div class="mockup-link-url">github.com/project</div>
-                          </div>
-                        </div>
-                        <div class="mockup-link-clicks">2,847 clicks</div>
-                      </div>
-                      <div class="mockup-link">
-                        <div class="mockup-link-left">
-                          <div class="mockup-link-icon">${LINK_ICON}</div>
-                          <div>
-                            <div class="mockup-link-text">urlstogo.cloud/docs</div>
-                            <div class="mockup-link-url">documentation.site</div>
-                          </div>
-                        </div>
-                        <div class="mockup-link-clicks">1,234 clicks</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+            <div class="mock-main">
+              <div class="mock-card">
+                <div class="mock-card-top"><span class="mock-card-title">Recent Links</span><span class="mock-card-badge">Live</span></div>
+                <div class="mock-row"><div class="mock-row-left"><div class="mock-row-icon"></div><div><div class="mock-row-text">urlstogo.cloud/abc123</div><div class="mock-row-sub">github.com/project</div></div></div><div class="mock-row-stat">2,847 clicks</div></div>
+                <div class="mock-row"><div class="mock-row-left"><div class="mock-row-icon"></div><div><div class="mock-row-text">urlstogo.cloud/docs</div><div class="mock-row-sub">documentation.site</div></div></div><div class="mock-row-stat">1,234 clicks</div></div>
               </div>
             </div>
           </div>
@@ -4516,326 +3488,221 @@ function getLandingPageHTML(nonce = '') {
       </div>
     </div>
   </div>
+</div>
 
-  <!-- Section 2: Social Proof Bar -->
-  <div class="social-proof">
-    <div class="social-proof-grid">
-      <div class="proof-item">
-        <div class="proof-icon proof-icon--purple">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-        </div>
-        <span>Built on <strong>Cloudflare Workers</strong></span>
+<!-- SOCIAL PROOF -->
+<section class="social-proof">
+  <div class="orb"></div>
+  <div class="proof-grid">
+    <div class="proof-item"><div class="proof-value">Cloudflare Workers</div><div class="proof-label">Built on</div></div>
+    <div class="proof-item"><div class="proof-value">50ms</div><div class="proof-label">Redirects globally</div></div>
+    <div class="proof-item"><div class="proof-value">99.9%</div><div class="proof-label">Uptime</div></div>
+    <div class="proof-item"><div class="proof-value">Open API</div><div class="proof-label">With keys</div></div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="section features-section">
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="section-inner">
+    <h2 class="section-title">Everything you need, nothing you don't</h2>
+    <p class="section-sub">Developer-first link management with a real API, GitHub integration, and analytics that matter.</p>
+    <div class="features-grid">
+      <div class="feature-card">
+        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+        <h3>API-First</h3>
+        <p>Scoped API keys, full REST endpoints. Create, update, and manage links programmatically with cURL or any HTTP client.</p>
       </div>
-      <div class="proof-item">
-        <div class="proof-icon proof-icon--blue">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-        </div>
-        <span><strong>50ms</strong> redirects globally</span>
+      <div class="feature-card">
+        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65S8.93 17.38 9 18v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>
+        <h3>GitHub Actions</h3>
+        <p>Auto-update preview links on deploy. Push to a branch, your shortlink updates automatically. Zero manual work.</p>
       </div>
-      <div class="proof-item">
-        <div class="proof-icon proof-icon--amber">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-        </div>
-        <span><strong>99.9%</strong> uptime</span>
+      <div class="feature-card">
+        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+        <h3>Click Analytics</h3>
+        <p>Geo, device, browser, referrer &mdash; real-time. Know exactly where your traffic comes from and how links perform.</p>
       </div>
-      <div class="proof-item">
-        <div class="proof-icon proof-icon--rose">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-        </div>
-        <span><strong>Open API</strong> with keys</span>
+      <div class="feature-card">
+        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+        <h3>Categories &amp; Tags</h3>
+        <p>Organize like a dev, not a marketer. Unlimited categories, tags, and the command palette (Cmd+K) finds anything instantly.</p>
+      </div>
+      <div class="feature-card">
+        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" x2="12" y1="2" y2="15"/></svg>
+        <h3>Shared Collections</h3>
+        <p>Share a category as a read-only dashboard. Perfect for client-facing link pages with live stats.</p>
+      </div>
+      <div class="feature-card">
+        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+        <h3>Import / Export</h3>
+        <p>Full JSON export and import. No lock-in. Your data is always yours to take wherever you go.</p>
       </div>
     </div>
   </div>
+</section>
 
-  <!-- Section 3: Features Grid (Dev-Focused) -->
-  <section id="features" class="section section--alt">
-    <div class="section-container">
-      <div class="section-header">
-        <div class="section-badge">Developer-First</div>
-        <h2 class="section-title">Built for how you work</h2>
-        <p class="section-subtitle">Not another marketing link tracker. A shortlink app that fits into your dev workflow.</p>
+<!-- PRICING -->
+<section class="section pricing-section">
+  <div class="orb orb-pro"></div>
+  <div class="section-inner">
+    <h2 class="section-title">Simple, honest pricing</h2>
+    <p class="section-sub">No per-link monthly quotas. Buy once, use forever.</p>
+    <div class="pricing-cards">
+      <div class="price-card">
+        <div class="price-name">Free</div>
+        <div class="price-amount">$0</div>
+        <ul class="price-features">
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>25 links</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Basic click counts</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>1 category</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Google sign-in</li>
+        </ul>
+        <button class="price-cta free">Get started free</button>
       </div>
-      <div class="features-grid">
-        <div class="feature-card">
-          <div class="feature-icon feature-icon--indigo">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-          </div>
-          <h3 class="feature-name">API-First</h3>
-          <p class="feature-desc">Scoped API keys, full REST endpoints. Create, update, and manage links programmatically with cURL or any HTTP client.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon feature-icon--purple">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65S8.93 17.38 9 18v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>
-          </div>
-          <h3 class="feature-name">GitHub Actions</h3>
-          <p class="feature-desc">Auto-update preview links on deploy. Push to a branch, your shortlink updates automatically. Zero manual work.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon feature-icon--blue">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
-          </div>
-          <h3 class="feature-name">Click Analytics</h3>
-          <p class="feature-desc">Geo, device, browser, referrer — real-time. Know exactly where your traffic comes from and how links perform.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon feature-icon--amber">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/><path d="M7 7h.01"/></svg>
-          </div>
-          <h3 class="feature-name">Categories & Tags</h3>
-          <p class="feature-desc">Organize like a dev, not a marketer. Unlimited categories, tags, and the command palette (Cmd+K) finds anything instantly.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon feature-icon--rose">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-          </div>
-          <h3 class="feature-name">Shared Collections</h3>
-          <p class="feature-desc">Share a category as a read-only dashboard. Perfect for client-facing link pages with live stats.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon feature-icon--cyan">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-          </div>
-          <h3 class="feature-name">Import / Export</h3>
-          <p class="feature-desc">Full JSON export and import. No lock-in. Your data is always yours to take wherever you go.</p>
+      <div class="price-card pro">
+        <span class="price-badge">Most Popular</span>
+        <div class="price-name">Pro</div>
+        <div class="price-amount" id="pricing-amount">$9<span>/mo</span></div>
+        <div class="price-was" id="pricing-old">Was $12/mo</div>
+        <ul class="price-features">
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>500 links total</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Full analytics (geo, device, browser)</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Unlimited categories</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>API &amp; GitHub integration</li>
+        </ul>
+        <button class="price-cta pro-btn">Start Pro &mdash; 25% off forever</button>
+        <div class="founding">
+          <div class="founding-label"><span id="founding-claimed">Loading...</span></div>
+          <div class="founding-bar"><div class="founding-fill" id="founding-fill"></div></div>
+          <div class="founding-note"><span id="founding-left"></span></div>
         </div>
       </div>
     </div>
-  </section>
-
-  <!-- Section 4: Pricing -->
-  <section id="pricing" class="section">
-    <div class="section-container">
-      <div class="section-header">
-        <div class="section-badge">Simple Pricing</div>
-        <h2 class="section-title">One plan. No surprises.</h2>
-        <p class="section-subtitle">Not 500 links per month. 500 links total. Change destinations as many times as you want.</p>
-      </div>
-
-      <div class="pricing-grid">
-        <!-- Free -->
-        <div class="pricing-card">
-          <div class="pricing-card-header">
-            <span class="pricing-plan">Free</span>
-          </div>
-          <div class="pricing-price">
-            <span class="pricing-amount">$0</span>
-          </div>
-          <p style="font-size:14px;color:var(--text-muted);margin-bottom:20px;">Forever free, no credit card</p>
-          <ul class="pricing-features">
-            <li><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>25 short links</span></li>
-            <li><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Basic click counts</span></li>
-            <li><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>1 category</span></li>
-            <li><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Google sign-in</span></li>
-          </ul>
-          <a href="/admin" class="pricing-btn pricing-btn--free">Get started</a>
-        </div>
-
-        <!-- Pro -->
-        <div class="pricing-card pricing-card--pro">
-          <div class="pricing-card-header">
-            <span class="pricing-plan">Pro</span>
-            <span class="pricing-popular">FOUNDING 100</span>
-          </div>
-          <div class="pricing-price">
-            <span class="pricing-old" id="pricing-old">$12</span>
-            <span class="pricing-amount" id="pricing-amount">$9</span>
-            <span class="pricing-period">/month</span>
-          </div>
-          <p class="pricing-founding" id="pricing-founding">Founding 100 — 25% off forever</p>
-          <div class="founding-bar" id="founding-bar">
-            <div class="founding-bar-labels">
-              <span id="founding-claimed">Loading...</span>
-              <span id="founding-left"></span>
-            </div>
-            <div class="founding-bar-track">
-              <div class="founding-bar-fill" id="founding-fill" style="width: 0%"></div>
-            </div>
-          </div>
-          <ul class="pricing-features">
-            <li><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>500 short links<span class="sub">Total, not per month</span></span></li>
-            <li><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Full analytics (geo, device, browser)</span></li>
-            <li><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Unlimited categories, tags & edits</span></li>
-            <li><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>API access & GitHub integration</span></li>
-          </ul>
-          <a href="/admin#billing" class="pricing-btn pricing-btn--pro" id="pricing-cta">Claim Founding Spot &rarr;</a>
-        </div>
-      </div>
-
-      <!-- Competitor comparison -->
-      <div class="competitor-row">
-        <div class="competitor">
-          <strong>$29/mo</strong>
-          Bitly Growth<br><span style="font-size:12px">500 links/month</span>
-        </div>
-        <span class="competitor-vs">vs</span>
-        <div class="competitor">
-          <strong>$25/mo</strong>
-          Dub.co Pro<br><span style="font-size:12px">1,000 links/month</span>
-        </div>
-        <span class="competitor-vs">vs</span>
-        <div class="competitor competitor--you">
-          <strong>$9/mo</strong>
-          URLsToGo Pro<br><span style="font-size:12px">500 links total</span>
-        </div>
-      </div>
+    <div class="competitor-row">
+      <p><strong>Bitly</strong> $29/mo &middot; 500 links/month &nbsp;|&nbsp; <strong>Dub.co</strong> $25/mo &middot; 1000 links/month &nbsp;|&nbsp; <strong>URLsToGo</strong> $9/mo &middot; 500 links total</p>
     </div>
-  </section>
+  </div>
+</section>
 
-  <!-- Section 5: How It Works -->
-  <section class="section section--alt">
-    <div class="section-container">
-      <div class="section-header">
-        <div class="section-badge">Simple & Fast</div>
-        <h2 class="section-title">Up and running in 30 seconds</h2>
-        <p class="section-subtitle">Sign in with Google and start shortening. No setup, no config files.</p>
-      </div>
-      <div class="steps-grid">
-        <div class="step-card">
-          <div class="step-number-wrap"><div class="step-number">1</div></div>
-          <h3 class="step-title">Sign in with Google</h3>
-          <p class="step-desc">One click. No password to create or manage. Your data is private to your account.</p>
-        </div>
-        <div class="step-card">
-          <div class="step-number-wrap"><div class="step-number">2</div></div>
-          <h3 class="step-title">Create a short link</h3>
-          <p class="step-desc">Paste a URL, pick a custom slug or let us generate one. Organize with categories and tags.</p>
-        </div>
-        <div class="step-card">
-          <div class="step-number-wrap"><div class="step-number">3</div></div>
-          <h3 class="step-title">Track & share</h3>
-          <p class="step-desc">Monitor clicks in real-time. Share collections with clients. Integrate with your CI/CD pipeline.</p>
-        </div>
-      </div>
+<!-- HOW IT WORKS -->
+<section class="section steps-section">
+  <div class="orb"></div>
+  <div class="section-inner">
+    <h2 class="section-title">Up and running in 60 seconds</h2>
+    <p class="section-sub">No credit card. No setup wizard. Just links.</p>
+    <div class="steps-row">
+      <div class="step"><div class="step-num">1</div><h3>Sign in with Google</h3><p>One click, no passwords to remember.</p></div>
+      <div class="step"><div class="step-num">2</div><h3>Create a short link</h3><p>Paste a URL, pick a code, done.</p></div>
+      <div class="step"><div class="step-num">3</div><h3>Track &amp; share</h3><p>Real-time analytics and shareable collections.</p></div>
     </div>
-  </section>
+  </div>
+</section>
 
-  <!-- Section 6: API / Terminal Demo -->
-  <section id="api-demo" class="section">
-    <div class="section-container">
-      <div class="section-header">
-        <div class="section-badge">API-First</div>
-        <h2 class="section-title">Works from your terminal</h2>
-        <p class="section-subtitle">No other shortener shows you terminal output on their landing page.</p>
-      </div>
-      <div class="api-demo">
-        <div class="api-demo-header">
-          <div class="api-demo-dot r"></div>
-          <div class="api-demo-dot y"></div>
-          <div class="api-demo-dot g"></div>
-          <span style="margin-left:12px">Terminal</span>
-        </div>
-        <pre><span class="comment"># Create a short link</span>
-<span class="cmd">curl</span> <span class="flag">-X POST</span> https://urlstogo.cloud/api/links <span class="flag">\\</span>
-  <span class="flag">-H</span> <span class="str">"Authorization: Bearer utg_your_key"</span> <span class="flag">\\</span>
-  <span class="flag">-H</span> <span class="str">"Content-Type: application/json"</span> <span class="flag">\\</span>
-  <span class="flag">-d</span> <span class="str">'{"url": "https://github.com/my/repo", "code": "my-repo"}'</span>
+<!-- API DEMO -->
+<section class="section api-section">
+  <div class="orb"></div>
+  <div class="section-inner">
+    <h2 class="section-title">First-class API</h2>
+    <p class="section-sub">Everything you can do in the UI, you can do with cURL.</p>
+    <div class="terminal">
+      <div class="terminal-bar"><span class="terminal-dot r"></span><span class="terminal-dot y"></span><span class="terminal-dot g"></span></div>
+      <pre><span class="comment"># Create a short link</span>
+curl -X POST https://urlstogo.cloud/api/links \
+  -H <span class="string">"Authorization: Bearer utg_your_key"</span> \
+  -H <span class="string">"Content-Type: application/json"</span> \
+  -d '{<span class="key">"url"</span>: <span class="string">"https://github.com/my/repo"</span>, <span class="key">"code"</span>: <span class="string">"my-repo"</span>}'
 
 <span class="comment"># Response</span>
 {
-  <span class="key">"success"</span>: true,
-  <span class="key">"code"</span>: <span class="str">"my-repo"</span>,
-  <span class="key">"short_url"</span>: <span class="str">"https://go.urlstogo.cloud/my-repo"</span>,
-  <span class="key">"destination"</span>: <span class="str">"https://github.com/my/repo"</span>
+  <span class="key">"success"</span>: <span class="bool">true</span>,
+  <span class="key">"code"</span>: <span class="string">"my-repo"</span>,
+  <span class="key">"short_url"</span>: <span class="string">"https://go.urlstogo.cloud/my-repo"</span>,
+  <span class="key">"destination"</span>: <span class="string">"https://github.com/my/repo"</span>
 }</pre>
-      </div>
     </div>
-  </section>
+  </div>
+</section>
 
-  <!-- Section 7: Feedback -->
-  <section class="section section--alt">
-    <div class="section-container">
-      <div class="section-header">
-        <h2 class="section-title">Help shape URLsToGo</h2>
-        <p class="section-subtitle">We're building this for developers like you. What would make it worth paying for?</p>
-      </div>
-      <div class="feedback-form-container">
-        <div id="feedback-success" class="feedback-success">Thanks for your feedback! This genuinely helps.</div>
-        <form id="feedback-form" onsubmit="submitFeedback(event)">
-          <textarea class="feedback-textarea" id="feedback-msg" placeholder="What features would you want? What's missing? What would make you switch from your current tool?" required></textarea>
-          <div class="feedback-row">
-            <input class="feedback-email" id="feedback-email" type="email" placeholder="Email (optional — if you want us to follow up)">
-            <button type="submit" class="feedback-submit" id="feedback-btn">Send Feedback</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  </section>
+<!-- FEEDBACK -->
+<section class="section feedback-section">
+  <div class="orb"></div>
+  <div class="section-inner">
+    <h2 class="section-title">Help shape URLsToGo</h2>
+    <p class="section-sub">We're building this for developers like you. Tell us what matters.</p>
+    <form class="feedback-form" id="feedback-form" onsubmit="submitFeedback(event)">
+      <div id="feedback-success" style="display:none;padding:16px;background:rgba(139,92,246,0.1);border:1px solid rgba(139,92,246,0.2);border-radius:10px;color:#8b5cf6;font-size:14px;text-align:center;margin-bottom:16px;">Thanks for your feedback!</div>
+      <textarea id="feedback-msg" placeholder="What would make URLsToGo indispensable for you?" required></textarea>
+      <input type="email" id="feedback-email" placeholder="Email (optional)">
+      <button type="submit" id="feedback-btn">Send feedback</button>
+    </form>
+  </div>
+</section>
 
-  <!-- Section 8: Footer -->
-  <footer class="footer">
-    <div class="footer-content">
-      <div class="footer-cta">
-        <a href="/admin" class="btn btn-primary">Start free with Google</a>
-      </div>
-      <div class="footer-links">
-        <a href="https://github.com/jbcreations" target="_blank" rel="noopener">GitHub</a>
-        <a href="/admin#help">Help</a>
-        <a href="mailto:john@jbmdcreations.com">Contact</a>
-      </div>
-      <p class="footer-credit">Built by <a href="https://jbmdcreations.com" target="_blank" rel="noopener">JB</a> on Cloudflare Workers</p>
-    </div>
-  </footer>
+<!-- FOOTER -->
+<footer>
+  <a href="/admin" class="footer-cta">Start free with Google</a>
+  <div class="footer-links">
+    <a href="https://github.com/jbcreations" target="_blank" rel="noopener">GitHub</a>
+    <a href="/admin#help">Help</a>
+    <a href="mailto:john@jbmdcreations.com">Contact</a>
+  </div>
+  <p class="footer-byline">Built by <a href="https://jbmdcreations.com" target="_blank" rel="noopener" style="color:#8b5cf6">JB</a> on Cloudflare Workers</p>
+</footer>
 
-  <!-- Exit Intent Modal (Desktop Only) -->
-  <div class="exit-modal" id="exit-modal">
-    <div class="exit-modal-content">
-      <h3>Quick question before you go</h3>
-      <p>What would make this worth signing up for?</p>
-      <textarea id="exit-msg" placeholder="Missing feature? Wrong price? Just not for you? Anything helps..."></textarea>
-      <div class="exit-modal-actions">
-        <button class="exit-modal-dismiss" onclick="closeExitModal()">No thanks</button>
-        <button class="exit-modal-submit" onclick="submitExitFeedback()">Send</button>
+
+  <!-- Exit Intent Modal -->
+  <div id="exit-modal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);align-items:center;justify-content:center;padding:24px;">
+    <div style="background:#18181b;border:1px solid #27272a;border-radius:16px;padding:32px;max-width:480px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+      <h3 style="font-size:20px;font-weight:600;margin-bottom:8px;">Quick question before you go</h3>
+      <p style="font-size:14px;color:#a1a1aa;margin-bottom:16px;">What would make this worth signing up for?</p>
+      <textarea id="exit-msg" style="width:100%;min-height:80px;padding:12px;background:#09090b;border:1px solid #27272a;border-radius:10px;color:#fafafa;font-family:Inter,sans-serif;font-size:14px;resize:vertical;outline:none;margin-bottom:12px;" placeholder="Missing feature? Wrong price? Anything helps..."></textarea>
+      <div style="display:flex;gap:12px;justify-content:flex-end;">
+        <button onclick="closeExitModal()" style="padding:10px 20px;background:transparent;color:#71717a;font-size:14px;font-family:inherit;border:none;cursor:pointer;">No thanks</button>
+        <button onclick="submitExitFeedback()" style="padding:10px 20px;background:#8b5cf6;color:white;font-size:14px;font-weight:600;font-family:inherit;border:none;border-radius:8px;cursor:pointer;">Send</button>
       </div>
     </div>
   </div>
 
   <script>
-    // Fetch founding spot data
+    // Founding spot counter
     (async function() {
       try {
-        const res = await fetch('/api/billing/founding');
-        const data = await res.json();
-        const remaining = data.spots_remaining || 0;
-        const claimed = data.spots_claimed || 0;
-        const total = data.spots_total || 100;
-        const pct = Math.round((claimed / total) * 100);
-
-        // Hero badge
-        document.getElementById('founding-badge').textContent =
-          remaining > 0 ? 'Founding 100 — ' + remaining + ' spots left' : 'Founding 100 — Sold out';
-
-        // Hero note
-        document.getElementById('founding-spots').textContent = remaining + ' spots remaining';
-
-        // Pricing section
-        document.getElementById('founding-claimed').textContent = claimed + ' claimed';
-        document.getElementById('founding-left').textContent = remaining + ' left';
-        document.getElementById('founding-fill').style.width = pct + '%';
-
+        var res = await fetch('/api/billing/founding');
+        var data = await res.json();
+        var remaining = data.spots_remaining || 0;
+        var claimed = data.spots_claimed || 0;
+        var total = data.spots_total || 100;
+        var pct = Math.round((claimed / total) * 100);
+        var b = document.getElementById('founding-badge');
+        if (b) b.textContent = remaining > 0 ? 'Founding 100 \u2014 ' + remaining + ' spots left' : 'Founding 100 \u2014 Sold out';
+        var s = document.getElementById('founding-spots');
+        if (s) s.textContent = remaining + ' spots remaining';
+        var c = document.getElementById('founding-claimed');
+        if (c) c.textContent = claimed + ' claimed \u00b7 ' + remaining + ' left';
+        var f = document.getElementById('founding-fill');
+        if (f) f.style.width = pct + '%';
+        var l = document.getElementById('founding-left');
+        if (l) l.textContent = '25% off forever for the first 100 Pro subscribers';
         if (remaining <= 0) {
-          document.getElementById('founding-cta').style.display = 'none';
-          document.getElementById('pricing-old').style.display = 'none';
-          document.getElementById('pricing-amount').textContent = '$12';
-          document.getElementById('pricing-founding').textContent = 'Founding 100 sold out';
-          document.getElementById('pricing-founding').style.color = 'var(--text-muted)';
-          document.getElementById('pricing-cta').textContent = 'Get Pro';
-          document.getElementById('founding-bar').style.display = 'none';
-          document.getElementById('pricing-popular').textContent = 'MOST POPULAR';
+          var fc = document.getElementById('founding-cta');
+          if (fc) fc.style.display = 'none';
         }
       } catch (e) {
-        document.getElementById('founding-spots').textContent = 'Limited spots remaining';
+        var s2 = document.getElementById('founding-spots');
+        if (s2) s2.textContent = 'Limited spots remaining';
       }
     })();
 
-    // Feedback form submission
+    // Feedback form
     async function submitFeedback(e) {
       e.preventDefault();
       var btn = document.getElementById('feedback-btn');
       var msg = document.getElementById('feedback-msg').value.trim();
       var email = document.getElementById('feedback-email').value.trim();
       if (!msg) return;
-      btn.disabled = true;
-      btn.textContent = 'Sending...';
+      btn.disabled = true; btn.textContent = 'Sending...';
       try {
         var res = await fetch('/api/feedback', {
           method: 'POST',
@@ -4845,17 +3712,11 @@ function getLandingPageHTML(nonce = '') {
         if (res.ok) {
           document.getElementById('feedback-form').style.display = 'none';
           document.getElementById('feedback-success').style.display = 'block';
-        } else {
-          btn.disabled = false;
-          btn.textContent = 'Send Feedback';
-        }
-      } catch (err) {
-        btn.disabled = false;
-        btn.textContent = 'Send Feedback';
-      }
+        } else { btn.disabled = false; btn.textContent = 'Send feedback'; }
+      } catch (err) { btn.disabled = false; btn.textContent = 'Send feedback'; }
     }
 
-    // Exit intent (desktop only, fires once after 10s)
+    // Exit intent (desktop only)
     (function() {
       if ('ontouchstart' in window) return;
       if (localStorage.getItem('utg_exit_shown')) return;
@@ -4865,31 +3726,23 @@ function getLandingPageHTML(nonce = '') {
         if (e.clientY > 0 || !ready) return;
         if (localStorage.getItem('utg_exit_shown')) return;
         localStorage.setItem('utg_exit_shown', '1');
-        document.getElementById('exit-modal').classList.add('active');
+        document.getElementById('exit-modal').style.display = 'flex';
       });
     })();
 
-    function closeExitModal() {
-      document.getElementById('exit-modal').classList.remove('active');
-    }
+    function closeExitModal() { document.getElementById('exit-modal').style.display = 'none'; }
 
     async function submitExitFeedback() {
       var msg = document.getElementById('exit-msg').value.trim();
       if (!msg) { closeExitModal(); return; }
-      try {
-        await fetch('/api/feedback', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: msg, source: 'exit_intent' })
-        });
-      } catch (e) {}
+      try { await fetch('/api/feedback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: msg, source: 'exit_intent' }) }); } catch(e) {}
       closeExitModal();
     }
   </script>
 </body>
-</html>`;
+</html>
+`;
 }
-
 
 function get404HTML(code) {
   const safeCode = escapeHtml(String(code || ''));
