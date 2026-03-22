@@ -3198,8 +3198,16 @@ function getLandingPageHTML(nonce = '') {
       --accent-purple: #a855f7;
       --accent-violet: #8b5cf6;
       --accent-green: #4ade80;
+      --accent-blue: #38bdf8;
+      --accent-amber: #fbbf24;
+      --accent-rose: #fb7185;
       --border-color: #27272a;
       --gradient-primary: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+      --gradient-blue: linear-gradient(135deg, #3b82f6 0%, #38bdf8 100%);
+      --gradient-amber: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%);
+      --gradient-rose: linear-gradient(135deg, #e11d48 0%, #fb7185 100%);
+      --gradient-green: linear-gradient(135deg, #059669 0%, #34d399 100%);
+      --gradient-cyan: linear-gradient(135deg, #0891b2 0%, #22d3ee 100%);
     }
 
     body {
@@ -3364,19 +3372,19 @@ function getLandingPageHTML(nonce = '') {
       align-items: center;
       gap: 8px;
       padding: 6px 14px;
-      background: rgba(74, 222, 128, 0.1);
-      border: 1px solid rgba(74, 222, 128, 0.2);
+      background: rgba(139, 92, 246, 0.1);
+      border: 1px solid rgba(139, 92, 246, 0.2);
       border-radius: 100px;
       font-size: 13px;
       font-weight: 500;
-      color: var(--accent-green);
+      color: var(--accent-violet);
       margin-bottom: 24px;
     }
 
     .hero-badge-dot {
       width: 6px;
       height: 6px;
-      background: var(--accent-green);
+      background: var(--accent-violet);
       border-radius: 50%;
       animation: pulse 2s infinite;
     }
@@ -3449,20 +3457,20 @@ function getLandingPageHTML(nonce = '') {
 
     .btn-founding {
       background: transparent;
-      color: var(--accent-green);
-      border: 1px solid rgba(74, 222, 128, 0.3);
+      color: var(--accent-violet);
+      border: 1px solid rgba(139, 92, 246, 0.3);
       padding: 14px 24px;
       font-size: 14px;
     }
 
-    .btn-founding:hover { background: rgba(74, 222, 128, 0.05); border-color: var(--accent-green); }
+    .btn-founding:hover { background: rgba(139, 92, 246, 0.05); border-color: var(--accent-violet); }
 
     .founding-hero-note {
       font-size: 13px;
       color: var(--text-muted);
     }
 
-    .founding-hero-note span { color: var(--accent-green); font-weight: 600; }
+    .founding-hero-note span { color: var(--accent-violet); font-weight: 600; }
 
     /* Dashboard mockup */
     .hero-visual { position: relative; }
@@ -3657,14 +3665,27 @@ function getLandingPageHTML(nonce = '') {
     .proof-item {
       display: flex;
       align-items: center;
-      gap: 10px;
-      color: var(--text-muted);
+      gap: 12px;
+      color: var(--text-secondary);
       font-size: 14px;
       font-weight: 500;
     }
 
-    .proof-item svg { width: 20px; height: 20px; color: var(--accent-violet); flex-shrink: 0; }
-    .proof-item strong { color: var(--text-secondary); }
+    .proof-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .proof-icon svg { width: 20px; height: 20px; color: white; }
+    .proof-icon--purple { background: var(--gradient-primary); box-shadow: 0 4px 16px rgba(99, 102, 241, 0.25); }
+    .proof-icon--blue { background: var(--gradient-blue); box-shadow: 0 4px 16px rgba(56, 189, 248, 0.25); }
+    .proof-icon--amber { background: var(--gradient-amber); box-shadow: 0 4px 16px rgba(245, 158, 11, 0.25); }
+    .proof-icon--rose { background: var(--gradient-rose); box-shadow: 0 4px 16px rgba(251, 113, 133, 0.25); }
+    .proof-item strong { color: var(--text-primary); }
 
     /* Section styles */
     .section {
@@ -3723,28 +3744,58 @@ function getLandingPageHTML(nonce = '') {
       border-radius: 16px;
       padding: 28px;
       transition: all 0.3s;
+      position: relative;
+      overflow: hidden;
     }
 
     .section--alt .feature-card { background: var(--bg-tertiary); }
 
+    .feature-card::before {
+      content: '';
+      position: absolute;
+      top: -60px;
+      right: -60px;
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      opacity: 0.06;
+      transition: opacity 0.3s;
+    }
+
+    .feature-card:hover::before { opacity: 0.12; }
+
+    .feature-card:nth-child(1)::before { background: var(--accent-indigo); }
+    .feature-card:nth-child(2)::before { background: var(--accent-purple); }
+    .feature-card:nth-child(3)::before { background: var(--accent-blue); }
+    .feature-card:nth-child(4)::before { background: var(--accent-amber); }
+    .feature-card:nth-child(5)::before { background: var(--accent-rose); }
+    .feature-card:nth-child(6)::before { background: var(--accent-violet); }
+
     .feature-card:hover {
-      border-color: var(--accent-violet);
+      border-color: rgba(139, 92, 246, 0.4);
       transform: translateY(-4px);
       box-shadow: 0 20px 40px rgba(0,0,0,0.3);
     }
 
     .feature-icon {
-      width: 48px;
-      height: 48px;
-      background: var(--gradient-primary);
-      border-radius: 12px;
+      width: 56px;
+      height: 56px;
+      border-radius: 16px;
       display: flex;
       align-items: center;
       justify-content: center;
       margin-bottom: 20px;
+      position: relative;
     }
 
-    .feature-icon svg { width: 24px; height: 24px; color: white; }
+    .feature-icon svg { width: 26px; height: 26px; color: white; position: relative; z-index: 1; }
+
+    .feature-icon--indigo { background: var(--gradient-primary); box-shadow: 0 8px 24px rgba(99, 102, 241, 0.3); }
+    .feature-icon--purple { background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%); box-shadow: 0 8px 24px rgba(168, 85, 247, 0.3); }
+    .feature-icon--blue { background: var(--gradient-blue); box-shadow: 0 8px 24px rgba(56, 189, 248, 0.3); }
+    .feature-icon--amber { background: var(--gradient-amber); box-shadow: 0 8px 24px rgba(245, 158, 11, 0.3); }
+    .feature-icon--rose { background: var(--gradient-rose); box-shadow: 0 8px 24px rgba(251, 113, 133, 0.3); }
+    .feature-icon--cyan { background: var(--gradient-cyan); box-shadow: 0 8px 24px rgba(34, 211, 238, 0.3); }
     .feature-name { font-size: 18px; font-weight: 600; margin-bottom: 10px; color: var(--text-primary); }
     .feature-desc { font-size: 14px; color: var(--text-secondary); line-height: 1.6; }
 
@@ -3768,8 +3819,9 @@ function getLandingPageHTML(nonce = '') {
 
     .pricing-card--pro {
       border-color: var(--accent-violet);
-      box-shadow: 0 0 40px rgba(139, 92, 246, 0.15);
+      box-shadow: 0 0 60px rgba(139, 92, 246, 0.15), 0 0 120px rgba(139, 92, 246, 0.05);
       position: relative;
+      background: linear-gradient(180deg, rgba(139, 92, 246, 0.05) 0%, var(--bg-secondary) 40%);
     }
 
     .pricing-card-header {
@@ -3795,7 +3847,7 @@ function getLandingPageHTML(nonce = '') {
     .pricing-amount { font-size: 48px; font-weight: 700; line-height: 1; }
     .pricing-old { font-size: 20px; font-weight: 500; color: var(--text-muted); margin-right: 8px; text-decoration: line-through; }
     .pricing-period { font-size: 16px; color: var(--text-muted); margin-bottom: 8px; }
-    .pricing-founding { font-size: 14px; color: var(--accent-green); font-weight: 500; margin-bottom: 16px; }
+    .pricing-founding { font-size: 14px; color: var(--accent-violet); font-weight: 500; margin-bottom: 16px; }
 
     .pricing-features {
       list-style: none;
@@ -3814,7 +3866,7 @@ function getLandingPageHTML(nonce = '') {
       line-height: 1.5;
     }
 
-    .pricing-features li svg { color: var(--accent-green); flex-shrink: 0; margin-top: 2px; }
+    .pricing-features li svg { color: var(--accent-violet); flex-shrink: 0; margin-top: 2px; }
 
     .pricing-features li .sub { display: block; font-size: 13px; color: var(--text-muted); }
 
@@ -3897,8 +3949,8 @@ function getLandingPageHTML(nonce = '') {
     }
 
     .competitor strong { display: block; font-size: 20px; margin-bottom: 4px; }
-    .competitor--you { color: var(--accent-green); }
-    .competitor--you strong { color: var(--accent-green); }
+    .competitor--you { color: var(--accent-violet); }
+    .competitor--you strong { color: var(--accent-violet); }
     .competitor-vs { color: var(--text-muted); font-size: 13px; font-weight: 500; }
 
     /* How it works */
@@ -3977,7 +4029,7 @@ function getLandingPageHTML(nonce = '') {
       color: var(--text-secondary);
     }
 
-    .api-demo .cmd { color: var(--accent-green); }
+    .api-demo .cmd { color: var(--accent-blue); }
     .api-demo .flag { color: var(--accent-violet); }
     .api-demo .str { color: #fbbf24; }
     .api-demo .key { color: var(--accent-indigo); }
@@ -4050,10 +4102,10 @@ function getLandingPageHTML(nonce = '') {
     .feedback-success {
       display: none;
       padding: 16px;
-      background: rgba(74, 222, 128, 0.1);
-      border: 1px solid rgba(74, 222, 128, 0.2);
+      background: rgba(139, 92, 246, 0.1);
+      border: 1px solid rgba(139, 92, 246, 0.2);
       border-radius: 10px;
-      color: var(--accent-green);
+      color: var(--accent-violet);
       font-size: 14px;
       text-align: center;
     }
@@ -4322,19 +4374,27 @@ function getLandingPageHTML(nonce = '') {
   <div class="social-proof">
     <div class="social-proof-grid">
       <div class="proof-item">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        <div class="proof-icon proof-icon--purple">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        </div>
         <span>Built on <strong>Cloudflare Workers</strong></span>
       </div>
       <div class="proof-item">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <div class="proof-icon proof-icon--blue">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        </div>
         <span><strong>50ms</strong> redirects globally</span>
       </div>
       <div class="proof-item">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        <div class="proof-icon proof-icon--amber">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        </div>
         <span><strong>99.9%</strong> uptime</span>
       </div>
       <div class="proof-item">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        <div class="proof-icon proof-icon--rose">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        </div>
         <span><strong>Open API</strong> with keys</span>
       </div>
     </div>
@@ -4350,42 +4410,42 @@ function getLandingPageHTML(nonce = '') {
       </div>
       <div class="features-grid">
         <div class="feature-card">
-          <div class="feature-icon">
+          <div class="feature-icon feature-icon--indigo">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
           </div>
           <h3 class="feature-name">API-First</h3>
           <p class="feature-desc">Scoped API keys, full REST endpoints. Create, update, and manage links programmatically with cURL or any HTTP client.</p>
         </div>
         <div class="feature-card">
-          <div class="feature-icon">
+          <div class="feature-icon feature-icon--purple">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65S8.93 17.38 9 18v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>
           </div>
           <h3 class="feature-name">GitHub Actions</h3>
           <p class="feature-desc">Auto-update preview links on deploy. Push to a branch, your shortlink updates automatically. Zero manual work.</p>
         </div>
         <div class="feature-card">
-          <div class="feature-icon">
+          <div class="feature-icon feature-icon--blue">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
           </div>
           <h3 class="feature-name">Click Analytics</h3>
           <p class="feature-desc">Geo, device, browser, referrer — real-time. Know exactly where your traffic comes from and how links perform.</p>
         </div>
         <div class="feature-card">
-          <div class="feature-icon">
+          <div class="feature-icon feature-icon--amber">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/><path d="M7 7h.01"/></svg>
           </div>
           <h3 class="feature-name">Categories & Tags</h3>
           <p class="feature-desc">Organize like a dev, not a marketer. Unlimited categories, tags, and the command palette (Cmd+K) finds anything instantly.</p>
         </div>
         <div class="feature-card">
-          <div class="feature-icon">
+          <div class="feature-icon feature-icon--rose">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           </div>
           <h3 class="feature-name">Shared Collections</h3>
           <p class="feature-desc">Share a category as a read-only dashboard. Perfect for client-facing link pages with live stats.</p>
         </div>
         <div class="feature-card">
-          <div class="feature-icon">
+          <div class="feature-icon feature-icon--cyan">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
           </div>
           <h3 class="feature-name">Import / Export</h3>
