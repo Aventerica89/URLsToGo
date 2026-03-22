@@ -1789,6 +1789,31 @@ export default {
     }
 
 
+    // === FEEDBACK API ===
+
+    // POST /api/feedback — public feedback form submission (landing page + exit intent)
+    if (path === 'api/feedback' && request.method === 'POST') {
+      const rateLimit = await checkRateLimit(env, request.headers.get('CF-Connecting-IP') || 'unknown', 'api/feedback');
+      if (!rateLimit.allowed) return jsonResponse({ error: 'Rate limit exceeded' }, { status: 429 });
+      try {
+        const body = await request.json();
+        const message = (body.message || '').trim();
+        if (!message || message.length > 2000) {
+          return jsonResponse({ error: 'Message required (max 2000 chars)' }, { status: 400 });
+        }
+        const email = (body.email || '').trim().slice(0, 200) || null;
+        const source = body.source === 'exit_intent' ? 'exit_intent' : 'form';
+        const ua = (request.headers.get('User-Agent') || '').slice(0, 500);
+        await env.DB.prepare(
+          'INSERT INTO feedback (message, email, page, source, user_agent) VALUES (?, ?, ?, ?, ?)'
+        ).bind(message, email, 'landing', source, ua).run();
+        return jsonResponse({ success: true });
+      } catch (e) {
+        return jsonResponse({ error: 'Failed to submit feedback' }, { status: 500 });
+      }
+    }
+
+
     // === BILLING API ===
 
     // GET /api/billing/founding — founding 100 spot availability (no auth required for landing page)
@@ -3142,7 +3167,6 @@ function getAuthPageHTML(env, mode = 'login', nonce = '') {
 // Generate HTML for 404 page
 // Generate HTML for public landing page
 function getLandingPageHTML(nonce = '') {
-  // Reusable SVG icons to reduce duplication
   const LINK_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
 
   return `<!DOCTYPE html>
@@ -3150,12 +3174,16 @@ function getLandingPageHTML(nonce = '') {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>URLsToGo - Fast, Free URL Shortener</title>
-  <meta name="description" content="Shorten URLs instantly with URLsToGo. Lightning-fast, secure, and powered by Cloudflare's global edge network.">
+  <title>URLsToGo - Short Links Built for Developers</title>
+  <meta name="description" content="The developer's shortlink app. 500 links total, not per month. API-first, GitHub Actions integration, full analytics. Starting free.">
+  <meta property="og:title" content="URLsToGo - Short Links Built for Developers">
+  <meta property="og:description" content="500 links. Not per month — total. Edit, swap, redirect whenever. Starting free.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://urlstogo.cloud">
   <link rel="icon" href="${ADMIN_FAVICON}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -3169,6 +3197,7 @@ function getLandingPageHTML(nonce = '') {
       --accent-indigo: #6366f1;
       --accent-purple: #a855f7;
       --accent-violet: #8b5cf6;
+      --accent-green: #4ade80;
       --border-color: #27272a;
       --gradient-primary: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
     }
@@ -3212,7 +3241,6 @@ function getLandingPageHTML(nonce = '') {
       66% { transform: translate(-2%, -1%) rotate(-1deg); }
     }
 
-    /* Grid pattern overlay */
     .hero::after {
       content: '';
       position: absolute;
@@ -3298,10 +3326,7 @@ function getLandingPageHTML(nonce = '') {
       transition: all 0.2s;
     }
 
-    .nav-cta:hover {
-      opacity: 0.9;
-      transform: translateY(-1px);
-    }
+    .nav-cta:hover { opacity: 0.9; transform: translateY(-1px); }
 
     /* Hero content */
     .hero-content {
@@ -3325,22 +3350,13 @@ function getLandingPageHTML(nonce = '') {
     }
 
     @media (max-width: 968px) {
-      .hero-grid {
-        grid-template-columns: 1fr;
-        text-align: center;
-        gap: 48px;
-      }
+      .hero-grid { grid-template-columns: 1fr; text-align: center; gap: 48px; }
     }
 
-    .hero-text {
-      max-width: 560px;
-    }
+    .hero-text { max-width: 560px; }
 
     @media (max-width: 968px) {
-      .hero-text {
-        max-width: 100%;
-        margin: 0 auto;
-      }
+      .hero-text { max-width: 100%; margin: 0 auto; }
     }
 
     .hero-badge {
@@ -3348,19 +3364,19 @@ function getLandingPageHTML(nonce = '') {
       align-items: center;
       gap: 8px;
       padding: 6px 14px;
-      background: rgba(139, 92, 246, 0.1);
-      border: 1px solid rgba(139, 92, 246, 0.2);
+      background: rgba(74, 222, 128, 0.1);
+      border: 1px solid rgba(74, 222, 128, 0.2);
       border-radius: 100px;
       font-size: 13px;
       font-weight: 500;
-      color: var(--accent-violet);
+      color: var(--accent-green);
       margin-bottom: 24px;
     }
 
     .hero-badge-dot {
       width: 6px;
       height: 6px;
-      background: var(--accent-violet);
+      background: var(--accent-green);
       border-radius: 50%;
       animation: pulse 2s infinite;
     }
@@ -3371,7 +3387,7 @@ function getLandingPageHTML(nonce = '') {
     }
 
     .hero-title {
-      font-size: clamp(40px, 5vw, 60px);
+      font-size: clamp(36px, 5vw, 56px);
       font-weight: 700;
       line-height: 1.1;
       margin-bottom: 24px;
@@ -3394,16 +3410,19 @@ function getLandingPageHTML(nonce = '') {
 
     .hero-actions {
       display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+
+    .hero-actions-row {
+      display: flex;
       align-items: center;
       gap: 16px;
-      margin-bottom: 48px;
     }
 
     @media (max-width: 968px) {
-      .hero-actions {
-        justify-content: center;
-        flex-wrap: wrap;
-      }
+      .hero-actions-row { justify-content: center; flex-wrap: wrap; }
     }
 
     .btn {
@@ -3426,63 +3445,27 @@ function getLandingPageHTML(nonce = '') {
       box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3);
     }
 
-    .btn-primary:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 30px rgba(99, 102, 241, 0.4);
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 30px rgba(99, 102, 241, 0.4); }
+
+    .btn-founding {
+      background: transparent;
+      color: var(--accent-green);
+      border: 1px solid rgba(74, 222, 128, 0.3);
+      padding: 14px 24px;
+      font-size: 14px;
     }
 
-    .btn-secondary {
-      background: var(--bg-secondary);
-      color: var(--text-primary);
-      border: 1px solid var(--border-color);
-    }
+    .btn-founding:hover { background: rgba(74, 222, 128, 0.05); border-color: var(--accent-green); }
 
-    .btn-secondary:hover {
-      background: var(--bg-tertiary);
-      border-color: var(--text-muted);
-    }
-
-    /* Stats */
-    .hero-stats {
-      display: flex;
-      gap: 40px;
-    }
-
-    @media (max-width: 968px) {
-      .hero-stats {
-        justify-content: center;
-      }
-    }
-
-    .stat {
-      text-align: left;
-    }
-
-    @media (max-width: 968px) {
-      .stat {
-        text-align: center;
-      }
-    }
-
-    .stat-value {
-      font-size: 28px;
-      font-weight: 700;
-      background: var(--gradient-primary);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-
-    .stat-label {
+    .founding-hero-note {
       font-size: 13px;
       color: var(--text-muted);
-      font-weight: 500;
     }
 
+    .founding-hero-note span { color: var(--accent-green); font-weight: 600; }
+
     /* Dashboard mockup */
-    .hero-visual {
-      position: relative;
-    }
+    .hero-visual { position: relative; }
 
     .dashboard-mockup {
       position: relative;
@@ -3498,19 +3481,11 @@ function getLandingPageHTML(nonce = '') {
       transition: transform 0.5s ease;
     }
 
-    .dashboard-mockup:hover {
-      transform: perspective(1000px) rotateY(-2deg) rotateX(1deg);
-    }
+    .dashboard-mockup:hover { transform: perspective(1000px) rotateY(-2deg) rotateX(1deg); }
 
     @media (max-width: 968px) {
-      .dashboard-mockup {
-        transform: none;
-        max-width: 500px;
-        margin: 0 auto;
-      }
-      .dashboard-mockup:hover {
-        transform: none;
-      }
+      .dashboard-mockup { transform: none; max-width: 500px; margin: 0 auto; }
+      .dashboard-mockup:hover { transform: none; }
     }
 
     .mockup-header {
@@ -3522,12 +3497,7 @@ function getLandingPageHTML(nonce = '') {
       border-bottom: 1px solid var(--border-color);
     }
 
-    .mockup-dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-    }
-
+    .mockup-dot { width: 10px; height: 10px; border-radius: 50%; }
     .mockup-dot.red { background: #ff5f57; }
     .mockup-dot.yellow { background: #febc2e; }
     .mockup-dot.green { background: #28c840; }
@@ -3543,14 +3513,9 @@ function getLandingPageHTML(nonce = '') {
       margin-left: 16px;
     }
 
-    .mockup-content {
-      padding: 20px;
-    }
+    .mockup-content { padding: 20px; }
 
-    .mockup-sidebar {
-      display: flex;
-      gap: 20px;
-    }
+    .mockup-sidebar { display: flex; gap: 20px; }
 
     .mockup-nav {
       width: 180px;
@@ -3574,20 +3539,9 @@ function getLandingPageHTML(nonce = '') {
       color: var(--accent-violet);
     }
 
-    .mockup-nav-icon {
-      width: 18px;
-      height: 18px;
-      border-radius: 4px;
-      background: var(--bg-tertiary);
-    }
-
-    .mockup-nav-item.active .mockup-nav-icon {
-      background: var(--accent-violet);
-    }
-
-    .mockup-main {
-      flex: 1;
-    }
+    .mockup-nav-icon { width: 18px; height: 18px; border-radius: 4px; background: var(--bg-tertiary); }
+    .mockup-nav-item.active .mockup-nav-icon { background: var(--accent-violet); }
+    .mockup-main { flex: 1; }
 
     .mockup-card {
       background: var(--bg-primary);
@@ -3604,11 +3558,7 @@ function getLandingPageHTML(nonce = '') {
       margin-bottom: 16px;
     }
 
-    .mockup-card-title {
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--text-primary);
-    }
+    .mockup-card-title { font-size: 14px; font-weight: 600; color: var(--text-primary); }
 
     .mockup-badge {
       font-size: 11px;
@@ -3619,11 +3569,7 @@ function getLandingPageHTML(nonce = '') {
       font-weight: 500;
     }
 
-    .mockup-links {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
+    .mockup-links { display: flex; flex-direction: column; gap: 10px; }
 
     .mockup-link {
       display: flex;
@@ -3634,11 +3580,7 @@ function getLandingPageHTML(nonce = '') {
       border-radius: 8px;
     }
 
-    .mockup-link-left {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
+    .mockup-link-left { display: flex; align-items: center; gap: 12px; }
 
     .mockup-link-icon {
       width: 32px;
@@ -3650,30 +3592,11 @@ function getLandingPageHTML(nonce = '') {
       justify-content: center;
     }
 
-    .mockup-link-icon svg {
-      width: 16px;
-      height: 16px;
-      color: white;
-    }
+    .mockup-link-icon svg { width: 16px; height: 16px; color: white; }
+    .mockup-link-text { font-size: 13px; color: var(--text-primary); font-weight: 500; }
+    .mockup-link-url { font-size: 11px; color: var(--text-muted); }
+    .mockup-link-clicks { font-size: 12px; color: var(--accent-violet); font-weight: 600; }
 
-    .mockup-link-text {
-      font-size: 13px;
-      color: var(--text-primary);
-      font-weight: 500;
-    }
-
-    .mockup-link-url {
-      font-size: 11px;
-      color: var(--text-muted);
-    }
-
-    .mockup-link-clicks {
-      font-size: 12px;
-      color: var(--accent-violet);
-      font-weight: 600;
-    }
-
-    /* Floating elements */
     .floating-card {
       position: absolute;
       background: var(--bg-secondary);
@@ -3689,29 +3612,12 @@ function getLandingPageHTML(nonce = '') {
       50% { transform: translateY(-10px); }
     }
 
-    .floating-card-1 {
-      top: -20px;
-      right: -30px;
-      animation-delay: -2s;
-    }
+    .floating-card-1 { top: -20px; right: -30px; animation-delay: -2s; }
+    .floating-card-2 { bottom: 40px; left: -40px; animation-delay: -4s; }
 
-    .floating-card-2 {
-      bottom: 40px;
-      left: -40px;
-      animation-delay: -4s;
-    }
+    @media (max-width: 968px) { .floating-card { display: none; } }
 
-    @media (max-width: 968px) {
-      .floating-card {
-        display: none;
-      }
-    }
-
-    .floating-stat {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
+    .floating-stat { display: flex; align-items: center; gap: 10px; }
 
     .floating-stat-icon {
       width: 36px;
@@ -3724,57 +3630,90 @@ function getLandingPageHTML(nonce = '') {
       color: #28c840;
     }
 
-    .floating-stat-icon--indigo {
-      background: rgba(99, 102, 241, 0.1);
-      color: #6366f1;
-    }
+    .floating-stat-icon--indigo { background: rgba(99, 102, 241, 0.1); color: #6366f1; }
+    .floating-stat-value { font-size: 16px; font-weight: 700; color: var(--text-primary); }
+    .floating-stat-label { font-size: 11px; color: var(--text-muted); }
 
-    .floating-stat-value {
-      font-size: 16px;
-      font-weight: 700;
-      color: var(--text-primary);
-    }
-
-    .floating-stat-label {
-      font-size: 11px;
-      color: var(--text-muted);
-    }
-
-    /* Features section */
-    .features-section {
+    /* Social proof bar */
+    .social-proof {
       position: relative;
       z-index: 10;
-      padding: 80px 24px;
-      background: var(--bg-secondary);
+      padding: 32px 24px;
       border-top: 1px solid var(--border-color);
+      border-bottom: 1px solid var(--border-color);
+      background: var(--bg-secondary);
     }
 
-    .features-container {
+    .social-proof-grid {
       max-width: 1200px;
       margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 48px;
+      flex-wrap: wrap;
     }
 
-    .features-header {
+    .proof-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text-muted);
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .proof-item svg { width: 20px; height: 20px; color: var(--accent-violet); flex-shrink: 0; }
+    .proof-item strong { color: var(--text-secondary); }
+
+    /* Section styles */
+    .section {
+      position: relative;
+      z-index: 10;
+      padding: 100px 24px;
+    }
+
+    .section--alt { background: var(--bg-secondary); border-top: 1px solid var(--border-color); }
+
+    .section-container { max-width: 1200px; margin: 0 auto; }
+
+    .section-header {
       text-align: center;
       margin-bottom: 60px;
     }
 
-    .features-title {
-      font-size: 36px;
-      font-weight: 700;
-      margin-bottom: 16px;
+    .section-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+      background: rgba(99, 102, 241, 0.1);
+      border: 1px solid rgba(99, 102, 241, 0.2);
+      border-radius: 100px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--accent-indigo);
+      margin-bottom: 20px;
     }
 
-    .features-subtitle {
+    .section-title {
+      font-size: 40px;
+      font-weight: 700;
+      margin-bottom: 16px;
+      letter-spacing: -0.02em;
+    }
+
+    .section-subtitle {
       font-size: 18px;
       color: var(--text-secondary);
       max-width: 600px;
       margin: 0 auto;
     }
 
+    /* Features grid */
     .features-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
       gap: 24px;
     }
 
@@ -3785,6 +3724,8 @@ function getLandingPageHTML(nonce = '') {
       padding: 28px;
       transition: all 0.3s;
     }
+
+    .section--alt .feature-card { background: var(--bg-tertiary); }
 
     .feature-card:hover {
       border-color: var(--accent-violet);
@@ -3803,162 +3744,192 @@ function getLandingPageHTML(nonce = '') {
       margin-bottom: 20px;
     }
 
-    .feature-icon svg {
-      width: 24px;
-      height: 24px;
-      color: white;
+    .feature-icon svg { width: 24px; height: 24px; color: white; }
+    .feature-name { font-size: 18px; font-weight: 600; margin-bottom: 10px; color: var(--text-primary); }
+    .feature-desc { font-size: 14px; color: var(--text-secondary); line-height: 1.6; }
+
+    /* Pricing section */
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      max-width: 800px;
+      margin: 0 auto 48px;
     }
 
-    .feature-name {
-      font-size: 18px;
+    @media (max-width: 700px) { .pricing-grid { grid-template-columns: 1fr; } }
+
+    .pricing-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 32px;
+    }
+
+    .pricing-card--pro {
+      border-color: var(--accent-violet);
+      box-shadow: 0 0 40px rgba(139, 92, 246, 0.15);
+      position: relative;
+    }
+
+    .pricing-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .pricing-plan { font-size: 24px; font-weight: 600; }
+
+    .pricing-popular {
+      font-size: 11px;
       font-weight: 600;
-      margin-bottom: 10px;
+      letter-spacing: 0.4px;
+      color: var(--accent-violet);
+      border: 1px solid var(--accent-violet);
+      border-radius: 999px;
+      padding: 4px 12px;
+    }
+
+    .pricing-price { margin-bottom: 8px; display: flex; align-items: flex-end; gap: 4px; }
+    .pricing-amount { font-size: 48px; font-weight: 700; line-height: 1; }
+    .pricing-old { font-size: 20px; font-weight: 500; color: var(--text-muted); margin-right: 8px; text-decoration: line-through; }
+    .pricing-period { font-size: 16px; color: var(--text-muted); margin-bottom: 8px; }
+    .pricing-founding { font-size: 14px; color: var(--accent-green); font-weight: 500; margin-bottom: 16px; }
+
+    .pricing-features {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .pricing-features li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    .pricing-features li svg { color: var(--accent-green); flex-shrink: 0; margin-top: 2px; }
+
+    .pricing-features li .sub { display: block; font-size: 13px; color: var(--text-muted); }
+
+    .pricing-btn {
+      display: block;
+      width: 100%;
+      text-align: center;
+      padding: 14px;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s;
+      border: none;
+      cursor: pointer;
+    }
+
+    .pricing-btn--free {
+      background: var(--bg-tertiary);
       color: var(--text-primary);
     }
 
-    .feature-desc {
-      font-size: 14px;
-      color: var(--text-secondary);
-      line-height: 1.6;
+    .pricing-btn--free:hover { background: #3f3f46; }
+
+    .pricing-btn--pro {
+      background: var(--accent-violet);
+      color: white;
     }
 
-    /* How It Works section */
-    .how-it-works {
-      position: relative;
-      z-index: 10;
-      padding: 100px 24px;
-      background: var(--bg-primary);
-      border-top: 1px solid var(--border-color);
-      overflow: hidden;
-    }
+    .pricing-btn--pro:hover { background: #7c3aed; }
 
-    .how-it-works::before {
-      content: '';
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 800px;
-      height: 800px;
-      background: radial-gradient(ellipse at center, rgba(139, 92, 246, 0.08) 0%, transparent 70%);
-      pointer-events: none;
-    }
-
-    .how-it-works-container {
-      max-width: 1200px;
-      margin: 0 auto;
-      position: relative;
-    }
-
-    .how-it-works-header {
-      text-align: center;
-      margin-bottom: 80px;
-    }
-
-    .how-it-works-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 16px;
-      background: rgba(99, 102, 241, 0.1);
-      border: 1px solid rgba(99, 102, 241, 0.2);
-      border-radius: 100px;
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--accent-indigo);
+    /* Founding spots bar */
+    .founding-bar {
       margin-bottom: 20px;
     }
 
-    .how-it-works-title {
-      font-size: 40px;
-      font-weight: 700;
-      margin-bottom: 16px;
-      letter-spacing: -0.02em;
+    .founding-bar-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      margin-bottom: 8px;
     }
 
-    .how-it-works-subtitle {
-      font-size: 18px;
-      color: var(--text-secondary);
-      max-width: 500px;
+    .founding-bar-labels span:first-child { color: var(--text-secondary); }
+    .founding-bar-labels span:last-child { color: var(--text-muted); }
+
+    .founding-bar-track {
+      height: 8px;
+      background: var(--bg-primary);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .founding-bar-fill {
+      height: 100%;
+      background: var(--accent-green);
+      border-radius: 999px;
+      transition: width 0.6s ease;
+    }
+
+    /* Competitor comparison */
+    .competitor-row {
+      max-width: 800px;
       margin: 0 auto;
-    }
-
-    .steps-container {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 24px;
-      position: relative;
-    }
-
-    @media (max-width: 868px) {
-      .steps-container {
-        grid-template-columns: 1fr;
-        max-width: 400px;
-        margin: 0 auto;
-      }
-    }
-
-    /* Connecting line between steps */
-    .steps-line {
-      position: absolute;
-      top: 60px;
-      left: calc(16.67% + 40px);
-      right: calc(16.67% + 40px);
-      height: 2px;
-      background: linear-gradient(90deg, var(--accent-indigo), var(--accent-purple), var(--accent-violet));
-      opacity: 0.3;
-    }
-
-    @media (max-width: 868px) {
-      .steps-line {
-        display: none;
-      }
-    }
-
-    .step-card {
-      position: relative;
-      text-align: center;
-      padding: 32px 24px;
-    }
-
-    .step-number-wrapper {
-      position: relative;
-      width: 80px;
-      height: 80px;
-      margin: 0 auto 28px;
-    }
-
-    .step-number-bg {
-      position: absolute;
-      inset: 0;
-      background: var(--gradient-primary);
-      border-radius: 20px;
-      opacity: 0.1;
-      transform: rotate(6deg);
-      transition: all 0.3s;
-    }
-
-    .step-card:hover .step-number-bg {
-      transform: rotate(0deg);
-      opacity: 0.2;
-    }
-
-    .step-number {
-      position: relative;
-      width: 80px;
-      height: 80px;
-      background: var(--bg-secondary);
-      border: 2px solid var(--border-color);
-      border-radius: 20px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 32px;
+      gap: 32px;
+      flex-wrap: wrap;
+      padding: 24px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+    }
+
+    .competitor {
+      text-align: center;
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+
+    .competitor strong { display: block; font-size: 20px; margin-bottom: 4px; }
+    .competitor--you { color: var(--accent-green); }
+    .competitor--you strong { color: var(--accent-green); }
+    .competitor-vs { color: var(--text-muted); font-size: 13px; font-weight: 500; }
+
+    /* How it works */
+    .steps-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+    }
+
+    @media (max-width: 768px) {
+      .steps-grid { grid-template-columns: 1fr; max-width: 400px; margin: 0 auto; }
+    }
+
+    .step-card { text-align: center; padding: 32px 24px; }
+
+    .step-number {
+      width: 64px;
+      height: 64px;
+      background: var(--bg-secondary);
+      border: 2px solid var(--border-color);
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
       font-weight: 700;
       background: var(--gradient-primary);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
+      margin: 0 auto 20px;
       transition: all 0.3s;
     }
 
@@ -3967,196 +3938,238 @@ function getLandingPageHTML(nonce = '') {
       box-shadow: 0 0 30px rgba(139, 92, 246, 0.2);
     }
 
-    .step-icon {
-      position: absolute;
-      bottom: -8px;
-      right: -8px;
-      width: 36px;
-      height: 36px;
-      background: var(--gradient-primary);
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
-    }
+    .step-title { font-size: 20px; font-weight: 600; margin-bottom: 12px; }
+    .step-desc { font-size: 15px; color: var(--text-secondary); line-height: 1.6; max-width: 280px; margin: 0 auto; }
 
-    .step-icon svg {
-      width: 18px;
-      height: 18px;
-      color: white;
-    }
-
-    .step-title {
-      font-size: 20px;
-      font-weight: 600;
-      margin-bottom: 12px;
-      color: var(--text-primary);
-    }
-
-    .step-description {
-      font-size: 15px;
-      color: var(--text-secondary);
-      line-height: 1.6;
-      max-width: 280px;
+    /* API demo */
+    .api-demo {
+      max-width: 700px;
       margin: 0 auto;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      overflow: hidden;
     }
 
-    /* Animated arrow between steps on desktop */
-    .step-arrow {
-      display: none;
-    }
-
-    @media (min-width: 869px) {
-      .step-arrow {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        position: absolute;
-        top: 52px;
-        width: 32px;
-        height: 32px;
-        color: var(--accent-violet);
-        animation: arrowPulse 2s ease-in-out infinite;
-      }
-
-      .step-arrow-1 {
-        left: calc(33.33% - 16px);
-      }
-
-      .step-arrow-2 {
-        left: calc(66.67% - 16px);
-      }
-
-      @keyframes arrowPulse {
-        0%, 100% { opacity: 0.5; transform: translateX(0); }
-        50% { opacity: 1; transform: translateX(4px); }
-      }
-    }
-
-    /* Footer */
-    .footer {
-      position: relative;
-      z-index: 10;
-      padding: 40px 24px;
-      border-top: 1px solid var(--border-color);
-      text-align: center;
-    }
-
-    .footer-content {
-      max-width: 1200px;
-      margin: 0 auto;
+    .api-demo-header {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-    }
-
-    @media (max-width: 640px) {
-      .footer-content {
-        flex-direction: column;
-        gap: 16px;
-      }
-    }
-
-    .footer-brand {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      color: var(--text-secondary);
-      font-size: 14px;
-      text-decoration: none;
-      transition: color 0.2s;
-    }
-
-    .footer-brand:hover {
-      color: var(--text-primary);
-    }
-
-    .footer-logo {
-      width: 24px;
-      height: 24px;
-      background: var(--gradient-primary);
-      border-radius: 6px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .footer-logo svg {
-      width: 14px;
-      height: 14px;
-      color: white;
-    }
-
-    .footer-text {
-      color: var(--text-muted);
+      gap: 8px;
+      padding: 12px 16px;
+      background: var(--bg-primary);
+      border-bottom: 1px solid var(--border-color);
       font-size: 13px;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--text-muted);
     }
 
-    /* Waitlist form */
-    .waitlist-form {
-      display: flex;
-      gap: 10px;
-      margin-bottom: 16px;
+    .api-demo-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .api-demo-dot.r { background: #ff5f57; }
+    .api-demo-dot.y { background: #febc2e; }
+    .api-demo-dot.g { background: #28c840; }
+
+    .api-demo pre {
+      padding: 24px;
+      overflow-x: auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      line-height: 1.7;
+      color: var(--text-secondary);
     }
 
-    @media (max-width: 520px) {
-      .waitlist-form { flex-direction: column; }
+    .api-demo .cmd { color: var(--accent-green); }
+    .api-demo .flag { color: var(--accent-violet); }
+    .api-demo .str { color: #fbbf24; }
+    .api-demo .key { color: var(--accent-indigo); }
+    .api-demo .comment { color: var(--text-muted); }
+
+    /* Feedback section */
+    .feedback-form-container {
+      max-width: 600px;
+      margin: 0 auto;
     }
 
-    .waitlist-input {
-      flex: 1;
-      padding: 14px 18px;
-      background: rgba(255,255,255,0.06);
-      border: 1px solid rgba(255,255,255,0.12);
-      border-radius: 10px;
+    .feedback-textarea {
+      width: 100%;
+      min-height: 120px;
+      padding: 16px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
       color: var(--text-primary);
-      font-size: 15px;
       font-family: inherit;
+      font-size: 15px;
+      resize: vertical;
       outline: none;
       transition: border-color 0.2s;
-      min-width: 0;
+      margin-bottom: 12px;
     }
 
-    .waitlist-input::placeholder { color: var(--text-muted); }
-    .waitlist-input:focus { border-color: var(--accent-violet); }
+    .feedback-textarea::placeholder { color: var(--text-muted); }
+    .feedback-textarea:focus { border-color: var(--accent-violet); }
 
-    .waitlist-btn {
-      padding: 14px 24px;
-      background: var(--gradient-primary);
+    .feedback-row {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .feedback-email {
+      flex: 1;
+      padding: 12px 16px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      color: var(--text-primary);
+      font-family: inherit;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .feedback-email::placeholder { color: var(--text-muted); }
+    .feedback-email:focus { border-color: var(--accent-violet); }
+
+    .feedback-submit {
+      padding: 12px 24px;
+      background: var(--accent-violet);
       color: white;
-      font-size: 15px;
+      font-size: 14px;
       font-weight: 600;
       font-family: inherit;
       border: none;
       border-radius: 10px;
       cursor: pointer;
       white-space: nowrap;
-      box-shadow: 0 4px 20px rgba(99,102,241,0.3);
       transition: all 0.2s;
     }
 
-    .waitlist-btn:hover { opacity: 0.9; transform: translateY(-1px); }
-    .waitlist-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+    .feedback-submit:hover { background: #7c3aed; }
+    .feedback-submit:disabled { opacity: 0.6; cursor: not-allowed; }
 
-    .waitlist-meta {
-      font-size: 13px;
-      color: var(--text-muted);
+    .feedback-success {
+      display: none;
+      padding: 16px;
+      background: rgba(74, 222, 128, 0.1);
+      border: 1px solid rgba(74, 222, 128, 0.2);
+      border-radius: 10px;
+      color: var(--accent-green);
+      font-size: 14px;
+      text-align: center;
     }
 
-    .waitlist-meta a { color: var(--accent-violet); text-decoration: none; }
-    .waitlist-meta a:hover { text-decoration: underline; }
+    /* Footer */
+    .footer {
+      position: relative;
+      z-index: 10;
+      padding: 60px 24px 40px;
+      border-top: 1px solid var(--border-color);
+    }
 
-    .waitlist-success {
+    .footer-content {
+      max-width: 1200px;
+      margin: 0 auto;
+      text-align: center;
+    }
+
+    .footer-cta {
+      margin-bottom: 32px;
+    }
+
+    .footer-links {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      margin-bottom: 24px;
+    }
+
+    .footer-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 14px;
+      transition: color 0.2s;
+    }
+
+    .footer-links a:hover { color: var(--text-primary); }
+
+    .footer-credit {
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    .footer-credit a { color: var(--accent-violet); text-decoration: none; }
+
+    /* Exit intent modal */
+    .exit-modal {
       display: none;
-      padding: 16px 20px;
-      background: rgba(139,92,246,0.1);
-      border: 1px solid rgba(139,92,246,0.25);
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(4px);
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .exit-modal.active { display: flex; }
+
+    .exit-modal-content {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 32px;
+      max-width: 480px;
+      width: 100%;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+
+    .exit-modal h3 { font-size: 20px; font-weight: 600; margin-bottom: 8px; }
+    .exit-modal p { font-size: 14px; color: var(--text-secondary); margin-bottom: 16px; }
+
+    .exit-modal textarea {
+      width: 100%;
+      min-height: 80px;
+      padding: 12px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
       border-radius: 10px;
       color: var(--text-primary);
-      font-size: 15px;
-      margin-bottom: 16px;
+      font-family: inherit;
+      font-size: 14px;
+      resize: vertical;
+      outline: none;
+      margin-bottom: 12px;
     }
+
+    .exit-modal textarea:focus { border-color: var(--accent-violet); }
+
+    .exit-modal-actions { display: flex; gap: 12px; justify-content: flex-end; }
+
+    .exit-modal-dismiss {
+      padding: 10px 20px;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 14px;
+      font-family: inherit;
+      border: none;
+      cursor: pointer;
+    }
+
+    .exit-modal-submit {
+      padding: 10px 20px;
+      background: var(--accent-violet);
+      color: white;
+      font-size: 14px;
+      font-weight: 600;
+      font-family: inherit;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    .exit-modal-submit:hover { background: #7c3aed; }
   </style>
 </head>
 <body>
@@ -4164,15 +4177,14 @@ function getLandingPageHTML(nonce = '') {
     <!-- Navigation -->
     <nav class="nav">
       <a href="/" class="nav-brand">
-        <div class="nav-logo">
-          ${LINK_ICON}
-        </div>
+        <div class="nav-logo">${LINK_ICON}</div>
         <span class="nav-title">URLsToGo</span>
       </a>
       <div class="nav-links">
         <a href="#features" class="nav-link">Features</a>
-        <a href="#how-it-works" class="nav-link">How It Works</a>
-        <a href="/admin" class="nav-cta">Dashboard</a>
+        <a href="#pricing" class="nav-link">Pricing</a>
+        <a href="#api-demo" class="nav-link">API</a>
+        <a href="/admin" class="nav-cta">Sign In</a>
       </div>
     </nav>
 
@@ -4182,85 +4194,29 @@ function getLandingPageHTML(nonce = '') {
         <div class="hero-text">
           <div class="hero-badge">
             <span class="hero-badge-dot"></span>
-            Powered by Cloudflare Edge
+            <span id="founding-badge">Founding 100 — spots available</span>
           </div>
           <h1 class="hero-title">
-            Shorten URLs<br>
-            <span class="hero-title-gradient">at the speed of light</span>
+            Short links built<br>
+            <span class="hero-title-gradient">for developers</span>
           </h1>
           <p class="hero-description">
-            Create, manage, and track your shortened URLs with our lightning-fast platform.
-            Organize with categories and tags, get real-time analytics, and deploy globally on Cloudflare's edge network.
+            500 links. Not per month — total. Edit, swap, redirect whenever.
+            API-first with GitHub Actions integration and full click analytics.
           </p>
           <div class="hero-actions">
-            <div id="waitlist-success" class="waitlist-success">
-              You're on the list! We'll reach out with early access soon.
+            <div class="hero-actions-row">
+              <a href="/admin" class="btn btn-primary">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                Start free with Google
+              </a>
+              <a href="/admin#billing" class="btn btn-founding" id="founding-cta">
+                Join the Founding 100
+              </a>
             </div>
-            <form id="waitlist-form" class="waitlist-form" onsubmit="submitWaitlist(event)">
-              <input
-                id="waitlist-email"
-                class="waitlist-input"
-                type="email"
-                placeholder="your@email.com"
-                required
-                autocomplete="email"
-              >
-              <button type="submit" class="waitlist-btn" id="waitlist-btn">
-                Join Beta
-              </button>
-            </form>
-            <p class="waitlist-meta">
-              Free during early access &mdash; no credit card needed.
-              Already have access? <a href="/admin">Sign in</a>
+            <p class="founding-hero-note" id="founding-note">
+              <span id="founding-spots">Loading...</span> founding spots at <span>$9/mo forever</span> (normally $12)
             </p>
-          </div>
-          <script nonce="${nonce}">
-            async function submitWaitlist(e) {
-              e.preventDefault();
-              const email = document.getElementById('waitlist-email').value.trim();
-              const btn = document.getElementById('waitlist-btn');
-              const form = document.getElementById('waitlist-form');
-              const success = document.getElementById('waitlist-success');
-              btn.disabled = true;
-              btn.textContent = 'Joining...';
-              try {
-                const res = await fetch('/api/waitlist', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ email })
-                });
-                const data = await res.json();
-                if (res.ok || data.already_joined) {
-                  form.style.display = 'none';
-                  success.style.display = 'block';
-                  success.textContent = data.already_joined
-                    ? "You're already on the list! We'll be in touch soon."
-                    : "You're on the list! We'll reach out with early access soon.";
-                } else {
-                  btn.disabled = false;
-                  btn.textContent = 'Join Beta';
-                  alert(data.error || 'Something went wrong. Please try again.');
-                }
-              } catch {
-                btn.disabled = false;
-                btn.textContent = 'Join Beta';
-                alert('Network error. Please try again.');
-              }
-            }
-          </script>
-          <div class="hero-stats">
-            <div class="stat">
-              <div class="stat-value">&lt;50ms</div>
-              <div class="stat-label">Global Latency</div>
-            </div>
-            <div class="stat">
-              <div class="stat-value">300+</div>
-              <div class="stat-label">Edge Locations</div>
-            </div>
-            <div class="stat">
-              <div class="stat-value">99.9%</div>
-              <div class="stat-label">Uptime SLA</div>
-            </div>
           </div>
         </div>
 
@@ -4296,7 +4252,7 @@ function getLandingPageHTML(nonce = '') {
             </div>
           </div>
 
-          <!-- Dashboard mockup -->
+          <!-- Dashboard mockup (preserved) -->
           <div class="dashboard-mockup">
             <div class="mockup-header">
               <div class="mockup-dot red"></div>
@@ -4333,9 +4289,7 @@ function getLandingPageHTML(nonce = '') {
                     <div class="mockup-links">
                       <div class="mockup-link">
                         <div class="mockup-link-left">
-                          <div class="mockup-link-icon">
-                            ${LINK_ICON}
-                          </div>
+                          <div class="mockup-link-icon">${LINK_ICON}</div>
                           <div>
                             <div class="mockup-link-text">urlstogo.cloud/abc123</div>
                             <div class="mockup-link-url">github.com/project</div>
@@ -4345,9 +4299,7 @@ function getLandingPageHTML(nonce = '') {
                       </div>
                       <div class="mockup-link">
                         <div class="mockup-link-left">
-                          <div class="mockup-link-icon">
-                            ${LINK_ICON}
-                          </div>
+                          <div class="mockup-link-icon">${LINK_ICON}</div>
                           <div>
                             <div class="mockup-link-text">urlstogo.cloud/docs</div>
                             <div class="mockup-link-url">documentation.site</div>
@@ -4366,254 +4318,371 @@ function getLandingPageHTML(nonce = '') {
     </div>
   </div>
 
-  <!-- Features Section -->
-  <section id="features" class="features-section">
-    <div class="features-container">
-      <div class="features-header">
-        <h2 class="features-title">Everything you need</h2>
-        <p class="features-subtitle">
-          A complete URL management solution with powerful features built for speed and simplicity.
-        </p>
+  <!-- Section 2: Social Proof Bar -->
+  <div class="social-proof">
+    <div class="social-proof-grid">
+      <div class="proof-item">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        <span>Built on <strong>Cloudflare Workers</strong></span>
+      </div>
+      <div class="proof-item">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span><strong>50ms</strong> redirects globally</span>
+      </div>
+      <div class="proof-item">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        <span><strong>99.9%</strong> uptime</span>
+      </div>
+      <div class="proof-item">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        <span><strong>Open API</strong> with keys</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 3: Features Grid (Dev-Focused) -->
+  <section id="features" class="section section--alt">
+    <div class="section-container">
+      <div class="section-header">
+        <div class="section-badge">Developer-First</div>
+        <h2 class="section-title">Built for how you work</h2>
+        <p class="section-subtitle">Not another marketing link tracker. A shortlink app that fits into your dev workflow.</p>
       </div>
       <div class="features-grid">
         <div class="feature-card">
           <div class="feature-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-            </svg>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
           </div>
-          <h3 class="feature-name">Lightning Fast</h3>
-          <p class="feature-desc">
-            Redirects in under 50ms globally. Powered by Cloudflare's edge network spanning 300+ cities worldwide.
-          </p>
+          <h3 class="feature-name">API-First</h3>
+          <p class="feature-desc">Scoped API keys, full REST endpoints. Create, update, and manage links programmatically with cURL or any HTTP client.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
-              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-            </svg>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65S8.93 17.38 9 18v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>
           </div>
-          <h3 class="feature-name">Google Sign-In</h3>
-          <p class="feature-desc">
-            Sign in with Google — no password to manage. Your links are private to your account, protected by Cloudflare's edge.
-          </p>
+          <h3 class="feature-name">GitHub Actions</h3>
+          <p class="feature-desc">Auto-update preview links on deploy. Push to a branch, your shortlink updates automatically. Zero manual work.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M3 3v18h18"/>
-              <path d="m19 9-5 5-4-4-3 3"/>
-            </svg>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
           </div>
-          <h3 class="feature-name">Real-time Analytics</h3>
-          <p class="feature-desc">
-            Track clicks, referrers, and geographic data in real-time. Understand how your links perform.
-          </p>
+          <h3 class="feature-name">Click Analytics</h3>
+          <p class="feature-desc">Geo, device, browser, referrer — real-time. Know exactly where your traffic comes from and how links perform.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/>
-              <path d="M7 7h.01"/>
-            </svg>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/><path d="M7 7h.01"/></svg>
           </div>
           <h3 class="feature-name">Categories & Tags</h3>
-          <p class="feature-desc">
-            Organize your links with custom categories and tags. Find any link instantly with powerful search.
-          </p>
+          <p class="feature-desc">Organize like a dev, not a marketer. Unlimited categories, tags, and the command palette (Cmd+K) finds anything instantly.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65S8.93 17.38 9 18v4"/>
-              <path d="M9 18c-4.51 2-5-2-7-2"/>
-            </svg>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           </div>
-          <h3 class="feature-name">API Keys & CI/CD</h3>
-          <p class="feature-desc">
-            Programmatic access with secure API keys. Auto-update preview links from GitHub Actions.
-          </p>
+          <h3 class="feature-name">Shared Collections</h3>
+          <p class="feature-desc">Share a category as a read-only dashboard. Perfect for client-facing link pages with live stats.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
-              <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
-            </svg>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
           </div>
-          <h3 class="feature-name">Password Protection</h3>
-          <p class="feature-desc">
-            Protect sensitive links with password gates. Control who can access your shortened URLs.
-          </p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="10"/>
-              <polyline points="12 6 12 12 16 14"/>
-            </svg>
-          </div>
-          <h3 class="feature-name">Expiration & UTM</h3>
-          <p class="feature-desc">
-            Set auto-expiry dates for temporary links. Build UTM parameters with the built-in UTM builder.
-          </p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <rect width="5" height="5" x="3" y="3" rx="1"/>
-              <rect width="5" height="5" x="16" y="3" rx="1"/>
-              <rect width="5" height="5" x="3" y="16" rx="1"/>
-              <path d="M21 16h-3a2 2 0 0 0-2 2v3"/>
-              <path d="M21 21v.01"/>
-              <path d="M12 7v3a2 2 0 0 1-2 2H7"/>
-              <path d="M3 12h.01"/>
-              <path d="M12 3h.01"/>
-              <path d="M12 16v.01"/>
-              <path d="M16 12h1"/>
-              <path d="M21 12v.01"/>
-              <path d="M12 21v-1"/>
-            </svg>
-          </div>
-          <h3 class="feature-name">QR Codes & Export</h3>
-          <p class="feature-desc">
-            Generate QR codes for any link. Export and import all your data as JSON for full portability.
-          </p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="m21 21-6-6m6 6v-4.8m0 4.8h-4.8"/>
-              <path d="M3 16.2V21m0 0h4.8M3 21l6-6"/>
-              <path d="M21 7.8V3m0 0h-4.8M21 3l-6 6"/>
-              <path d="M3 7.8V3m0 0h4.8M3 3l6 6"/>
-            </svg>
-          </div>
-          <h3 class="feature-name">Bulk Operations & Search</h3>
-          <p class="feature-desc">
-            Select multiple links to tag, export, or delete in one action. Command palette search (⌘K) finds any link instantly.
-          </p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <rect width="14" height="20" x="5" y="2" rx="2" ry="2"/>
-              <path d="M12 18h.01"/>
-            </svg>
-          </div>
-          <h3 class="feature-name">Install as App</h3>
-          <p class="feature-desc">
-            Add URLsToGo to your home screen on any device. Full PWA support — works like a native app on iOS and Android.
-          </p>
+          <h3 class="feature-name">Import / Export</h3>
+          <p class="feature-desc">Full JSON export and import. No lock-in. Your data is always yours to take wherever you go.</p>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- How It Works Section -->
-  <section id="how-it-works" class="how-it-works">
-    <div class="how-it-works-container">
-      <div class="how-it-works-header">
-        <div class="how-it-works-badge">Simple & Fast</div>
-        <h2 class="how-it-works-title">How It Works</h2>
-        <p class="how-it-works-subtitle">
-          Get started in seconds. Sign in with Google and you're ready to go.
-        </p>
+  <!-- Section 4: Pricing -->
+  <section id="pricing" class="section">
+    <div class="section-container">
+      <div class="section-header">
+        <div class="section-badge">Simple Pricing</div>
+        <h2 class="section-title">One plan. No surprises.</h2>
+        <p class="section-subtitle">Not 500 links per month. 500 links total. Change destinations as many times as you want.</p>
       </div>
 
-      <div class="steps-container">
-        <!-- Connecting line -->
-        <div class="steps-line"></div>
-
-        <!-- Animated arrows -->
-        <div class="step-arrow step-arrow-1">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M5 12h14"/>
-            <path d="m12 5 7 7-7 7"/>
-          </svg>
+      <div class="pricing-grid">
+        <!-- Free -->
+        <div class="pricing-card">
+          <div class="pricing-card-header">
+            <span class="pricing-plan">Free</span>
+          </div>
+          <div class="pricing-price">
+            <span class="pricing-amount">$0</span>
+          </div>
+          <p style="font-size:14px;color:var(--text-muted);margin-bottom:20px;">Forever free, no credit card</p>
+          <ul class="pricing-features">
+            <li><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>25 short links</span></li>
+            <li><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Basic click counts</span></li>
+            <li><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>1 category</span></li>
+            <li><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Google sign-in</span></li>
+          </ul>
+          <a href="/admin" class="pricing-btn pricing-btn--free">Get started</a>
         </div>
-        <div class="step-arrow step-arrow-2">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M5 12h14"/>
-            <path d="m12 5 7 7-7 7"/>
-          </svg>
-        </div>
 
-        <!-- Step 1 -->
-        <div class="step-card">
-          <div class="step-number-wrapper">
-            <div class="step-number-bg"></div>
-            <div class="step-number">1</div>
-            <div class="step-icon">
-              ${LINK_ICON}
+        <!-- Pro -->
+        <div class="pricing-card pricing-card--pro">
+          <div class="pricing-card-header">
+            <span class="pricing-plan">Pro</span>
+            <span class="pricing-popular">FOUNDING 100</span>
+          </div>
+          <div class="pricing-price">
+            <span class="pricing-old" id="pricing-old">$12</span>
+            <span class="pricing-amount" id="pricing-amount">$9</span>
+            <span class="pricing-period">/month</span>
+          </div>
+          <p class="pricing-founding" id="pricing-founding">Founding 100 — 25% off forever</p>
+          <div class="founding-bar" id="founding-bar">
+            <div class="founding-bar-labels">
+              <span id="founding-claimed">Loading...</span>
+              <span id="founding-left"></span>
+            </div>
+            <div class="founding-bar-track">
+              <div class="founding-bar-fill" id="founding-fill" style="width: 0%"></div>
             </div>
           </div>
-          <h3 class="step-title">Paste Your URL</h3>
-          <p class="step-description">
-            Enter any long URL into the dashboard. Customize your short code or let us generate one automatically.
-          </p>
+          <ul class="pricing-features">
+            <li><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>500 short links<span class="sub">Total, not per month</span></span></li>
+            <li><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Full analytics (geo, device, browser)</span></li>
+            <li><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Unlimited categories, tags & edits</span></li>
+            <li><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>API access & GitHub integration</span></li>
+          </ul>
+          <a href="/admin#billing" class="pricing-btn pricing-btn--pro" id="pricing-cta">Claim Founding Spot &rarr;</a>
         </div>
+      </div>
 
-        <!-- Step 2 -->
-        <div class="step-card">
-          <div class="step-number-wrapper">
-            <div class="step-number-bg"></div>
-            <div class="step-number">2</div>
-            <div class="step-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <circle cx="18" cy="5" r="3"/>
-                <circle cx="6" cy="12" r="3"/>
-                <circle cx="18" cy="19" r="3"/>
-                <line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/>
-                <line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/>
-              </svg>
-            </div>
-          </div>
-          <h3 class="step-title">Share Anywhere</h3>
-          <p class="step-description">
-            Copy your short link and share it on social media, emails, messages, or anywhere you need.
-          </p>
+      <!-- Competitor comparison -->
+      <div class="competitor-row">
+        <div class="competitor">
+          <strong>$29/mo</strong>
+          Bitly Growth<br><span style="font-size:12px">500 links/month</span>
         </div>
-
-        <!-- Step 3 -->
-        <div class="step-card">
-          <div class="step-number-wrapper">
-            <div class="step-number-bg"></div>
-            <div class="step-number">3</div>
-            <div class="step-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M3 3v18h18"/>
-                <path d="m19 9-5 5-4-4-3 3"/>
-              </svg>
-            </div>
-          </div>
-          <h3 class="step-title">Track Performance</h3>
-          <p class="step-description">
-            Monitor clicks, analyze traffic sources, and optimize your campaigns with real-time analytics.
-          </p>
+        <span class="competitor-vs">vs</span>
+        <div class="competitor">
+          <strong>$25/mo</strong>
+          Dub.co Pro<br><span style="font-size:12px">1,000 links/month</span>
+        </div>
+        <span class="competitor-vs">vs</span>
+        <div class="competitor competitor--you">
+          <strong>$9/mo</strong>
+          URLsToGo Pro<br><span style="font-size:12px">500 links total</span>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- Footer -->
+  <!-- Section 5: How It Works -->
+  <section class="section section--alt">
+    <div class="section-container">
+      <div class="section-header">
+        <div class="section-badge">Simple & Fast</div>
+        <h2 class="section-title">Up and running in 30 seconds</h2>
+        <p class="section-subtitle">Sign in with Google and start shortening. No setup, no config files.</p>
+      </div>
+      <div class="steps-grid">
+        <div class="step-card">
+          <div class="step-number">1</div>
+          <h3 class="step-title">Sign in with Google</h3>
+          <p class="step-desc">One click. No password to create or manage. Your data is private to your account.</p>
+        </div>
+        <div class="step-card">
+          <div class="step-number">2</div>
+          <h3 class="step-title">Create a short link</h3>
+          <p class="step-desc">Paste a URL, pick a custom slug or let us generate one. Organize with categories and tags.</p>
+        </div>
+        <div class="step-card">
+          <div class="step-number">3</div>
+          <h3 class="step-title">Track & share</h3>
+          <p class="step-desc">Monitor clicks in real-time. Share collections with clients. Integrate with your CI/CD pipeline.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 6: API / Terminal Demo -->
+  <section id="api-demo" class="section">
+    <div class="section-container">
+      <div class="section-header">
+        <div class="section-badge">API-First</div>
+        <h2 class="section-title">Works from your terminal</h2>
+        <p class="section-subtitle">No other shortener shows you terminal output on their landing page.</p>
+      </div>
+      <div class="api-demo">
+        <div class="api-demo-header">
+          <div class="api-demo-dot r"></div>
+          <div class="api-demo-dot y"></div>
+          <div class="api-demo-dot g"></div>
+          <span style="margin-left:12px">Terminal</span>
+        </div>
+        <pre><span class="comment"># Create a short link</span>
+<span class="cmd">curl</span> <span class="flag">-X POST</span> https://urlstogo.cloud/api/links <span class="flag">\\</span>
+  <span class="flag">-H</span> <span class="str">"Authorization: Bearer utg_your_key"</span> <span class="flag">\\</span>
+  <span class="flag">-H</span> <span class="str">"Content-Type: application/json"</span> <span class="flag">\\</span>
+  <span class="flag">-d</span> <span class="str">'{"url": "https://github.com/my/repo", "code": "my-repo"}'</span>
+
+<span class="comment"># Response</span>
+{
+  <span class="key">"success"</span>: true,
+  <span class="key">"code"</span>: <span class="str">"my-repo"</span>,
+  <span class="key">"short_url"</span>: <span class="str">"https://go.urlstogo.cloud/my-repo"</span>,
+  <span class="key">"destination"</span>: <span class="str">"https://github.com/my/repo"</span>
+}</pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 7: Feedback -->
+  <section class="section section--alt">
+    <div class="section-container">
+      <div class="section-header">
+        <h2 class="section-title">Help shape URLsToGo</h2>
+        <p class="section-subtitle">We're building this for developers like you. What would make it worth paying for?</p>
+      </div>
+      <div class="feedback-form-container">
+        <div id="feedback-success" class="feedback-success">Thanks for your feedback! This genuinely helps.</div>
+        <form id="feedback-form" onsubmit="submitFeedback(event)">
+          <textarea class="feedback-textarea" id="feedback-msg" placeholder="What features would you want? What's missing? What would make you switch from your current tool?" required></textarea>
+          <div class="feedback-row">
+            <input class="feedback-email" id="feedback-email" type="email" placeholder="Email (optional — if you want us to follow up)">
+            <button type="submit" class="feedback-submit" id="feedback-btn">Send Feedback</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 8: Footer -->
   <footer class="footer">
     <div class="footer-content">
-      <a href="/" class="footer-brand">
-        <div class="footer-logo">
-          ${LINK_ICON}
-        </div>
-        URLsToGo
-      </a>
-      <div class="footer-text">
-        Powered by Cloudflare Workers
+      <div class="footer-cta">
+        <a href="/admin" class="btn btn-primary">Start free with Google</a>
       </div>
+      <div class="footer-links">
+        <a href="https://github.com/jbcreations" target="_blank" rel="noopener">GitHub</a>
+        <a href="/admin#help">Help</a>
+        <a href="mailto:john@jbmdcreations.com">Contact</a>
+      </div>
+      <p class="footer-credit">Built by <a href="https://jbmdcreations.com" target="_blank" rel="noopener">JB</a> on Cloudflare Workers</p>
     </div>
   </footer>
+
+  <!-- Exit Intent Modal (Desktop Only) -->
+  <div class="exit-modal" id="exit-modal">
+    <div class="exit-modal-content">
+      <h3>Quick question before you go</h3>
+      <p>What would make this worth signing up for?</p>
+      <textarea id="exit-msg" placeholder="Missing feature? Wrong price? Just not for you? Anything helps..."></textarea>
+      <div class="exit-modal-actions">
+        <button class="exit-modal-dismiss" onclick="closeExitModal()">No thanks</button>
+        <button class="exit-modal-submit" onclick="submitExitFeedback()">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Fetch founding spot data
+    (async function() {
+      try {
+        const res = await fetch('/api/billing/founding');
+        const data = await res.json();
+        const remaining = data.spots_remaining || 0;
+        const claimed = data.spots_claimed || 0;
+        const total = data.spots_total || 100;
+        const pct = Math.round((claimed / total) * 100);
+
+        // Hero badge
+        document.getElementById('founding-badge').textContent =
+          remaining > 0 ? 'Founding 100 — ' + remaining + ' spots left' : 'Founding 100 — Sold out';
+
+        // Hero note
+        document.getElementById('founding-spots').textContent = remaining + ' spots remaining';
+
+        // Pricing section
+        document.getElementById('founding-claimed').textContent = claimed + ' claimed';
+        document.getElementById('founding-left').textContent = remaining + ' left';
+        document.getElementById('founding-fill').style.width = pct + '%';
+
+        if (remaining <= 0) {
+          document.getElementById('founding-cta').style.display = 'none';
+          document.getElementById('pricing-old').style.display = 'none';
+          document.getElementById('pricing-amount').textContent = '$12';
+          document.getElementById('pricing-founding').textContent = 'Founding 100 sold out';
+          document.getElementById('pricing-founding').style.color = 'var(--text-muted)';
+          document.getElementById('pricing-cta').textContent = 'Get Pro';
+          document.getElementById('founding-bar').style.display = 'none';
+          document.getElementById('pricing-popular').textContent = 'MOST POPULAR';
+        }
+      } catch (e) {
+        document.getElementById('founding-spots').textContent = 'Limited spots remaining';
+      }
+    })();
+
+    // Feedback form submission
+    async function submitFeedback(e) {
+      e.preventDefault();
+      var btn = document.getElementById('feedback-btn');
+      var msg = document.getElementById('feedback-msg').value.trim();
+      var email = document.getElementById('feedback-email').value.trim();
+      if (!msg) return;
+      btn.disabled = true;
+      btn.textContent = 'Sending...';
+      try {
+        var res = await fetch('/api/feedback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: msg, email: email || null, source: 'form' })
+        });
+        if (res.ok) {
+          document.getElementById('feedback-form').style.display = 'none';
+          document.getElementById('feedback-success').style.display = 'block';
+        } else {
+          btn.disabled = false;
+          btn.textContent = 'Send Feedback';
+        }
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = 'Send Feedback';
+      }
+    }
+
+    // Exit intent (desktop only, fires once after 10s)
+    (function() {
+      if ('ontouchstart' in window) return;
+      if (localStorage.getItem('utg_exit_shown')) return;
+      var ready = false;
+      setTimeout(function() { ready = true; }, 10000);
+      document.documentElement.addEventListener('mouseleave', function(e) {
+        if (e.clientY > 0 || !ready) return;
+        if (localStorage.getItem('utg_exit_shown')) return;
+        localStorage.setItem('utg_exit_shown', '1');
+        document.getElementById('exit-modal').classList.add('active');
+      });
+    })();
+
+    function closeExitModal() {
+      document.getElementById('exit-modal').classList.remove('active');
+    }
+
+    async function submitExitFeedback() {
+      var msg = document.getElementById('exit-msg').value.trim();
+      if (!msg) { closeExitModal(); return; }
+      try {
+        await fetch('/api/feedback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: msg, source: 'exit_intent' })
+        });
+      } catch (e) {}
+      closeExitModal();
+    }
+  </script>
 </body>
 </html>`;
 }
+
 
 function get404HTML(code) {
   const safeCode = escapeHtml(String(code || ''));
