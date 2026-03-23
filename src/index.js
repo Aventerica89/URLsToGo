@@ -260,7 +260,7 @@ export default {
     // Clerk Frontend API proxy — must run before auth since it enables auth
     // Proxies /__clerk/* to Clerk's Frontend API so cookies are set on our domain
     if (path.startsWith('__clerk')) {
-      const clerkFapi = 'https://fit-ocelot-92.clerk.accounts.dev';
+      const clerkFapi = 'https://clerk.urlstogo.cloud';
       const proxyUrl = `${url.origin}/__clerk`;
       const targetUrl = request.url.replace(proxyUrl, clerkFapi);
 
