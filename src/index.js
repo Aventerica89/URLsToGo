@@ -40,7 +40,6 @@ const SERVICE_WORKER_JS = `
 const CACHE_NAME = 'urlstogo-${DEPLOY_VERSION}';
 const STATIC_ASSETS = [
   '${ADMIN_PATH}',
-  '/login',
   '/manifest.json'
 ];
 
@@ -68,8 +67,9 @@ self.addEventListener('activate', (event) => {
 
 // Fetch - network first, fallback to cache
 self.addEventListener('fetch', (event) => {
-  // Skip non-GET requests and API calls
-  if (event.request.method !== 'GET' || event.request.url.includes('/api/')) {
+  // Skip non-GET, API calls, auth pages, and Clerk proxy
+  const url = event.request.url;
+  if (event.request.method !== 'GET' || url.includes('/api/') || url.includes('/__clerk') || url.includes('/login') || url.includes('/clear-cache')) {
     return;
   }
 
@@ -333,6 +333,43 @@ export default {
       return new Response(SERVICE_WORKER_JS, {
         headers: {
           'Content-Type': 'application/javascript',
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
+        }
+      });
+    }
+    if (path === 'clear-cache') {
+      return new Response(`<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>URLsToGo — Clearing Cache</title>
+<style>*{margin:0;padding:0;box-sizing:border-box}body{background:#09090b;color:#fafafa;font-family:system-ui,-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:1rem}
+.card{background:#111113;border:1px solid #27272a;border-radius:12px;padding:2rem;max-width:420px;width:100%;text-align:center}
+h1{font-size:1.25rem;margin-bottom:.5rem}p{color:#a1a1aa;font-size:.875rem;line-height:1.5;margin-bottom:1rem}
+.status{color:#8b5cf6;font-weight:500}.error{color:#ef4444}.success{color:#22c55e}
+a{color:#8b5cf6;text-decoration:none}a:hover{text-decoration:underline}</style></head>
+<body><div class="card"><h1>Clearing Cache</h1><p id="status" class="status">Working...</p>
+<script>
+(async()=>{const s=document.getElementById('status');const steps=[];
+try{
+  if('serviceWorker' in navigator){
+    const regs=await navigator.serviceWorker.getRegistrations();
+    for(const r of regs){await r.unregister();}
+    steps.push('Service worker unregistered');
+  }
+  const keys=await caches.keys();
+  for(const k of keys){await caches.delete(k);}
+  steps.push('All caches cleared ('+keys.length+' entries)');
+  localStorage.clear();
+  sessionStorage.clear();
+  steps.push('Local/session storage cleared');
+  s.className='success';
+  s.innerHTML=steps.join('<br>')+'<br><br><a href="/login">Go to login &rarr;</a>';
+}catch(e){
+  s.className='error';
+  s.textContent='Error: '+e.message;
+}})();
+</script></div></body></html>`, {
+        headers: {
+          'Content-Type': 'text/html;charset=UTF-8',
           'Cache-Control': 'no-cache, no-store, must-revalidate'
         }
       });
