@@ -350,17 +350,38 @@ a{color:#8b5cf6;text-decoration:none}a:hover{text-decoration:underline}</style><
 <script>
 (async()=>{const s=document.getElementById('status');const steps=[];
 try{
+  // 1. Unregister service workers
   if('serviceWorker' in navigator){
     const regs=await navigator.serviceWorker.getRegistrations();
     for(const r of regs){await r.unregister();}
-    steps.push('Service worker unregistered');
+    steps.push('Service workers unregistered ('+regs.length+')');
   }
+  // 2. Clear all caches
   const keys=await caches.keys();
   for(const k of keys){await caches.delete(k);}
-  steps.push('All caches cleared ('+keys.length+' entries)');
+  steps.push('Caches cleared ('+keys.length+')');
+  // 3. Clear storage
   localStorage.clear();
   sessionStorage.clear();
   steps.push('Local/session storage cleared');
+  // 4. Clear ALL IndexedDB databases (Clerk stores session data here)
+  if(window.indexedDB&&indexedDB.databases){
+    const dbs=await indexedDB.databases();
+    for(const db of dbs){if(db.name)indexedDB.deleteDatabase(db.name);}
+    steps.push('IndexedDB cleared ('+dbs.length+' databases)');
+  }else{steps.push('IndexedDB: browser does not support listing');}
+  // 5. Clear all cookies for this domain
+  const cookies=document.cookie.split(';');
+  let cc=0;
+  for(const c of cookies){
+    const name=c.split('=')[0].trim();
+    if(!name)continue;
+    document.cookie=name+'=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+    document.cookie=name+'=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=urlstogo.cloud';
+    document.cookie=name+'=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=.urlstogo.cloud';
+    cc++;
+  }
+  steps.push('Cookies cleared ('+cc+')');
   s.className='success';
   s.innerHTML=steps.join('<br>')+'<br><br><a href="/login">Go to login &rarr;</a>';
 }catch(e){
