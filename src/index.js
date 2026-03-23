@@ -3211,10 +3211,10 @@ function getLandingPageHTML(nonce = '') {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>URLsToGo — Variant A: Immersive Gradient World</title>
-  <meta name="description" content="The developer\'s shortlink app. 500 links total, not per month. API-first, GitHub Actions integration, full analytics.">
+<title>URLsToGo — Short Links Built for Developers</title>
+  <meta name="description" content="The developer\'s shortlink app. REST API, CI/CD preview links, password protection, expiring URLs, shared dashboards, and click analytics. 500 links total, not per month. $9/mo.">
   <meta property="og:title" content="URLsToGo - Short Links Built for Developers">
-  <meta property="og:description" content="500 links. Not per month — total. Edit, swap, redirect whenever.">
+  <meta property="og:description" content="REST API, CI/CD preview links, password protection, expiring URLs, click analytics. 500 links total, not per month. Runs on Cloudflare Workers.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://urlstogo.cloud">
 <link rel="icon" href="${ADMIN_FAVICON}">
@@ -3342,7 +3342,8 @@ a { color: #8b5cf6; text-decoration: none; }
   background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 25%, #a855f7 50%, #38bdf8 75%, #8b5cf6 100%);
   background-size: 400% 400%; animation: meshShift 20s ease infinite;
 }
-.features-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; }
+.features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+@media (max-width: 968px) { .features-grid { grid-template-columns: repeat(2, 1fr); } }
 .feature-card {
   background: rgba(24, 24, 27, 0.5); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
   border: 1px solid rgba(139, 92, 246, 0.15); border-radius: 16px; padding: 32px;
@@ -3479,7 +3480,7 @@ footer { padding: 64px 24px; border-top: 1px solid #27272a; text-align: center; 
       <div class="hero-text">
         <div class="hero-badge"><span class="hero-badge-dot"></span> <span id="founding-badge">Founding 100 \u2014 spots available</span></div>
         <h1 class="hero-h1">Short links built<br><span>for developers</span></h1>
-        <p class="hero-desc">500 links. Not per month &mdash; total. Edit, swap, redirect whenever. API-first with GitHub Actions integration and full click analytics.</p>
+        <p class="hero-desc">500 links. Not per month &mdash; total. REST API, GitHub Actions CI/CD, password-protected links, expiring URLs, shared dashboards, and click analytics. All on Cloudflare&rsquo;s edge.</p>
         <div class="hero-actions">
           <div class="hero-actions-row">
             <a href="/admin" class="btn btn-primary">
@@ -3531,10 +3532,10 @@ footer { padding: 64px 24px; border-top: 1px solid #27272a; text-align: center; 
 <section class="social-proof">
   <div class="orb"></div>
   <div class="proof-grid">
-    <div class="proof-item"><div class="proof-value">Cloudflare Workers</div><div class="proof-label">Built on</div></div>
-    <div class="proof-item"><div class="proof-value">50ms</div><div class="proof-label">Redirects globally</div></div>
-    <div class="proof-item"><div class="proof-value">99.9%</div><div class="proof-label">Uptime</div></div>
-    <div class="proof-item"><div class="proof-value">Open API</div><div class="proof-label">With keys</div></div>
+    <div class="proof-item"><div class="proof-value">Cloudflare Edge</div><div class="proof-label">300+ locations</div></div>
+    <div class="proof-item"><div class="proof-value">&lt;50ms</div><div class="proof-label">Global redirects</div></div>
+    <div class="proof-item"><div class="proof-value">REST API</div><div class="proof-label">Scoped keys</div></div>
+    <div class="proof-item"><div class="proof-value">GitHub Actions</div><div class="proof-label">CI/CD built in</div></div>
   </div>
 </section>
 
@@ -3543,38 +3544,53 @@ footer { padding: 64px 24px; border-top: 1px solid #27272a; text-align: center; 
   <div class="orb orb-1"></div>
   <div class="orb orb-2"></div>
   <div class="section-inner">
-    <h2 class="section-title">Everything you need, nothing you don't</h2>
-    <p class="section-sub">Developer-first link management with a real API, GitHub integration, and analytics that matter.</p>
+    <h2 class="section-title">Built for how developers actually work</h2>
+    <p class="section-sub">Not a marketing dashboard with a URL field. A proper tool with an API, CI/CD hooks, and infrastructure you control.</p>
     <div class="features-grid">
       <div class="feature-card">
-        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
-        <h3>API-First</h3>
-        <p>Scoped API keys, full REST endpoints. Create, update, and manage links programmatically with cURL or any HTTP client.</p>
+        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        <h3>REST API with Scoped Keys</h3>
+        <p>Create, update, delete, and list links programmatically. Generate multiple API keys with independent scopes. Everything the dashboard does, cURL does too.</p>
       </div>
       <div class="feature-card">
         <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65S8.93 17.38 9 18v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>
-        <h3>GitHub Actions</h3>
-        <p>Auto-update preview links on deploy. Push to a branch, your shortlink updates automatically. Zero manual work.</p>
+        <h3>CI/CD Preview Links</h3>
+        <p>Push to a branch, your shortlink updates automatically via GitHub Actions. Share go.urlstogo.cloud/my-app--preview and it always points to your latest deploy.</p>
+      </div>
+      <div class="feature-card">
+        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <h3>Password-Protected Links</h3>
+        <p>Gate any shortlink behind a password. Share staging environments, internal docs, or client previews without exposing them to the public internet.</p>
+      </div>
+      <div class="feature-card">
+        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <h3>Expiring Links</h3>
+        <p>Set a TTL on any link. Perfect for time-limited offers, beta invites, or temporary access tokens that self-destruct on schedule.</p>
       </div>
       <div class="feature-card">
         <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
         <h3>Click Analytics</h3>
-        <p>Geo, device, browser, referrer &mdash; real-time. Know exactly where your traffic comes from and how links perform.</p>
-      </div>
-      <div class="feature-card">
-        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
-        <h3>Categories &amp; Tags</h3>
-        <p>Organize like a dev, not a marketer. Unlimited categories, tags, and the command palette (Cmd+K) finds anything instantly.</p>
+        <p>Geo, device, browser, and referrer &mdash; in real time. Know exactly where your traffic comes from, not just that someone clicked.</p>
       </div>
       <div class="feature-card">
         <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" x2="12" y1="2" y2="15"/></svg>
         <h3>Shared Collections</h3>
-        <p>Share a category as a read-only dashboard. Perfect for client-facing link pages with live stats.</p>
+        <p>Share a category as a branded, read-only dashboard. Curate links for clients with featured items, descriptions, and live click stats.</p>
       </div>
       <div class="feature-card">
-        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-        <h3>Import / Export</h3>
-        <p>Full JSON export and import. No lock-in. Your data is always yours to take wherever you go.</p>
+        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+        <h3>Custom Shortcodes</h3>
+        <p>Choose your own vanity codes &mdash; go.urlstogo.cloud/docs, /pitch, /demo. Memorable, readable, and yours to edit or reassign anytime.</p>
+      </div>
+      <div class="feature-card">
+        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <h3>Command Palette</h3>
+        <p>Cmd+K to find any link, category, or action instantly. Keyboard-first navigation for developers who hate reaching for the mouse.</p>
+      </div>
+      <div class="feature-card">
+        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg>
+        <h3>Your Infrastructure</h3>
+        <p>Runs on Cloudflare Workers at the edge &mdash; not a shared SaaS black box. Sub-50ms redirects globally. Your data stays on infrastructure you chose.</p>
       </div>
     </div>
   </div>
@@ -3606,8 +3622,9 @@ footer { padding: 64px 24px; border-top: 1px solid #27272a; text-align: center; 
         <ul class="price-features">
           <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>500 links total</li>
           <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Full analytics (geo, device, browser)</li>
-          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Unlimited categories</li>
-          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>API &amp; GitHub integration</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Password-protected &amp; expiring links</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>API keys &amp; CI/CD preview links</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Shared collections &amp; unlimited categories</li>
         </ul>
         <button class="price-cta pro-btn">Start Pro &mdash; 25% off forever</button>
         <div class="founding">
