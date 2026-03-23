@@ -284,7 +284,25 @@ export default {
         redirect: 'manual',
       });
 
-      return fetch(proxyReq);
+      const resp = await fetch(proxyReq);
+
+      // DEBUG: Log proxy response details for auth troubleshooting
+      const clerkPath = targetUrl.replace(clerkFapi, '');
+      const setCookies = resp.headers.getAll ? resp.headers.getAll('Set-Cookie') : [resp.headers.get('Set-Cookie')].filter(Boolean);
+      const location = resp.headers.get('Location');
+      console.log(`[CLERK-PROXY] ${request.method} ${clerkPath} → ${resp.status}`);
+      if (setCookies.length > 0) {
+        for (const sc of setCookies) {
+          // Log cookie name and domain, mask the value
+          const cookieName = sc.split('=')[0];
+          const domainMatch = sc.match(/[Dd]omain=([^;]+)/);
+          const pathMatch = sc.match(/[Pp]ath=([^;]+)/);
+          console.log(`[CLERK-PROXY] Set-Cookie: ${cookieName} Domain=${domainMatch?.[1]||'(none)'} Path=${pathMatch?.[1]||'/'} Secure=${sc.includes('Secure')} SameSite=${sc.match(/SameSite=([^;]+)/)?.[1]||'(none)'}`);
+        }
+      }
+      if (location) console.log(`[CLERK-PROXY] Location: ${location}`);
+
+      return resp;
     }
 
     // Get user email from Clerk JWT (with API key fallback)
