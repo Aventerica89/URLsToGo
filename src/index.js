@@ -194,8 +194,9 @@ const CORS_HEADERS = {
 // =============================================================================
 
 const PLAN_LIMITS = {
-  free: { links: 25 },
-  pro:  { links: 500 },
+  free:  { links: 25 },
+  pro:   { links: 500 },
+  admin: { links: 9999 },
 };
 
 const STRIPE_API_BASE = 'https://api.stripe.com/v1';
@@ -2105,6 +2106,7 @@ try{
 
 // Get user's current billing plan from subscriptions table
 async function getUserPlan(env, userEmail) {
+  if (env.ADMIN_EMAIL && userEmail === env.ADMIN_EMAIL) return 'admin';
   const sub = await env.DB.prepare(
     'SELECT plan, status, current_period_end FROM subscriptions WHERE user_email = ?'
   ).bind(userEmail).first();
@@ -6924,7 +6926,7 @@ Create .github/workflows/update-preview-link.yml that:
       try {
         var statusRes = await fetch('/api/billing/status', { credentials: 'include' });
         var statusData = await statusRes.json();
-        if (statusData.plan === 'pro') return;
+        if (statusData.plan === 'pro' || statusData.plan === 'admin') return;
         var ctaEl = document.getElementById('headerUpgradeCta');
         if (!ctaEl) return;
         var foundingRes = await fetch('/api/billing/founding');
@@ -7974,7 +7976,7 @@ Create .github/workflows/update-preview-link.yml that:
         const data = await res.json();
         const founding = await foundingRes.json().catch(function() { return { available: false, spots_remaining: 0, spots_total: 100, spots_claimed: 100 }; });
 
-        const isPro = data.plan === 'pro';
+        const isPro = data.plan === 'pro' || data.plan === 'admin';
         const used = Number(data.links_used) || 0;
         const limit = Number(data.links_limit) || 25;
         const pct = Math.min(100, Math.round((used / limit) * 100));
