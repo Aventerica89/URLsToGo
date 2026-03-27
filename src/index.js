@@ -4808,6 +4808,50 @@ function getAdminHTML(userEmail, env, nonce = '') {
     /* Settings page */
     .settings-view { display: none; padding: 24px; flex: 1; margin-left: 256px; }
     .settings-view.active { display: flex; gap: 24px; }
+
+    /* Dashboard View */
+    .dashboard-view { display: none; padding: 24px 32px; flex: 1; margin-left: 256px; flex-direction: column; gap: 24px; overflow-y: auto; }
+    .dashboard-view.active { display: flex; }
+    .dashboard-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+    .dashboard-title { font-size: 18px; font-weight: 600; color: oklch(var(--foreground)); }
+
+    /* Stat cards */
+    .stat-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+    .stat-card { background: oklch(var(--card)); border: 1px solid oklch(var(--border)); border-radius: var(--radius); padding: 16px 20px; }
+    .stat-card-label { font-size: 12px; color: oklch(var(--muted-foreground)); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+    .stat-card-value { font-size: 28px; font-weight: 700; color: oklch(var(--foreground)); line-height: 1; }
+    .stat-card-sub { font-size: 12px; color: oklch(var(--muted-foreground)); margin-top: 6px; }
+    .stat-usage-bar { height: 4px; background: oklch(var(--muted)); border-radius: 2px; margin-top: 10px; }
+    .stat-usage-fill { height: 100%; border-radius: 2px; background: oklch(var(--primary)); transition: width 0.3s; }
+    .stat-plan-badge { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; background: oklch(var(--muted)); color: oklch(var(--muted-foreground)); }
+    .stat-plan-badge.pro { background: oklch(var(--primary) / 0.15); color: oklch(var(--primary)); }
+
+    /* Sparkline */
+    .spark-card { background: oklch(var(--card)); border: 1px solid oklch(var(--border)); border-radius: var(--radius); padding: 16px 20px; }
+    .spark-title { font-size: 13px; font-weight: 500; color: oklch(var(--muted-foreground)); margin-bottom: 12px; }
+    .spark-bars { display: flex; align-items: flex-end; gap: 4px; height: 48px; }
+    .spark-bar { flex: 1; background: oklch(var(--primary) / 0.4); border-radius: 2px 2px 0 0; min-height: 2px; transition: background 150ms; }
+    .spark-bar:hover { background: oklch(var(--primary)); }
+    .spark-labels { display: flex; justify-content: space-between; margin-top: 6px; }
+    .spark-label { font-size: 10px; color: oklch(var(--muted-foreground)); }
+
+    /* Two-column section */
+    .dash-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .dash-section { background: oklch(var(--card)); border: 1px solid oklch(var(--border)); border-radius: var(--radius); padding: 16px 20px; }
+    .dash-section-title { font-size: 13px; font-weight: 600; color: oklch(var(--foreground)); margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
+    .dash-link-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid oklch(var(--border) / 0.5); cursor: pointer; }
+    .dash-link-row:last-child { border-bottom: none; }
+    .dash-link-code { font-size: 13px; font-weight: 500; color: oklch(var(--primary)); font-family: monospace; white-space: nowrap; }
+    .dash-link-dest { font-size: 12px; color: oklch(var(--muted-foreground)); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dash-link-stat { font-size: 12px; color: oklch(var(--muted-foreground)); white-space: nowrap; }
+    .dash-empty { font-size: 13px; color: oklch(var(--muted-foreground)); text-align: center; padding: 16px 0; }
+    .dash-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+    @media (max-width: 768px) {
+      .dashboard-view { margin-left: 0; padding: 16px; padding-bottom: 72px; }
+      .stat-cards { grid-template-columns: repeat(2, 1fr); }
+      .dash-cols { grid-template-columns: 1fr; }
+    }
+
     .settings-nav {
       width: 200px; flex-shrink: 0;
       display: flex; flex-direction: column; gap: 2px;
@@ -5642,11 +5686,11 @@ function getAdminHTML(userEmail, env, nonce = '') {
       </svg>
       <span>Links</span>
     </button>
-    <button class="tab-item" data-tab="stats" onclick="switchMobileTab('stats')" role="tab" aria-selected="false" aria-label="Statistics">
+    <button class="tab-item" data-tab="dashboard" onclick="switchMobileTab('dashboard')" role="tab" aria-selected="false" aria-label="Home">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/>
+        <rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>
       </svg>
-      <span>Stats</span>
+      <span>Home</span>
     </button>
     <div class="fab-container">
       <button class="fab" onclick="openCreateSheet()" aria-label="Create new link">
@@ -5786,7 +5830,15 @@ function getAdminHTML(userEmail, env, nonce = '') {
         </div>
 
         <div class="nav-group">
-          <div class="nav-item active" onclick="showLinksView(); filterByCategory(null)" data-nav="links">
+          <div class="nav-item active" onclick="showDashboardView()" data-nav="dashboard">
+            <span class="nav-item-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>
+              </svg>
+            </span>
+            <span>Dashboard</span>
+          </div>
+          <div class="nav-item" onclick="showLinksView(); filterByCategory(null)" data-nav="links">
             <span class="nav-item-icon">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
@@ -6002,6 +6054,56 @@ function getAdminHTML(userEmail, env, nonce = '') {
         </div>
       </div>
     </main>
+
+    <!-- Dashboard View -->
+    <div class="dashboard-view" id="dashboardView">
+      <div class="dashboard-header">
+        <span class="dashboard-title">Dashboard</span>
+        <span class="stat-plan-badge" id="dashPlanBadge">Free</span>
+      </div>
+      <div class="stat-cards">
+        <div class="stat-card">
+          <div class="stat-card-label">Total Links</div>
+          <div class="stat-card-value" id="dashTotalLinks">—</div>
+          <div class="stat-card-sub" id="dashLinksSub">Loading...</div>
+          <div class="stat-usage-bar"><div class="stat-usage-fill" id="dashUsageFill" style="width:0%"></div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-label">Clicks Today</div>
+          <div class="stat-card-value" id="dashClicksToday">—</div>
+          <div class="stat-card-sub" id="dashClicksSub">vs yesterday</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-label">Total Clicks</div>
+          <div class="stat-card-value" id="dashTotalClicks">—</div>
+          <div class="stat-card-sub">all time</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-label">Quick Actions</div>
+          <div class="dash-actions" style="margin-top:8px;">
+            <button class="btn btn-primary" style="min-height:32px;font-size:13px;padding:6px 14px;" onclick="openCreateSheet()">+ New Link</button>
+            <button class="btn btn-secondary" style="min-height:32px;font-size:13px;padding:6px 14px;" onclick="showLinksView()">All Links</button>
+          </div>
+        </div>
+      </div>
+      <div class="spark-card">
+        <div class="spark-title">Clicks — Last 7 Days</div>
+        <div class="spark-bars" id="dashSparkBars"><div class="dash-empty">Loading...</div></div>
+        <div class="spark-labels" id="dashSparkLabels"></div>
+      </div>
+      <div class="dash-cols">
+        <div class="dash-section">
+          <div class="dash-section-title">
+            Top Links <span style="font-weight:400;font-size:11px;color:oklch(var(--muted-foreground))">7 days</span>
+          </div>
+          <div id="dashTopLinks"><div class="dash-empty">Loading...</div></div>
+        </div>
+        <div class="dash-section">
+          <div class="dash-section-title">Recently Created</div>
+          <div id="dashRecentLinks"><div class="dash-empty">Loading...</div></div>
+        </div>
+      </div>
+    </div>
 
     <!-- Settings View -->
     <div class="settings-view" id="settingsView">
@@ -7050,7 +7152,10 @@ Create .github/workflows/update-preview-link.yml that:
         }
       } else if (hash.startsWith('help/')) {
         showHelpView(hash.slice('help/'.length) || 'getting-started');
+      } else if (hash === 'dashboard') {
+        showDashboardView();
       } else {
+        showDashboardView();
         checkOnboarding();
       }
     }
@@ -7098,8 +7203,8 @@ Create .github/workflows/update-preview-link.yml that:
         }
       } else if (hash.startsWith('help/')) {
         showHelpView(hash.slice('help/'.length) || 'getting-started');
-      } else if (!hash) {
-        showLinksView();
+      } else if (hash === 'dashboard' || !hash) {
+        showDashboardView();
       }
     });
 
@@ -8033,10 +8138,122 @@ Create .github/workflows/update-preview-link.yml that:
     function showApiKeysModal() { showSettingsView('api-keys'); }
     function closeApiKeysModal() { document.getElementById('apiKeysModal').classList.remove('open'); }
 
+    // Dashboard view
+    var _dashLoaded = false;
+
+    function showDashboardView() {
+      document.querySelector('.main').style.display = 'none';
+      document.getElementById('settingsView').classList.remove('active');
+      document.getElementById('helpView').classList.remove('active');
+      document.getElementById('dashboardView').classList.add('active');
+      closeMobileMenu();
+      document.querySelectorAll('.nav-item').forEach(function(el) { el.classList.remove('active'); });
+      var dashNav = document.querySelector('[data-nav="dashboard"]');
+      if (dashNav) dashNav.classList.add('active');
+      history.replaceState(null, '', '/admin#dashboard');
+      if (!_dashLoaded) loadDashboardData();
+    }
+
+    async function loadDashboardData() {
+      try {
+        var results = await Promise.all([
+          fetch('/api/stats').then(function(r) { return r.json(); }),
+          fetch('/api/billing/status').then(function(r) { return r.json(); }),
+          fetch('/api/analytics/overview?days=7').then(function(r) { return r.json(); }),
+          fetch('/api/links?sort=newest&limit=5').then(function(r) { return r.json(); })
+        ]);
+        var stats = results[0], billing = results[1], overview = results[2], recentRaw = results[3];
+
+        // Stat cards
+        var totalLinks = stats.links || 0;
+        var totalClicks = stats.clicks || 0;
+        var todayClicks = stats.today_clicks || 0;
+        var yesterdayClicks = stats.yesterday_clicks || 0;
+        document.getElementById('dashTotalLinks').textContent = totalLinks.toLocaleString();
+        document.getElementById('dashTotalClicks').textContent = totalClicks.toLocaleString();
+        document.getElementById('dashClicksToday').textContent = todayClicks.toLocaleString();
+
+        if (yesterdayClicks > 0) {
+          var pctChange = Math.round((todayClicks - yesterdayClicks) / yesterdayClicks * 100);
+          document.getElementById('dashClicksSub').textContent = (pctChange >= 0 ? '+' : '') + pctChange + '% vs yesterday';
+        }
+
+        // Plan badge + usage bar
+        var plan = billing.plan || 'free';
+        var used = billing.links_used != null ? billing.links_used : totalLinks;
+        var limit = billing.links_limit || 25;
+        var usagePct = Math.min(100, Math.round((used / limit) * 100));
+        var badge = document.getElementById('dashPlanBadge');
+        badge.textContent = plan.charAt(0).toUpperCase() + plan.slice(1);
+        if (plan === 'pro' || plan === 'admin') badge.classList.add('pro');
+        document.getElementById('dashLinksSub').textContent = used + ' / ' + limit + ' links';
+        var fill = document.getElementById('dashUsageFill');
+        fill.style.width = usagePct + '%';
+        if (usagePct >= 90) fill.style.background = 'oklch(var(--destructive))';
+        else if (usagePct >= 70) fill.style.background = 'oklch(0.75 0.15 85)';
+
+        // Sparkline
+        var days = overview.clicksByDay || [];
+        var barsEl = document.getElementById('dashSparkBars');
+        var labelsEl = document.getElementById('dashSparkLabels');
+        if (days.length) {
+          var maxClicks = Math.max.apply(null, days.map(function(d) { return d.clicks; }).concat([1]));
+          barsEl.innerHTML = days.map(function(d) {
+            var h = Math.max(4, Math.round((d.clicks / maxClicks) * 48));
+            return '<div class="spark-bar" style="height:' + h + 'px" title="' + escapeAttr(d.date) + ': ' + d.clicks + ' clicks"></div>';
+          }).join('');
+          labelsEl.innerHTML = '<span class="spark-label">' + escapeHtml(days[0].date.slice(5)) + '</span><span class="spark-label">' + escapeHtml(days[days.length-1].date.slice(5)) + '</span>';
+        } else {
+          barsEl.innerHTML = '<div class="dash-empty">No clicks in the last 7 days</div>';
+        }
+
+        // Top links
+        var topLinks = (overview.topLinks || []).slice(0, 5);
+        var topEl = document.getElementById('dashTopLinks');
+        if (topLinks.length) {
+          topEl.innerHTML = topLinks.map(function(l) {
+            var code = l.code || l.short_code || '';
+            var dest = (l.destination || l.url || '').replace(/^https?:\/\//, '');
+            var clicks = (l.recent_clicks || l.clicks || 0).toLocaleString();
+            return '<div class="dash-link-row" onclick="copyLink(\'' + escapeAttr(code) + '\')">' +
+              '<span class="dash-link-code">/' + escapeHtml(code) + '</span>' +
+              '<span class="dash-link-dest">' + escapeHtml(dest) + '</span>' +
+              '<span class="dash-link-stat">' + clicks + ' clicks</span>' +
+              '</div>';
+          }).join('');
+        } else {
+          topEl.innerHTML = '<div class="dash-empty">No clicks yet</div>';
+        }
+
+        // Recent links
+        var recentLinks = Array.isArray(recentRaw) ? recentRaw : (recentRaw.links || []);
+        var recentEl = document.getElementById('dashRecentLinks');
+        if (recentLinks.length) {
+          recentEl.innerHTML = recentLinks.map(function(l) {
+            var code = l.code || '';
+            var dest = (l.destination || l.url || '').replace(/^https?:\/\//, '');
+            var age = l.created_at ? formatRelativeTime(l.created_at) : '';
+            return '<div class="dash-link-row" onclick="copyLink(\'' + escapeAttr(code) + '\')">' +
+              '<span class="dash-link-code">/' + escapeHtml(code) + '</span>' +
+              '<span class="dash-link-dest">' + escapeHtml(dest) + '</span>' +
+              '<span class="dash-link-stat">' + escapeHtml(age) + '</span>' +
+              '</div>';
+          }).join('');
+        } else {
+          recentEl.innerHTML = '<div class="dash-empty">No links yet — <a href="#" onclick="openCreateSheet();return false;" style="color:oklch(var(--primary))">create one</a></div>';
+        }
+
+        _dashLoaded = true;
+      } catch (e) {
+        console.error('[dashboard]', e);
+      }
+    }
+
     function showSettingsView(tab) {
       document.querySelector('.main').style.display = 'none';
       document.getElementById('settingsView').classList.add('active');
       document.getElementById('helpView').classList.remove('active');
+      document.getElementById('dashboardView').classList.remove('active');
       closeMobileMenu();
       document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
       const navTarget = tab === 'profile' ? 'settings' : tab;
@@ -8049,6 +8266,8 @@ Create .github/workflows/update-preview-link.yml that:
     function showLinksView() {
       document.getElementById('settingsView').classList.remove('active');
       document.getElementById('helpView').classList.remove('active');
+      document.getElementById('dashboardView').classList.remove('active');
+      _dashLoaded = false;
       document.querySelector('.main').style.display = '';
       document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
       const linksNav = document.querySelector('[data-nav="links"]');
@@ -8650,6 +8869,7 @@ Create .github/workflows/update-preview-link.yml that:
       document.querySelector('.main').style.display = 'none';
       document.getElementById('settingsView').classList.remove('active');
       document.getElementById('helpView').classList.add('active');
+      document.getElementById('dashboardView').classList.remove('active');
       closeMobileMenu();
       document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
       const navEl = document.querySelector('[data-nav="help"]');
@@ -9698,7 +9918,7 @@ Create .github/workflows/update-preview-link.yml that:
       });
 
       // Update header title
-      const titles = { links: 'Links', stats: 'Analytics', categories: 'Categories', settings: 'Settings' };
+      const titles = { links: 'Links', stats: 'Analytics', categories: 'Categories', settings: 'Settings', dashboard: 'Home' };
       const titleEl = document.querySelector('.mobile-header-title');
       if (titleEl) titleEl.textContent = titles[tab] || 'Links';
 
@@ -9707,6 +9927,8 @@ Create .github/workflows/update-preview-link.yml that:
         showSettingsView('profile');
       } else if (tab === 'help') {
         showHelpView('getting-started');
+      } else if (tab === 'dashboard') {
+        showDashboardView();
       } else {
         showLinksView();
       }
