@@ -5364,7 +5364,13 @@ function getAdminHTML(userEmail, env, nonce = '') {
       overflow-y: auto;
       padding: 20px;
       -webkit-overflow-scrolling: touch;
+      scrollbar-width: thin;
+      scrollbar-color: oklch(var(--muted)) transparent;
     }
+    .sheet-body::-webkit-scrollbar { width: 6px; }
+    .sheet-body::-webkit-scrollbar-track { background: transparent; }
+    .sheet-body::-webkit-scrollbar-thumb { background: oklch(var(--muted)); border-radius: 3px; }
+    .sheet-body::-webkit-scrollbar-thumb:hover { background: oklch(var(--muted-foreground)); }
 
     .sheet-footer {
       padding: 16px 20px;
