@@ -32,6 +32,7 @@
 **Existing migration files (append-only reference):**
 - `migrations.sql` — core schema
 - `migrations-billing.sql` — Stripe subscriptions table
+- `migrations-onboarding.sql` — user_preferences table (onboarding tour state)
 
 ### One-Time Setup (Already Done)
 
@@ -381,9 +382,10 @@ To add dynamic preview links to a new repository:
 | Plan | Price | Links | Analytics |
 |------|-------|-------|-----------|
 | Free | $0 | 25 | None |
-| Pro | $12/mo | 200 | Full (geo, device, browser) |
+| Pro | $9/mo (founding) / $12/mo | 500 | Full (geo, device, browser) |
+| Business | $29/mo | 2000 | Full |
 
-Limits defined in `src/index.js`: `const PLAN_LIMITS = { free: { links: 25 }, pro: { links: 200 } }`
+Limits defined in `src/index.js`: `const PLAN_LIMITS = { free: { links: 25 }, pro: { links: 500 } }`
 
 ### Stripe Resources
 
@@ -422,33 +424,11 @@ Search `src/index.js` for: `getUserPlan`, `stripeRequest`, `verifyStripeSignatur
 
 ---
 
-## 1P-LOCAL-AUTH PLUGIN — UPSELL ANGLE (February 2026)
+## ADMIN PLAN BYPASS
 
-### What It Is
+`ADMIN_EMAIL` env var (set in Cloudflare Dashboard) grants 9999 link limit with no upgrade prompts. Set to `admin@jbmdcreations.com`.
 
-`1p-local-auth` is a free Claude Code plugin (published at `https://github.com/Aventerica89/1p-local-auth`) that helps developers manage local dev OAuth credentials via 1Password. It provides 5 skills: `/setup-local-auth`, `/auth-status`, `/auth-inject`, `/auth-rotate`, `/teardown-local-auth`.
-
-Target audience: developers building OAuth-enabled apps with Better Auth or NextAuth v5 — Google, GitHub, Todoist providers.
-
-### The Upsell Connection
-
-These developers are the **core URLsToGo buyer persona**:
-- They're building apps that need URL management (tracking links, preview environments, staged rollouts)
-- They already use the URLsToGo GitHub integration pattern (auto-update preview shortlinks on deploy)
-- They need API-accessible link management for their app's CI/CD workflows
-- They're Claude Code power users — already comfortable with developer tooling at $12/mo price points
-
-### Cross-Promotion Hooks
-
-**In 1p-local-auth → URLsToGo:** The plugin's `references/providers.md` and README could mention: "Track your OAuth app's deployed preview URLs with [URLsToGo](https://urlstogo.cloud) — the dev-friendly URL shortener with GitHub Actions integration."
-
-**In URLsToGo → 1p-local-auth:** Email sequence Email 4 (API power users) and Email 2 (features tour) are natural spots to mention: "If you're building an OAuth app, our creator also published `1p-local-auth` — a free Claude Code plugin for managing dev credentials."
-
-**Marketing angle:** Both tools target the same "solo dev building something real with Claude Code" niche. Owning that niche across multiple free tools (1p-local-auth, the URLsToGo Claude Code plugin, artifact-manager) builds authority and drives URLsToGo sign-ups organically.
-
-### Pitch Copy
-
-> "Built URLsToGo and the 1p-local-auth Claude Code plugin. If you're a developer using Claude Code to build OAuth apps, I've got a free tool for your local dev workflow and a $12/mo URL shortener with a proper API. Come check out what else I'm building."
+Search `src/index.js` for: `ADMIN_EMAIL`, `getUserPlan`
 
 ---
 
