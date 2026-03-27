@@ -3689,7 +3689,7 @@ footer { padding: 64px 24px; border-top: 1px solid #27272a; text-align: center; 
           <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Shared collections &amp; unlimited categories</li>
           <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>5 custom domains <span class="coming-soon-tag">Coming Soon</span></li>
         </ul>
-        <button class="price-cta biz-btn">Start Business</button>
+        <button class="price-cta biz-btn" onclick="window.location.href='/admin'">Start Business</button>
       </div>
     </div>
     <div class="competitor-row">
