@@ -287,21 +287,6 @@ export default {
 
       const resp = await fetch(proxyReq);
 
-      // DEBUG: Log proxy response details for auth troubleshooting
-      const clerkPath = targetUrl.replace(clerkFapi, '');
-      const setCookies = resp.headers.getAll ? resp.headers.getAll('Set-Cookie') : [resp.headers.get('Set-Cookie')].filter(Boolean);
-      const location = resp.headers.get('Location');
-      console.log(`[CLERK-PROXY] ${request.method} ${clerkPath} → ${resp.status}`);
-      if (setCookies.length > 0) {
-        for (const sc of setCookies) {
-          // Log cookie name and domain, mask the value
-          const cookieName = sc.split('=')[0];
-          const domainMatch = sc.match(/[Dd]omain=([^;]+)/);
-          const pathMatch = sc.match(/[Pp]ath=([^;]+)/);
-          console.log(`[CLERK-PROXY] Set-Cookie: ${cookieName} Domain=${domainMatch?.[1]||'(none)'} Path=${pathMatch?.[1]||'/'} Secure=${sc.includes('Secure')} SameSite=${sc.match(/SameSite=([^;]+)/)?.[1]||'(none)'}`);
-        }
-      }
-      if (location) console.log(`[CLERK-PROXY] Location: ${location}`);
 
       return resp;
     }
@@ -3121,7 +3106,7 @@ function getAuthPageHTML(env, mode = 'login', nonce = '') {
 
         <div id="auth-error" class="auth-error"></div>
 
-        <div id="clerk-auth">
+        <div id="clerk-auth" data-1p-ignore data-lpignore="true">
           <div class="auth-loading">
             <div class="auth-loading-spinner"></div>
             <p>Loading...</p>
