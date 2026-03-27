@@ -7029,7 +7029,7 @@ Create .github/workflows/update-preview-link.yml that:
       // Update sidebar (escape user-controlled data)
       const nav = document.getElementById('categoriesNav');
       nav.innerHTML = allCategories.map(cat => \`
-        <div class="cat-folder-row" onclick="filterByCategory('\${escapeAttr(cat.slug)}')" data-slug="\${escapeAttr(cat.slug)}" data-name="\${escapeAttr(cat.name.toLowerCase())}">
+        <div class="cat-folder-row" onclick="showLinksView(); filterByCategory('\${escapeAttr(cat.slug)}')" data-slug="\${escapeAttr(cat.slug)}" data-name="\${escapeAttr(cat.name.toLowerCase())}">
           <span class="cat-folder-chevron"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span>
           <span class="cat-folder-icon-dot \${escapeAttr(cat.color)}"></span>
           <span style="flex: 1;">\${escapeHtml(cat.name)}</span>
