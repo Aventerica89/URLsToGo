@@ -5385,6 +5385,95 @@ function getAdminHTML(userEmail, env, nonce = '') {
       border-radius: 12px;
     }
 
+    /* Desktop: sheet becomes centered dialog */
+    @media (min-width: 769px) {
+      .sheet-overlay {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .sheet {
+        position: relative;
+        bottom: auto;
+        left: auto;
+        right: auto;
+        max-width: 500px;
+        width: 100%;
+        border-radius: var(--radius);
+        max-height: 85vh;
+        transform: scale(0.95);
+        transition: transform 150ms;
+      }
+      .sheet-overlay.open .sheet {
+        transform: scale(1);
+      }
+      .sheet-handle {
+        display: none;
+      }
+      .sheet-footer .btn {
+        flex: none;
+        min-height: 36px;
+        font-size: 14px;
+        padding: 8px 16px;
+      }
+      .form-group-mobile .input,
+      .form-group-mobile .select {
+        height: 36px;
+        font-size: 14px;
+        padding: 0 12px;
+        border-radius: var(--radius);
+      }
+      .form-group-mobile { margin-bottom: 16px; }
+      .form-group-mobile .label { margin-bottom: 6px; font-size: 13px; }
+      .sheet-body { padding: 16px 24px; }
+      .sheet-header { padding: 12px 24px; }
+      .sheet-footer { padding: 12px 24px; justify-content: flex-end; }
+    }
+
+    /* Advanced section accordion */
+    .advanced-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      background: none;
+      border: 1px solid oklch(var(--border));
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      color: oklch(var(--muted-foreground));
+      font-size: 13px;
+      cursor: pointer;
+      transition: color 150ms, border-color 150ms;
+    }
+    .advanced-toggle:hover {
+      color: oklch(var(--foreground));
+      border-color: oklch(var(--foreground) / 0.3);
+    }
+    .advanced-toggle svg { transition: transform 200ms; }
+    .advanced-toggle.open svg { transform: rotate(90deg); }
+    .advanced-content { display: none; padding-top: 16px; }
+    .advanced-content.open { display: block; }
+    .slug-row { display: flex; gap: 8px; align-items: center; }
+    .slug-row .input { flex: 1; }
+    .btn-icon-sm {
+      width: 36px;
+      height: 36px;
+      min-width: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: oklch(var(--muted));
+      border: 1px solid oklch(var(--border));
+      border-radius: var(--radius);
+      cursor: pointer;
+      color: oklch(var(--muted-foreground));
+      transition: background 150ms, color 150ms;
+    }
+    .btn-icon-sm:hover {
+      background: oklch(var(--accent));
+      color: oklch(var(--foreground));
+    }
+
     /* Mobile-only display rules */
     @media (max-width: 768px) {
       .tab-bar { display: flex; }
@@ -5589,7 +5678,12 @@ function getAdminHTML(userEmail, env, nonce = '') {
       <div class="sheet-body">
         <div class="form-group-mobile">
           <label class="label">Short Code</label>
-          <input type="text" class="input" id="sheetNewCode" placeholder="my-link (optional)">
+          <div class="slug-row">
+            <input type="text" class="input" id="sheetNewCode" placeholder="my-link (optional)">
+            <button type="button" class="btn-icon-sm" onclick="generateRandomSlug()" title="Generate random code">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H22"/><path d="m18 2 4 4-4 4"/><path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2"/><path d="M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8"/><path d="m18 14 4 4-4 4"/></svg>
+            </button>
+          </div>
         </div>
         <div class="form-group-mobile">
           <label class="label">Destination URL</label>
@@ -5604,6 +5698,38 @@ function getAdminHTML(userEmail, env, nonce = '') {
         <div class="form-group-mobile">
           <label class="label">Description (optional)</label>
           <input type="text" class="input" id="sheetNewDescription" placeholder="Brief note">
+        </div>
+        <div style="margin-top: 4px;">
+          <button type="button" class="advanced-toggle" onclick="toggleAdvancedCreate()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+            Advanced options
+          </button>
+          <div class="advanced-content" id="advancedCreateContent">
+            <div class="form-group-mobile">
+              <label class="label">Tags</label>
+              <div id="sheetTagInput" style="min-height: 36px; display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px; align-items: center; border: 1px solid oklch(var(--border)); border-radius: var(--radius); background: oklch(var(--background));">
+                <input type="text" id="sheetTagInputField" placeholder="Add tag..." style="border: none; background: none; outline: none; font-size: 14px; flex: 1; min-width: 80px; color: oklch(var(--foreground));">
+              </div>
+            </div>
+            <div class="form-group-mobile">
+              <label class="label">Expires</label>
+              <select class="select" id="sheetNewExpires">
+                <option value="">Never</option>
+                <option value="1h">1 hour from now</option>
+                <option value="24h">24 hours from now</option>
+                <option value="7d">7 days from now</option>
+                <option value="30d">30 days from now</option>
+                <option value="custom">Custom date</option>
+              </select>
+            </div>
+            <div class="form-group-mobile" id="sheetCustomExpiryGroup" style="display: none;">
+              <input type="datetime-local" class="input" id="sheetNewExpiresCustom">
+            </div>
+            <div class="form-group-mobile">
+              <label class="label">Password Protection</label>
+              <input type="password" class="input" id="sheetNewPassword" placeholder="Optional password">
+            </div>
+          </div>
         </div>
       </div>
       <div class="sheet-footer">
@@ -9578,6 +9704,46 @@ Create .github/workflows/update-preview-link.yml that:
       }
     }
 
+    // Sheet helper functions
+    function toggleAdvancedCreate() {
+      const btn = document.querySelector('.advanced-toggle');
+      const content = document.getElementById('advancedCreateContent');
+      btn.classList.toggle('open');
+      content.classList.toggle('open');
+    }
+
+    function generateRandomSlug() {
+      const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+      let slug = '';
+      for (let i = 0; i < 6; i++) slug += chars[Math.floor(Math.random() * chars.length)];
+      document.getElementById('sheetNewCode').value = slug;
+    }
+
+    let sheetTags = [];
+    function addSheetTag(name) {
+      name = name.trim().toLowerCase();
+      if (!name || sheetTags.includes(name)) return;
+      sheetTags.push(name);
+      renderSheetTags();
+    }
+    function removeSheetTag(name) {
+      sheetTags = sheetTags.filter(t => t !== name);
+      renderSheetTags();
+    }
+    function renderSheetTags() {
+      const container = document.getElementById('sheetTagInput');
+      if (!container) return;
+      const input = document.getElementById('sheetTagInputField');
+      container.querySelectorAll('.sheet-tag-chip').forEach(el => el.remove());
+      sheetTags.forEach(tag => {
+        const chip = document.createElement('span');
+        chip.className = 'sheet-tag-chip';
+        chip.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:2px 8px;background:oklch(var(--muted));border-radius:4px;font-size:12px;color:oklch(var(--foreground));';
+        chip.innerHTML = escapeHtml(tag) + \` <span style="cursor:pointer;opacity:0.6;" onclick="removeSheetTag('\${escapeAttr(tag)}')">&#x2715;</span>\`;
+        container.insertBefore(chip, input);
+      });
+    }
+
     // Sheet functions
     function openCreateSheet() {
       document.getElementById('createSheet').classList.add('open');
@@ -9588,11 +9754,41 @@ Create .github/workflows/update-preview-link.yml that:
         select.innerHTML = '<option value="">No category</option>' +
           allCategories.map(c => \`<option value="\${c.id}">\${escapeHtml(c.name)}</option>\`).join('');
       }
+      // Wire tag input (once)
+      const tagInput = document.getElementById('sheetTagInputField');
+      if (tagInput && !tagInput._hasListener) {
+        tagInput.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter') { e.preventDefault(); addSheetTag(this.value); this.value = ''; }
+          if (e.key === 'Backspace' && !this.value && sheetTags.length) removeSheetTag(sheetTags[sheetTags.length - 1]);
+        });
+        tagInput._hasListener = true;
+      }
+      // Wire expiry custom date toggle (once)
+      const expiresSelect = document.getElementById('sheetNewExpires');
+      if (expiresSelect && !expiresSelect._hasListener) {
+        expiresSelect.addEventListener('change', function() {
+          document.getElementById('sheetCustomExpiryGroup').style.display = this.value === 'custom' ? '' : 'none';
+        });
+        expiresSelect._hasListener = true;
+      }
     }
 
     function closeCreateSheet() {
       document.getElementById('createSheet').classList.remove('open');
       document.body.style.overflow = '';
+      // Reset advanced section state
+      sheetTags = [];
+      renderSheetTags();
+      const advBtn = document.querySelector('.advanced-toggle');
+      const advContent = document.getElementById('advancedCreateContent');
+      if (advBtn) advBtn.classList.remove('open');
+      if (advContent) advContent.classList.remove('open');
+      const expiresEl = document.getElementById('sheetNewExpires');
+      if (expiresEl) expiresEl.value = '';
+      const customExpiryGroup = document.getElementById('sheetCustomExpiryGroup');
+      if (customExpiryGroup) customExpiryGroup.style.display = 'none';
+      const passwordEl = document.getElementById('sheetNewPassword');
+      if (passwordEl) passwordEl.value = '';
     }
 
     // Create link from sheet
@@ -9601,6 +9797,20 @@ Create .github/workflows/update-preview-link.yml that:
       const destination = document.getElementById('sheetNewDestination').value.trim();
       const categoryId = document.getElementById('sheetNewCategory').value;
       const description = document.getElementById('sheetNewDescription').value.trim();
+
+      // Advanced fields
+      const tags = sheetTags.length ? sheetTags : undefined;
+      const expiresVal = document.getElementById('sheetNewExpires')?.value;
+      let expires_at = undefined;
+      if (expiresVal === 'custom') {
+        const customDate = document.getElementById('sheetNewExpiresCustom')?.value;
+        if (customDate) expires_at = new Date(customDate).toISOString();
+      } else if (expiresVal) {
+        const now = Date.now();
+        const map = { '1h': 3600000, '24h': 86400000, '7d': 604800000, '30d': 2592000000 };
+        if (map[expiresVal]) expires_at = new Date(now + map[expiresVal]).toISOString();
+      }
+      const password = document.getElementById('sheetNewPassword')?.value?.trim() || undefined;
 
       if (!destination) {
         showToast('Error', 'Please enter a destination URL', 'error');
@@ -9615,7 +9825,10 @@ Create .github/workflows/update-preview-link.yml that:
             code: code || undefined,
             destination,
             category_id: categoryId || undefined,
-            description: description || undefined
+            description: description || undefined,
+            tags,
+            expires_at,
+            password
           })
         });
 
@@ -9630,7 +9843,7 @@ Create .github/workflows/update-preview-link.yml that:
         showToast('Success', 'Link created!', 'success');
         closeCreateSheet();
 
-        // Clear form
+        // Clear form (closeCreateSheet resets advanced fields)
         document.getElementById('sheetNewCode').value = '';
         document.getElementById('sheetNewDestination').value = '';
         document.getElementById('sheetNewDescription').value = '';
