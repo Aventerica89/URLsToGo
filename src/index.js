@@ -293,7 +293,16 @@ export default {
 
     // Get user email from Clerk JWT (with API key fallback)
     const authContext = await getUserEmailWithFallback(request, env);
-    const userEmail = authContext?.email || null;
+    let userEmail = authContext?.email || null;
+
+    // Admin identity normalization — map any known admin alias to canonical ADMIN_EMAIL
+    // Prevents email split when Clerk returns different email variants across sessions
+    if (userEmail && env.ADMIN_EMAIL && env.ADMIN_ALIASES) {
+      const aliases = env.ADMIN_ALIASES.split(',').map(e => e.trim().toLowerCase());
+      if (aliases.includes(userEmail.toLowerCase())) {
+        userEmail = env.ADMIN_EMAIL;
+      }
+    }
     // scopes is null for Clerk/CF auth (full access); string[] for API key auth
     const apiKeyScopes = authContext?.scopes || null;
 
