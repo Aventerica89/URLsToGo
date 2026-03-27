@@ -1,5 +1,8 @@
 // Official Clerk SDK for JWT verification
 import { verifyToken, createClerkClient } from '@clerk/backend';
+
+// In-memory cache: userId → email (persists within a Worker isolate, avoids repeated Clerk API calls)
+const _userEmailCache = new Map();
 // GitHub sealed box encryption for deploying secrets
 import { seal as sodiumSeal } from 'tweetsodium';
 
@@ -2201,12 +2204,17 @@ async function getUserEmail(request, env) {
     const userId = payload.sub;
     if (!userId) return null;
 
+    // Check in-memory cache before hitting Clerk API (avoids repeated calls per isolate)
+    if (_userEmailCache.has(userId)) return _userEmailCache.get(userId);
+
     const clerkClient = createClerkClient({ secretKey });
     const user = await clerkClient.users.getUser(userId);
 
     const primaryEmail = user.emailAddresses?.find(e => e.id === user.primaryEmailAddressId)?.emailAddress;
     const anyEmail = user.emailAddresses?.[0]?.emailAddress;
-    return primaryEmail || anyEmail || null;
+    const email = primaryEmail || anyEmail || null;
+    if (email) _userEmailCache.set(userId, email);
+    return email;
   } catch (e) {
     console.error('Clerk auth error:', e.message);
     return null;
