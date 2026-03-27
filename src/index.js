@@ -3419,7 +3419,10 @@ a { color: #8b5cf6; text-decoration: none; }
 }
 .price-cta.free { background: #27272a; color: #fafafa; }
 .price-cta.pro-btn { background: #8b5cf6; color: #fff; }
+.price-cta.biz-btn { background: #27272a; color: #fafafa; border: 1px solid #3f3f46; }
 .price-cta:hover { opacity: 0.85; }
+.coming-soon-tag { font-size: 10px; font-weight: 600; color: #8b5cf6; background: rgba(139,92,246,0.12); border: 1px solid rgba(139,92,246,0.25); padding: 2px 6px; border-radius: 4px; margin-left: 4px; vertical-align: middle; white-space: nowrap; }
+.price-card.business { border-color: #3f3f46; }
 .founding { margin-top: 24px; }
 .founding-label { font-size: 13px; color: #a1a1aa; margin-bottom: 8px; }
 .founding-bar { height: 8px; background: #27272a; border-radius: 999px; overflow: hidden; }
@@ -3666,6 +3669,7 @@ footer { padding: 64px 24px; border-top: 1px solid #27272a; text-align: center; 
           <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Password-protected &amp; expiring links</li>
           <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>API keys &amp; CI/CD preview links</li>
           <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Shared collections &amp; unlimited categories</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>1 custom domain <span class="coming-soon-tag">Coming Soon</span></li>
         </ul>
         <button class="price-cta pro-btn">Start Pro &mdash; 25% off forever</button>
         <div class="founding">
@@ -3674,9 +3678,22 @@ footer { padding: 64px 24px; border-top: 1px solid #27272a; text-align: center; 
           <div class="founding-note"><span id="founding-left"></span></div>
         </div>
       </div>
+      <div class="price-card business">
+        <div class="price-name">Business</div>
+        <div class="price-amount">$29<span>/mo</span></div>
+        <ul class="price-features" style="margin: 24px 0;">
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>2,000 links total</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Full analytics (geo, device, browser)</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Password-protected &amp; expiring links</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>API keys &amp; CI/CD preview links</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Shared collections &amp; unlimited categories</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>5 custom domains <span class="coming-soon-tag">Coming Soon</span></li>
+        </ul>
+        <button class="price-cta biz-btn">Start Business</button>
+      </div>
     </div>
     <div class="competitor-row">
-      <p><strong>Bitly</strong> $29/mo &middot; 500 links/month &nbsp;|&nbsp; <strong>Dub.co</strong> $25/mo &middot; 1000 links/month &nbsp;|&nbsp; <strong>URLsToGo</strong> $9/mo &middot; 500 links total</p>
+      <p><strong>Bitly</strong> $29/mo &middot; 500 links/month &nbsp;|&nbsp; <strong>Dub.co</strong> $25/mo &middot; 1000 links/month &nbsp;|&nbsp; <strong>URLsToGo Pro</strong> $9/mo &middot; 500 links total</p>
     </div>
   </div>
 </section>
