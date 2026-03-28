@@ -2174,7 +2174,6 @@ async function getUserEmail(request, env) {
   try {
     const clerkClient = createClerkClient({ secretKey, publishableKey });
     const requestState = await clerkClient.authenticateRequest(request, {
-      ...(jwtKey ? { jwtKey } : {}),
       authorizedParties: ['https://urlstogo.cloud', 'https://go.urlstogo.cloud'],
       domain: 'urlstogo.cloud',
     });
