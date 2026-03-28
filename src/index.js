@@ -292,6 +292,8 @@ export default {
 
     // Get user email from Clerk JWT (with API key fallback)
     const authContext = await getUserEmailWithFallback(request, env);
+    // Clerk handshake: stale session needs server-side refresh — return redirect immediately
+    if (authContext?.handshake) return authContext.handshake;
     let userEmail = authContext?.email || null;
 
     // Admin identity normalization — map any known admin alias to canonical ADMIN_EMAIL
@@ -400,12 +402,21 @@ try{
   s.className='error';
   s.textContent='Error: '+e.message;
 }})();
-</script></div></body></html>`, {
-        headers: {
+</script></div></body></html>`, (() => {
+        // Expire Clerk HttpOnly cookies server-side — document.cookie cannot clear these.
+        // __client holds the session token and survives JS-only clearing.
+        const headers = new Headers({
           'Content-Type': 'text/html;charset=UTF-8',
-          'Cache-Control': 'no-cache, no-store, must-revalidate'
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+        });
+        const expireBase = '; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure; SameSite=Lax';
+        for (const domain of ['urlstogo.cloud', '.urlstogo.cloud']) {
+          for (const name of ['__client', '__session', '__client_uat', '__clerk_db_jwt']) {
+            headers.append('Set-Cookie', `${name}=${expireBase}; Domain=${domain}`);
+          }
         }
-      });
+        return { headers };
+      })());
     }
     if (path === 'icon-192.png' || path === 'icon-512.png') {
       const size = path === 'icon-192.png' ? 192 : 512;
@@ -2053,7 +2064,8 @@ try{
 
     // GET /api/onboarding/status
     if (path === 'api/onboarding/status' && request.method === 'GET') {
-      const userEmail = await getUserEmail(request, env);
+      const emailResult = await getUserEmail(request, env);
+      const userEmail = emailResult?.email || null;
       if (!userEmail) return jsonResponse({ error: 'Unauthorized' }, { status: 401 });
 
       const row = await env.DB.prepare(
@@ -2068,7 +2080,8 @@ try{
 
     // POST /api/onboarding/complete
     if (path === 'api/onboarding/complete' && request.method === 'POST') {
-      const userEmail = await getUserEmail(request, env);
+      const emailResult = await getUserEmail(request, env);
+      const userEmail = emailResult?.email || null;
       if (!userEmail) return jsonResponse({ error: 'Unauthorized' }, { status: 401 });
 
       await env.DB.prepare(
@@ -2155,7 +2168,7 @@ async function getUserEmail(request, env) {
   const secretKey = env.CLERK_SECRET_KEY;
   if (!secretKey) {
     console.error('CLERK_SECRET_KEY not configured');
-    return null;
+    return { email: null, handshake: null };
   }
 
   const jwtKey = env.CLERK_JWT_KEY;
@@ -2169,41 +2182,50 @@ async function getUserEmail(request, env) {
       proxyUrl: 'https://urlstogo.cloud/__clerk',
     });
 
-    if (!requestState.isSignedIn) return null;
+    // Clerk v5: status === 'handshake' means stale/expired session that needs refresh.
+    // Return the redirect headers so the browser can complete the handshake cycle.
+    // Ignoring handshake causes the login↔admin redirect loop.
+    if (requestState.status === 'handshake') {
+      return { email: null, handshake: new Response(null, { status: 307, headers: requestState.headers }) };
+    }
+
+    if (!requestState.isSignedIn) return { email: null, handshake: null };
 
     const auth = requestState.toAuth();
     const userId = auth?.userId;
-    if (!userId) return null;
+    if (!userId) return { email: null, handshake: null };
 
     // Short-circuit if email is in session claims (requires Clerk session token customization)
     const email = auth?.sessionClaims?.email;
-    if (email) return email;
+    if (email) return { email, handshake: null };
 
     // Fallback: fetch email from Clerk API using cached userId lookup
-    if (_userEmailCache.has(userId)) return _userEmailCache.get(userId);
+    if (_userEmailCache.has(userId)) return { email: _userEmailCache.get(userId), handshake: null };
 
     const user = await clerkClient.users.getUser(userId);
     const primaryEmail = user.emailAddresses?.find(e => e.id === user.primaryEmailAddressId)?.emailAddress;
     const anyEmail = user.emailAddresses?.[0]?.emailAddress;
     const resolvedEmail = primaryEmail || anyEmail || null;
     if (resolvedEmail) _userEmailCache.set(userId, resolvedEmail);
-    return resolvedEmail;
+    return { email: resolvedEmail, handshake: null };
   } catch (e) {
     console.error('Clerk auth error:', String(e));
-    return null;
+    return { email: null, handshake: null };
   }
 }
 
-// Returns { email, scopes } where scopes is null for Clerk auth (full access)
-// or string[] for API key auth (enforced at gateway)
+// Returns { email, scopes, handshake } where:
+// - handshake: Response | null — non-null means Clerk needs a session refresh; return this immediately
+// - scopes: null for Clerk auth (full access), string[] for API key auth (enforced at gateway)
 async function getUserEmailWithFallback(request, env) {
   // First try Clerk
-  const clerkEmail = await getUserEmail(request, env);
-  if (clerkEmail) return { email: clerkEmail, scopes: null };
+  const clerkResult = await getUserEmail(request, env);
+  if (clerkResult?.handshake) return { email: null, scopes: null, handshake: clerkResult.handshake };
+  if (clerkResult?.email) return { email: clerkResult.email, scopes: null, handshake: null };
 
   // Try API key authentication (for programmatic access)
   const apiKeyResult = await validateApiKey(request, env);
-  if (apiKeyResult) return { email: apiKeyResult.email, scopes: apiKeyResult.scopes };
+  if (apiKeyResult) return { email: apiKeyResult.email, scopes: apiKeyResult.scopes, handshake: null };
 
   return null;
 }
@@ -3180,10 +3202,26 @@ function getAuthPageHTML(env, mode = 'login', nonce = '') {
         const clerk = window.Clerk;
         if (!clerk) throw new Error('Clerk not available');
 
+        // Loop detection: if this page has reloaded 3+ times in under 2.5s, we're in a loop.
+        // Stale HttpOnly cookies can cause clerk.load() to trigger a redirect that comes right back here.
+        const LOOP_TS = '__utg_ll_ts', LOOP_N = '__utg_ll_n';
+        const now = Date.now();
+        const lastTs = Number(sessionStorage.getItem(LOOP_TS) || 0);
+        const cnt = Number(sessionStorage.getItem(LOOP_N) || 0);
+        const loopDetected = now - lastTs < 2500 && cnt >= 3;
+        sessionStorage.setItem(LOOP_TS, String(now));
+        sessionStorage.setItem(LOOP_N, loopDetected ? '0' : String(cnt + 1));
+
         await clerk.load({ proxyUrl: window.location.origin + '/__clerk' });
 
-        // Check if already signed in
-        if (clerk.user) {
+        // If loop was detected and user appears signed in, sign them out to clear stale cookies.
+        if (loopDetected && clerk.user) {
+          await clerk.signOut();
+        }
+
+        // Only redirect if session is confirmed active — stale cookies can set clerk.user without
+        // a valid session, which causes the login↔admin redirect loop.
+        if (clerk.user && clerk.session?.status === 'active') {
           window.location.href = '${ADMIN_PATH}';
           return;
         }
