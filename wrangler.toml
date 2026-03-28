@@ -7,7 +7,8 @@ keep_vars = true  # Preserve dashboard-set environment variables during deploy
 [vars]
 CLERK_PUBLISHABLE_KEY = "pk_live_Y2xlcmsudXJsc3RvZ28uY2xvdWQk"
 GITHUB_OAUTH_CLIENT_ID = "Ov23lilIDFp3O0lrZUs2"
-# CLERK_SECRET_KEY, GITHUB_OAUTH_CLIENT_SECRET set via wrangler secret
+# CLERK_SECRET_KEY, GITHUB_OAUTH_CLIENT_SECRET, CLERK_JWT_KEY set via Cloudflare Dashboard Runtime Variables
+# CLERK_JWT_KEY = PEM public key for networkless JWT verification (get from Clerk Dashboard > API Keys > JWKS Public Key)
 
 [[d1_databases]]
 binding = "DB"
