@@ -277,7 +277,44 @@ export default {
       proxyReq.headers.set('X-Forwarded-Host', url.host);
       proxyReq.headers.set('X-Forwarded-Proto', 'https');
 
-      return fetch(proxyReq);
+      const clerkResp = await fetch(proxyReq);
+
+      // Rewrite Set-Cookie headers: strip Domain so browser accepts them on urlstogo.cloud.
+      // Clerk sets Domain=.clerk.services (or similar) which browsers reject for cross-domain
+      // cookies. Without the Domain attribute, the browser uses the current origin's domain.
+      const respHeaders = new Headers(clerkResp.headers);
+
+      // Collect all Set-Cookie values by iterating entries (handles multiple cookies correctly)
+      const cookies = [];
+      for (const [name, value] of clerkResp.headers.entries()) {
+        if (name.toLowerCase() === 'set-cookie') {
+          cookies.push(value);
+        }
+      }
+
+      if (cookies.length > 0) {
+        respHeaders.delete('set-cookie');
+        for (const cookie of cookies) {
+          // Remove Domain=... attribute — browser will default to urlstogo.cloud
+          const rewritten = cookie.replace(/;\s*Domain=[^;]*/gi, '');
+          respHeaders.append('set-cookie', rewritten);
+        }
+      }
+
+      return new Response(clerkResp.body, {
+        status: clerkResp.status,
+        statusText: clerkResp.statusText,
+        headers: respHeaders,
+      });
+    }
+
+    // Reserve /v1/* for Clerk — never treat Clerk auth paths as shortlinks
+    // OAuth error redirects like /v1/oauth_callback land here if /__clerk prefix is lost
+    if (path.startsWith('v1/')) {
+      return new Response(JSON.stringify({ error: 'auth_path_reserved' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' }
+      });
     }
 
     // Reserve /v1/* for Clerk — never treat Clerk auth paths as shortlinks
