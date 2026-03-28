@@ -268,47 +268,17 @@ export default {
       const proxyUrl = `${url.origin}/__clerk`;
       const targetUrl = request.url.replace(proxyUrl, clerkFapi);
 
-      // Forward ALL original headers intact (required per Clerk FAPI proxy docs),
-      // then set the three Clerk-required proxy headers on top
-      const proxyReq = new Request(targetUrl, { ...request, redirect: 'manual' });
+      // Clone the original request — new Request(request, init) preserves all original
+      // headers (including Cookie: __client=...) since it copies via prototype, not spread.
+      // { ...request } produces {} because Request properties are non-enumerable getters.
+      const proxyReq = new Request(request, { redirect: 'manual' });
       proxyReq.headers.set('Clerk-Proxy-Url', proxyUrl);
       proxyReq.headers.set('Clerk-Secret-Key', env.CLERK_SECRET_KEY);
       proxyReq.headers.set('X-Forwarded-For', request.headers.get('CF-Connecting-IP') || '');
       proxyReq.headers.set('X-Forwarded-Host', url.host);
       proxyReq.headers.set('X-Forwarded-Proto', 'https');
 
-      const clerkResp = await fetch(proxyReq);
-
-      // Redirect responses (e.g. OAuth callback completion) come back as opaqueredirect
-      // when redirect:'manual' is set. Return them directly — CF Workers forwards the actual
-      // 302+Location to the browser. We can't read or modify opaqueredirect headers.
-      if (clerkResp.type === 'opaqueredirect') {
-        return clerkResp;
-      }
-
-      // For normal responses, rewrite Set-Cookie domain so browser accepts cookies on urlstogo.cloud.
-      // Clerk sets Domain=.clerk.services which browsers reject for cross-domain cookies.
-      const respHeaders = new Headers(clerkResp.headers);
-      const cookies = [];
-      for (const [name, value] of clerkResp.headers.entries()) {
-        if (name.toLowerCase() === 'set-cookie') {
-          cookies.push(value);
-        }
-      }
-
-      if (cookies.length > 0) {
-        respHeaders.delete('set-cookie');
-        for (const cookie of cookies) {
-          const rewritten = cookie.replace(/;\s*Domain=[^;]*/gi, '');
-          respHeaders.append('set-cookie', rewritten);
-        }
-      }
-
-      return new Response(clerkResp.body, {
-        status: clerkResp.status,
-        statusText: clerkResp.statusText,
-        headers: respHeaders,
-      });
+      return fetch(targetUrl, proxyReq);
     }
 
     // Reserve /v1/* for Clerk — never treat Clerk auth paths as shortlinks
