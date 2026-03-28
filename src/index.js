@@ -8228,7 +8228,7 @@ Create .github/workflows/update-preview-link.yml that:
             var code = l.code || l.short_code || '';
             var dest = (l.destination || l.url || '').replace(/^https?:\\/\\//, '');
             var clicks = (l.recent_clicks || l.clicks || 0).toLocaleString();
-            return '<div class="dash-link-row" onclick="copyLink(\'' + escapeAttr(code) + '\')">' +
+            return '<div class="dash-link-row" onclick="copyLink(\\'' + escapeAttr(code) + '\\')">' +
               '<span class="dash-link-code">/' + escapeHtml(code) + '</span>' +
               '<span class="dash-link-dest">' + escapeHtml(dest) + '</span>' +
               '<span class="dash-link-stat">' + clicks + ' clicks</span>' +
@@ -8246,7 +8246,7 @@ Create .github/workflows/update-preview-link.yml that:
             var code = l.code || '';
             var dest = (l.destination || l.url || '').replace(/^https?:\\/\\//, '');
             var age = l.created_at ? formatRelativeTime(l.created_at) : '';
-            return '<div class="dash-link-row" onclick="copyLink(\'' + escapeAttr(code) + '\')">' +
+            return '<div class="dash-link-row" onclick="copyLink(\\'' + escapeAttr(code) + '\\')">' +
               '<span class="dash-link-code">/' + escapeHtml(code) + '</span>' +
               '<span class="dash-link-dest">' + escapeHtml(dest) + '</span>' +
               '<span class="dash-link-stat">' + escapeHtml(age) + '</span>' +
