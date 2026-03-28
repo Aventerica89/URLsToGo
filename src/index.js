@@ -2159,7 +2159,7 @@ async function verifyStripeSignature(payload, sigHeader, secret) {
   return crypto.subtle.verify('HMAC', key, sigBytes, new TextEncoder().encode(signedPayload));
 }
 // Get user info from Clerk session using authenticateRequest() (recommended by Clerk for Workers).
-// Uses networkless jwtKey verification — no JWKS URL derivation, no network calls for auth.
+// If CLERK_JWT_KEY is set, uses networkless RSA verification. Otherwise falls back to JWKS fetch.
 // authorizedParties prevents CSRF / origin confusion.
 async function getUserEmail(request, env) {
   const secretKey = env.CLERK_SECRET_KEY;
@@ -2168,27 +2168,16 @@ async function getUserEmail(request, env) {
     return { email: null, handshake: null };
   }
 
-  const jwtKey = env.CLERK_JWT_KEY;
+  const jwtKey = env.CLERK_JWT_KEY; // optional: enables networkless JWT verification
   const publishableKey = env.CLERK_PUBLISHABLE_KEY;
 
   try {
     const clerkClient = createClerkClient({ secretKey, publishableKey });
     const requestState = await clerkClient.authenticateRequest(request, {
+      ...(jwtKey ? { jwtKey } : {}),
       authorizedParties: ['https://urlstogo.cloud', 'https://go.urlstogo.cloud'],
       domain: 'urlstogo.cloud',
     });
-
-    // TEMP DIAG
-    const cookieHdr = request.headers.get('cookie') || '';
-    console.error('[CLERK_DIAG]', JSON.stringify({
-      status: requestState?.status,
-      isSignedIn: requestState?.isSignedIn,
-      reason: requestState?.reason,
-      message: requestState?.message,
-      hasSession: cookieHdr.includes('__session='),
-      hasClient: cookieHdr.includes('__client='),
-      path: new URL(request.url).pathname,
-    }));
 
     // Clerk v5: status === 'handshake' means stale/expired session that needs refresh.
     // Return the redirect headers so the browser can complete the handshake cycle.
@@ -2217,7 +2206,7 @@ async function getUserEmail(request, env) {
     if (resolvedEmail) _userEmailCache.set(userId, resolvedEmail);
     return { email: resolvedEmail, handshake: null };
   } catch (e) {
-    console.error('[CLERK_EXCEPTION]', String(e), e?.stack?.slice(0, 600));
+    console.error('[clerk] authenticateRequest error:', String(e));
     return { email: null, handshake: null };
   }
 }
