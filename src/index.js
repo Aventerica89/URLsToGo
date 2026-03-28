@@ -1,5 +1,5 @@
 // Official Clerk SDK for JWT verification
-import { verifyToken, createClerkClient } from '@clerk/backend';
+import { createClerkClient } from '@clerk/backend';
 
 // In-memory cache: userId → email (persists within a Worker isolate, avoids repeated Clerk API calls)
 const _userEmailCache = new Map();
@@ -276,6 +276,15 @@ export default {
       proxyReq.headers.set('X-Forwarded-For', request.headers.get('CF-Connecting-IP') || '');
 
       return fetch(proxyReq);
+    }
+
+    // Reserve /v1/* for Clerk — never treat Clerk auth paths as shortlinks
+    // OAuth error redirects like /v1/oauth_callback land here if /__clerk prefix is lost
+    if (path.startsWith('v1/')) {
+      return new Response(JSON.stringify({ error: 'auth_path_reserved' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' }
+      });
     }
 
     // Get user email from Clerk JWT (with API key fallback)
@@ -2136,76 +2145,50 @@ async function verifyStripeSignature(payload, sigHeader, secret) {
   const sigBytes = new Uint8Array(signature.match(/.{2}/g).map(b => parseInt(b, 16)));
   return crypto.subtle.verify('HMAC', key, sigBytes, new TextEncoder().encode(signedPayload));
 }
-// Get user info from Clerk session using official SDK
+// Get user info from Clerk session using authenticateRequest() (recommended by Clerk for Workers).
+// Uses networkless jwtKey verification — no JWKS URL derivation, no network calls for auth.
+// authorizedParties prevents CSRF / origin confusion.
 async function getUserEmail(request, env) {
-  // Check for Clerk session token in cookie or Authorization header
-  const cookies = request.headers.get('Cookie') || '';
-  const authHeader = request.headers.get('Authorization') || '';
-
   const secretKey = env.CLERK_SECRET_KEY;
   if (!secretKey) {
     console.error('CLERK_SECRET_KEY not configured');
     return null;
   }
 
-  // jwtKey = PEM public key for networkless JWT verification (recommended for Cloudflare Workers).
-  // When the FAPI proxy is configured, the JWT issuer changes to the app domain, so verifyToken
-  // with secretKey tries to fetch JWKS from urlstogo.cloud/.well-known/jwks.json (404).
-  // jwtKey bypasses the JWKS lookup entirely — no network call, no issuer-derived URL.
   const jwtKey = env.CLERK_JWT_KEY;
+  const publishableKey = env.CLERK_PUBLISHABLE_KEY;
 
-  // Collect all token candidates in priority order:
-  // 1. Bearer header
-  // 2. All __session* cookies (plain + instance-specific like __session_0fyEPKPy)
-  // 3. __clerk_db_jwt (dev fallback)
-  const tokenCandidates = [];
+  try {
+    const clerkClient = createClerkClient({ secretKey, publishableKey });
+    const requestState = await clerkClient.authenticateRequest(request, {
+      ...(jwtKey ? { jwtKey } : {}),
+      authorizedParties: ['https://urlstogo.cloud', 'https://go.urlstogo.cloud'],
+      proxyUrl: 'https://urlstogo.cloud/__clerk',
+    });
 
-  if (authHeader.startsWith('Bearer ')) {
-    tokenCandidates.push(authHeader.slice(7));
+    if (!requestState.isSignedIn) return null;
+
+    const auth = requestState.toAuth();
+    const userId = auth?.userId;
+    if (!userId) return null;
+
+    // Short-circuit if email is in session claims (requires Clerk session token customization)
+    const email = auth?.sessionClaims?.email;
+    if (email) return email;
+
+    // Fallback: fetch email from Clerk API using cached userId lookup
+    if (_userEmailCache.has(userId)) return _userEmailCache.get(userId);
+
+    const user = await clerkClient.users.getUser(userId);
+    const primaryEmail = user.emailAddresses?.find(e => e.id === user.primaryEmailAddressId)?.emailAddress;
+    const anyEmail = user.emailAddresses?.[0]?.emailAddress;
+    const resolvedEmail = primaryEmail || anyEmail || null;
+    if (resolvedEmail) _userEmailCache.set(userId, resolvedEmail);
+    return resolvedEmail;
+  } catch (e) {
+    console.error('Clerk auth error:', String(e));
+    return null;
   }
-
-  // Match all __session and __session_<instanceId> cookies
-  const sessionRegex = /__session[^=]*=([^;]+)/g;
-  let m;
-  while ((m = sessionRegex.exec(cookies)) !== null) {
-    tokenCandidates.push(m[1]);
-  }
-
-  // Dev fallback
-  const devMatch = cookies.match(/__clerk_db_jwt=([^;]+)/);
-  if (devMatch) tokenCandidates.push(devMatch[1]);
-
-  if (tokenCandidates.length === 0) return null;
-
-  // Try each token until one verifies successfully
-  for (const token of tokenCandidates) {
-    try {
-      const payload = await verifyToken(token, jwtKey ? { jwtKey } : { secretKey });
-      if (!payload) continue;
-
-      if (payload.email) return payload.email;
-
-      const userId = payload.sub;
-      if (!userId) continue;
-
-      if (_userEmailCache.has(userId)) return _userEmailCache.get(userId);
-
-      const clerkClient = createClerkClient({ secretKey });
-      const user = await clerkClient.users.getUser(userId);
-
-      const primaryEmail = user.emailAddresses?.find(e => e.id === user.primaryEmailAddressId)?.emailAddress;
-      const anyEmail = user.emailAddresses?.[0]?.emailAddress;
-      const email = primaryEmail || anyEmail || null;
-      if (email) _userEmailCache.set(userId, email);
-      return email;
-    } catch (e) {
-      // This token failed — try the next candidate
-      continue;
-    }
-  }
-
-  console.error('Clerk auth error: all token candidates failed verification');
-  return null;
 }
 
 // Returns { email, scopes } where scopes is null for Clerk auth (full access)
