@@ -2158,31 +2158,6 @@ async function getUserEmail(request, env) {
   const cookies = request.headers.get('Cookie') || '';
   const authHeader = request.headers.get('Authorization') || '';
 
-  let token = null;
-
-  // Try Authorization header first (Bearer token)
-  if (authHeader.startsWith('Bearer ')) {
-    token = authHeader.slice(7);
-  }
-
-  // Try __session cookie (Clerk's default session cookie)
-  if (!token) {
-    const sessionMatch = cookies.match(/__session=([^;]+)/);
-    if (sessionMatch) {
-      token = sessionMatch[1];
-    }
-  }
-
-  // Also check __clerk_db_jwt for development
-  if (!token) {
-    const devMatch = cookies.match(/__clerk_db_jwt=([^;]+)/);
-    if (devMatch) {
-      token = devMatch[1];
-    }
-  }
-
-  if (!token) return null;
-
   // Verify the JWT using official Clerk SDK
   const secretKey = env.CLERK_SECRET_KEY;
   if (!secretKey) {
@@ -2190,35 +2165,58 @@ async function getUserEmail(request, env) {
     return null;
   }
 
-  try {
-    const payload = await verifyToken(token, {
-      secretKey,
-    });
+  // Collect all token candidates in priority order:
+  // 1. Bearer header
+  // 2. All __session* cookies (plain + instance-specific like __session_0fyEPKPy)
+  // 3. __clerk_db_jwt (dev fallback)
+  const tokenCandidates = [];
 
-    if (!payload) return null;
-
-    // Prefer email from JWT custom claims (set via Clerk session customization)
-    // Falls back to a Clerk API call only when the claim is absent
-    if (payload.email) return payload.email;
-
-    const userId = payload.sub;
-    if (!userId) return null;
-
-    // Check in-memory cache before hitting Clerk API (avoids repeated calls per isolate)
-    if (_userEmailCache.has(userId)) return _userEmailCache.get(userId);
-
-    const clerkClient = createClerkClient({ secretKey });
-    const user = await clerkClient.users.getUser(userId);
-
-    const primaryEmail = user.emailAddresses?.find(e => e.id === user.primaryEmailAddressId)?.emailAddress;
-    const anyEmail = user.emailAddresses?.[0]?.emailAddress;
-    const email = primaryEmail || anyEmail || null;
-    if (email) _userEmailCache.set(userId, email);
-    return email;
-  } catch (e) {
-    console.error('Clerk auth error:', e.message);
-    return null;
+  if (authHeader.startsWith('Bearer ')) {
+    tokenCandidates.push(authHeader.slice(7));
   }
+
+  // Match all __session and __session_<instanceId> cookies
+  const sessionRegex = /__session[^=]*=([^;]+)/g;
+  let m;
+  while ((m = sessionRegex.exec(cookies)) !== null) {
+    tokenCandidates.push(m[1]);
+  }
+
+  // Dev fallback
+  const devMatch = cookies.match(/__clerk_db_jwt=([^;]+)/);
+  if (devMatch) tokenCandidates.push(devMatch[1]);
+
+  if (tokenCandidates.length === 0) return null;
+
+  // Try each token until one verifies successfully
+  for (const token of tokenCandidates) {
+    try {
+      const payload = await verifyToken(token, { secretKey });
+      if (!payload) continue;
+
+      if (payload.email) return payload.email;
+
+      const userId = payload.sub;
+      if (!userId) continue;
+
+      if (_userEmailCache.has(userId)) return _userEmailCache.get(userId);
+
+      const clerkClient = createClerkClient({ secretKey });
+      const user = await clerkClient.users.getUser(userId);
+
+      const primaryEmail = user.emailAddresses?.find(e => e.id === user.primaryEmailAddressId)?.emailAddress;
+      const anyEmail = user.emailAddresses?.[0]?.emailAddress;
+      const email = primaryEmail || anyEmail || null;
+      if (email) _userEmailCache.set(userId, email);
+      return email;
+    } catch (e) {
+      // This token failed — try the next candidate
+      continue;
+    }
+  }
+
+  console.error('Clerk auth error: all token candidates failed verification');
+  return null;
 }
 
 // Returns { email, scopes } where scopes is null for Clerk auth (full access)
