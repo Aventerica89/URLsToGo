@@ -268,30 +268,14 @@ export default {
       const proxyUrl = `${url.origin}/__clerk`;
       const targetUrl = request.url.replace(proxyUrl, clerkFapi);
 
-      const headers = new Headers();
-      headers.set('Clerk-Proxy-Url', proxyUrl);
-      headers.set('Clerk-Secret-Key', env.CLERK_SECRET_KEY);
-      headers.set('X-Forwarded-For', request.headers.get('CF-Connecting-IP') || '');
-      const ct = request.headers.get('Content-Type');
-      if (ct) headers.set('Content-Type', ct);
-      const cookie = request.headers.get('Cookie');
-      if (cookie) headers.set('Cookie', cookie);
-      const origin = request.headers.get('Origin');
-      if (origin) headers.set('Origin', origin);
-      const accept = request.headers.get('Accept');
-      if (accept) headers.set('Accept', accept);
+      // Forward ALL original headers intact (required per Clerk FAPI proxy docs),
+      // then set the three Clerk-required proxy headers on top
+      const proxyReq = new Request(targetUrl, { ...request, redirect: 'manual' });
+      proxyReq.headers.set('Clerk-Proxy-Url', proxyUrl);
+      proxyReq.headers.set('Clerk-Secret-Key', env.CLERK_SECRET_KEY);
+      proxyReq.headers.set('X-Forwarded-For', request.headers.get('CF-Connecting-IP') || '');
 
-      const proxyReq = new Request(targetUrl, {
-        method: request.method,
-        headers,
-        body: request.body,
-        redirect: 'manual',
-      });
-
-      const resp = await fetch(proxyReq);
-
-
-      return resp;
+      return fetch(proxyReq);
     }
 
     // Get user email from Clerk JWT (with API key fallback)
@@ -2158,12 +2142,17 @@ async function getUserEmail(request, env) {
   const cookies = request.headers.get('Cookie') || '';
   const authHeader = request.headers.get('Authorization') || '';
 
-  // Verify the JWT using official Clerk SDK
   const secretKey = env.CLERK_SECRET_KEY;
   if (!secretKey) {
     console.error('CLERK_SECRET_KEY not configured');
     return null;
   }
+
+  // jwtKey = PEM public key for networkless JWT verification (recommended for Cloudflare Workers).
+  // When the FAPI proxy is configured, the JWT issuer changes to the app domain, so verifyToken
+  // with secretKey tries to fetch JWKS from urlstogo.cloud/.well-known/jwks.json (404).
+  // jwtKey bypasses the JWKS lookup entirely — no network call, no issuer-derived URL.
+  const jwtKey = env.CLERK_JWT_KEY;
 
   // Collect all token candidates in priority order:
   // 1. Bearer header
@@ -2191,7 +2180,7 @@ async function getUserEmail(request, env) {
   // Try each token until one verifies successfully
   for (const token of tokenCandidates) {
     try {
-      const payload = await verifyToken(token, { secretKey });
+      const payload = await verifyToken(token, jwtKey ? { jwtKey } : { secretKey });
       if (!payload) continue;
 
       if (payload.email) return payload.email;
