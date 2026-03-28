@@ -8226,7 +8226,7 @@ Create .github/workflows/update-preview-link.yml that:
         if (topLinks.length) {
           topEl.innerHTML = topLinks.map(function(l) {
             var code = l.code || l.short_code || '';
-            var dest = (l.destination || l.url || '').replace(/^https?:\/\//, '');
+            var dest = (l.destination || l.url || '').replace(/^https?:\\/\\//, '');
             var clicks = (l.recent_clicks || l.clicks || 0).toLocaleString();
             return '<div class="dash-link-row" onclick="copyLink(\'' + escapeAttr(code) + '\')">' +
               '<span class="dash-link-code">/' + escapeHtml(code) + '</span>' +
@@ -8244,7 +8244,7 @@ Create .github/workflows/update-preview-link.yml that:
         if (recentLinks.length) {
           recentEl.innerHTML = recentLinks.map(function(l) {
             var code = l.code || '';
-            var dest = (l.destination || l.url || '').replace(/^https?:\/\//, '');
+            var dest = (l.destination || l.url || '').replace(/^https?:\\/\\//, '');
             var age = l.created_at ? formatRelativeTime(l.created_at) : '';
             return '<div class="dash-link-row" onclick="copyLink(\'' + escapeAttr(code) + '\')">' +
               '<span class="dash-link-code">/' + escapeHtml(code) + '</span>' +
