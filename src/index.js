@@ -2176,7 +2176,7 @@ async function getUserEmail(request, env) {
     const requestState = await clerkClient.authenticateRequest(request, {
       ...(jwtKey ? { jwtKey } : {}),
       authorizedParties: ['https://urlstogo.cloud', 'https://go.urlstogo.cloud'],
-      proxyUrl: 'https://urlstogo.cloud/__clerk',
+      domain: 'urlstogo.cloud',
     });
 
     // Clerk v5: status === 'handshake' means stale/expired session that needs refresh.
@@ -3199,7 +3199,7 @@ function getAuthPageHTML(env, mode = 'login', nonce = '') {
         const clerk = window.Clerk;
         if (!clerk) throw new Error('Clerk not available');
 
-        await clerk.load({ proxyUrl: window.location.origin + '/__clerk' });
+        await clerk.load();
 
         // Only redirect if session is confirmed active — stale cookies can set clerk.user without
         // a valid session, which causes the login↔admin redirect loop.
@@ -7112,7 +7112,7 @@ Create .github/workflows/update-preview-link.yml that:
       if (CLERK_PUBLISHABLE_KEY && window.Clerk) {
         try {
           clerkInstance = window.Clerk;
-          await clerkInstance.load({ proxyUrl: window.location.origin + '/__clerk' });
+          await clerkInstance.load();
         } catch (e) {
           console.error('Clerk load error:', e.message);
         }
