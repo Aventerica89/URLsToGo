@@ -279,12 +279,16 @@ export default {
 
       const clerkResp = await fetch(proxyReq);
 
-      // Rewrite Set-Cookie headers: strip Domain so browser accepts them on urlstogo.cloud.
-      // Clerk sets Domain=.clerk.services (or similar) which browsers reject for cross-domain
-      // cookies. Without the Domain attribute, the browser uses the current origin's domain.
-      const respHeaders = new Headers(clerkResp.headers);
+      // Redirect responses (e.g. OAuth callback completion) come back as opaqueredirect
+      // when redirect:'manual' is set. Return them directly — CF Workers forwards the actual
+      // 302+Location to the browser. We can't read or modify opaqueredirect headers.
+      if (clerkResp.type === 'opaqueredirect') {
+        return clerkResp;
+      }
 
-      // Collect all Set-Cookie values by iterating entries (handles multiple cookies correctly)
+      // For normal responses, rewrite Set-Cookie domain so browser accepts cookies on urlstogo.cloud.
+      // Clerk sets Domain=.clerk.services which browsers reject for cross-domain cookies.
+      const respHeaders = new Headers(clerkResp.headers);
       const cookies = [];
       for (const [name, value] of clerkResp.headers.entries()) {
         if (name.toLowerCase() === 'set-cookie') {
@@ -295,7 +299,6 @@ export default {
       if (cookies.length > 0) {
         respHeaders.delete('set-cookie');
         for (const cookie of cookies) {
-          // Remove Domain=... attribute — browser will default to urlstogo.cloud
           const rewritten = cookie.replace(/;\s*Domain=[^;]*/gi, '');
           respHeaders.append('set-cookie', rewritten);
         }
