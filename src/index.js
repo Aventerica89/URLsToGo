@@ -274,6 +274,8 @@ export default {
       proxyReq.headers.set('Clerk-Proxy-Url', proxyUrl);
       proxyReq.headers.set('Clerk-Secret-Key', env.CLERK_SECRET_KEY);
       proxyReq.headers.set('X-Forwarded-For', request.headers.get('CF-Connecting-IP') || '');
+      proxyReq.headers.set('X-Forwarded-Host', url.host);
+      proxyReq.headers.set('X-Forwarded-Proto', 'https');
 
       return fetch(proxyReq);
     }
