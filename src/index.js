@@ -290,6 +290,13 @@ export default {
       });
     }
 
+    // Public pages — serve before auth check so stale session cookies don't cause
+    // a handshake redirect loop on the login page itself.
+    if (path === '' || path === 'login' || path === 'signup') {
+      if (path === '') return htmlResponse((nonce) => getLandingPageHTML(nonce));
+      return htmlResponse((nonce) => getAuthPageHTML(env, path, nonce));
+    }
+
     // Get user email from Clerk JWT (with API key fallback)
     const authContext = await getUserEmailWithFallback(request, env);
     // Clerk handshake: stale session needs server-side refresh — return redirect immediately
@@ -317,16 +324,6 @@ export default {
           { status: 403 }
         );
       }
-    }
-
-    // Public landing page at root
-    if (path === '') {
-      return htmlResponse((nonce) => getLandingPageHTML(nonce));
-    }
-
-    // Clerk login/signup pages
-    if (path === 'login' || path === 'signup') {
-      return htmlResponse((nonce) => getAuthPageHTML(env, path, nonce));
     }
 
     // Serve design resource pages (no auth required)
