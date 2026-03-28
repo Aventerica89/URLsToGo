@@ -2179,6 +2179,18 @@ async function getUserEmail(request, env) {
       domain: 'urlstogo.cloud',
     });
 
+    // TEMP DIAG
+    const cookieHdr = request.headers.get('cookie') || '';
+    console.error('[CLERK_DIAG]', JSON.stringify({
+      status: requestState?.status,
+      isSignedIn: requestState?.isSignedIn,
+      reason: requestState?.reason,
+      message: requestState?.message,
+      hasSession: cookieHdr.includes('__session='),
+      hasClient: cookieHdr.includes('__client='),
+      path: new URL(request.url).pathname,
+    }));
+
     // Clerk v5: status === 'handshake' means stale/expired session that needs refresh.
     // Return the redirect headers so the browser can complete the handshake cycle.
     // Ignoring handshake causes the login↔admin redirect loop.
@@ -2206,7 +2218,7 @@ async function getUserEmail(request, env) {
     if (resolvedEmail) _userEmailCache.set(userId, resolvedEmail);
     return { email: resolvedEmail, handshake: null };
   } catch (e) {
-    console.error('Clerk auth error:', String(e));
+    console.error('[CLERK_EXCEPTION]', String(e), e?.stack?.slice(0, 600));
     return { email: null, handshake: null };
   }
 }
