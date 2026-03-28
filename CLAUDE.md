@@ -1,5 +1,16 @@
 # Claude Instructions for URLsToGo
 
+## TEMPLATE LITERAL ESCAPING (CRITICAL — src/index.js)
+
+`src/index.js` generates all HTML as one giant backtick template literal. Any JS written inside it must double-escape backslashes:
+
+- **Regex:** `\\/` not `\/` — e.g., `/^https?:\\/\\//` (bare `\/` silently drops the backslash → `//` starts a JS comment → SyntaxError)
+- **Inline event handlers:** `\\'` not `\'` — e.g., `onclick="copyLink(\\'' + code + '\\')"` (bare `\'` drops backslash → adjacent string literals → SyntaxError)
+- **Rule:** `\\X` in source → `\X` in emitted output. Only `\\` `` \` `` `\$` `\n` `\r` `\t` `\uXXXX` survive unmodified.
+- **Debugging:** SyntaxError with no line number → use `new Function()` bisect in Chrome DevTools. See `~/.claude/skills/learned/binary-search-syntax-error-inline-script.md`
+
+---
+
 ## CRITICAL: Deployment is Fully Automatic
 
 **DO NOT** tell the user to manually run database migrations or deploy via dashboard.
