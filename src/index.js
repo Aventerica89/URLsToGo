@@ -3202,22 +3202,7 @@ function getAuthPageHTML(env, mode = 'login', nonce = '') {
         const clerk = window.Clerk;
         if (!clerk) throw new Error('Clerk not available');
 
-        // Loop detection: if this page has reloaded 3+ times in under 2.5s, we're in a loop.
-        // Stale HttpOnly cookies can cause clerk.load() to trigger a redirect that comes right back here.
-        const LOOP_TS = '__utg_ll_ts', LOOP_N = '__utg_ll_n';
-        const now = Date.now();
-        const lastTs = Number(sessionStorage.getItem(LOOP_TS) || 0);
-        const cnt = Number(sessionStorage.getItem(LOOP_N) || 0);
-        const loopDetected = now - lastTs < 2500 && cnt >= 3;
-        sessionStorage.setItem(LOOP_TS, String(now));
-        sessionStorage.setItem(LOOP_N, loopDetected ? '0' : String(cnt + 1));
-
         await clerk.load({ proxyUrl: window.location.origin + '/__clerk' });
-
-        // If loop was detected and user appears signed in, sign them out to clear stale cookies.
-        if (loopDetected && clerk.user) {
-          await clerk.signOut();
-        }
 
         // Only redirect if session is confirmed active — stale cookies can set clerk.user without
         // a valid session, which causes the login↔admin redirect loop.
