@@ -3210,7 +3210,21 @@ function getAuthPageHTML(env, mode = 'login', nonce = '') {
         const clerk = window.Clerk;
         if (!clerk) throw new Error('Clerk not available');
 
+        // Loop detection: count rapid page loads. On 3+ loads within 2.5s, sign out to
+        // clear stale non-HttpOnly Clerk cookies that keep triggering the redirect cycle.
+        var LOOP_TS = '__utg_ll_ts', LOOP_N = '__utg_ll_n';
+        var now = Date.now();
+        var lastTs = Number(sessionStorage.getItem(LOOP_TS) || 0);
+        var cnt = Number(sessionStorage.getItem(LOOP_N) || 0);
+        var loopDetected = now - lastTs < 2500 && cnt >= 3;
+        sessionStorage.setItem(LOOP_TS, String(now));
+        sessionStorage.setItem(LOOP_N, loopDetected ? '0' : String(cnt + 1));
+
         await clerk.load();
+
+        if (loopDetected && clerk.user) {
+          await clerk.signOut();
+        }
 
         // Only redirect if session is confirmed active — stale cookies can set clerk.user without
         // a valid session, which causes the login↔admin redirect loop.
