@@ -1,5 +1,16 @@
 # Claude Instructions for URLsToGo
 
+## TEMPLATE LITERAL ESCAPING (CRITICAL — src/index.js)
+
+`src/index.js` generates all HTML as one giant backtick template literal. Any JS written inside it must double-escape backslashes:
+
+- **Regex:** `\\/` not `\/` — e.g., `/^https?:\\/\\//` (bare `\/` silently drops the backslash → `//` starts a JS comment → SyntaxError)
+- **Inline event handlers:** `\\'` not `\'` — e.g., `onclick="copyLink(\\'' + code + '\\')"` (bare `\'` drops backslash → adjacent string literals → SyntaxError)
+- **Rule:** `\\X` in source → `\X` in emitted output. Only `\\` `` \` `` `\$` `\n` `\r` `\t` `\uXXXX` survive unmodified.
+- **Debugging:** SyntaxError with no line number → use `new Function()` bisect in Chrome DevTools. See `~/.claude/skills/learned/binary-search-syntax-error-inline-script.md`
+
+---
+
 ## CRITICAL: Deployment is Fully Automatic
 
 **DO NOT** tell the user to manually run database migrations or deploy via dashboard.
@@ -32,6 +43,7 @@
 **Existing migration files (append-only reference):**
 - `migrations.sql` — core schema
 - `migrations-billing.sql` — Stripe subscriptions table
+- `migrations-onboarding.sql` — user_preferences table (onboarding tour state)
 
 ### One-Time Setup (Already Done)
 
@@ -113,6 +125,37 @@ The UI uses Shadcn-style CSS variables. To test UI changes:
 - Merging to `main` = automatic deploy
 - Schema changes → create new migration file (see above)
 - Never ask user to run wrangler commands or edit Cloudflare dashboard
+
+---
+
+## CLERK FRONTEND API PROXY (March 2026)
+
+### Overview
+
+Clerk production sets cookies on `.clerk.urlstogo.cloud`, not `.urlstogo.cloud`. Worker can't read cross-subdomain cookies. Fixed via Frontend API proxy at `/__clerk/*`.
+
+### Architecture
+
+- Worker route `/__clerk/*` proxies to `frontend-api.clerk.services` (NOT `clerk.urlstogo.cloud` — same CF zone fetch loops back)
+- Clean headers only: `Clerk-Proxy-Url`, `Clerk-Secret-Key`, `X-Forwarded-For`, plus forwarded `Content-Type`/`Cookie`/`Origin`/`Accept`
+- `proxyUrl: window.location.origin + '/__clerk'` passed to `clerk.load()` on both login and admin pages
+- Proxy registered via Clerk Backend API: `PATCH /v1/domains/dmn_3B6tiz713MDr395h761QH6Pu8m4`
+
+### Google OAuth
+
+Redirect URI: `https://urlstogo.cloud/__clerk/v1/oauth_callback` (was `clerk.urlstogo.cloud/v1/oauth_callback`)
+
+### Key Code Locations
+
+| Location | Purpose |
+|----------|---------|
+| `src/index.js:~261` | `/__clerk/*` proxy route (runs before auth) |
+| `src/index.js:~2985` | Login page `clerk.load({ proxyUrl })` |
+| `src/index.js:~7503` | Admin page `clerkInstance.load({ proxyUrl })` |
+
+### 1Password
+
+Clerk production keys stored in `urlstogo` item (App Dev vault): `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`
 
 ---
 
@@ -350,9 +393,10 @@ To add dynamic preview links to a new repository:
 | Plan | Price | Links | Analytics |
 |------|-------|-------|-----------|
 | Free | $0 | 25 | None |
-| Pro | $12/mo | 200 | Full (geo, device, browser) |
+| Pro | $9/mo (founding) / $12/mo | 500 | Full (geo, device, browser) |
+| Business | $29/mo | 2000 | Full |
 
-Limits defined in `src/index.js`: `const PLAN_LIMITS = { free: { links: 25 }, pro: { links: 200 } }`
+Limits defined in `src/index.js`: `const PLAN_LIMITS = { free: { links: 25 }, pro: { links: 500 } }`
 
 ### Stripe Resources
 
@@ -391,33 +435,11 @@ Search `src/index.js` for: `getUserPlan`, `stripeRequest`, `verifyStripeSignatur
 
 ---
 
-## 1P-LOCAL-AUTH PLUGIN — UPSELL ANGLE (February 2026)
+## ADMIN PLAN BYPASS
 
-### What It Is
+`ADMIN_EMAIL` env var (set in Cloudflare Dashboard) grants 9999 link limit with no upgrade prompts. Set to `admin@jbmdcreations.com`.
 
-`1p-local-auth` is a free Claude Code plugin (published at `https://github.com/Aventerica89/1p-local-auth`) that helps developers manage local dev OAuth credentials via 1Password. It provides 5 skills: `/setup-local-auth`, `/auth-status`, `/auth-inject`, `/auth-rotate`, `/teardown-local-auth`.
-
-Target audience: developers building OAuth-enabled apps with Better Auth or NextAuth v5 — Google, GitHub, Todoist providers.
-
-### The Upsell Connection
-
-These developers are the **core URLsToGo buyer persona**:
-- They're building apps that need URL management (tracking links, preview environments, staged rollouts)
-- They already use the URLsToGo GitHub integration pattern (auto-update preview shortlinks on deploy)
-- They need API-accessible link management for their app's CI/CD workflows
-- They're Claude Code power users — already comfortable with developer tooling at $12/mo price points
-
-### Cross-Promotion Hooks
-
-**In 1p-local-auth → URLsToGo:** The plugin's `references/providers.md` and README could mention: "Track your OAuth app's deployed preview URLs with [URLsToGo](https://urlstogo.cloud) — the dev-friendly URL shortener with GitHub Actions integration."
-
-**In URLsToGo → 1p-local-auth:** Email sequence Email 4 (API power users) and Email 2 (features tour) are natural spots to mention: "If you're building an OAuth app, our creator also published `1p-local-auth` — a free Claude Code plugin for managing dev credentials."
-
-**Marketing angle:** Both tools target the same "solo dev building something real with Claude Code" niche. Owning that niche across multiple free tools (1p-local-auth, the URLsToGo Claude Code plugin, artifact-manager) builds authority and drives URLsToGo sign-ups organically.
-
-### Pitch Copy
-
-> "Built URLsToGo and the 1p-local-auth Claude Code plugin. If you're a developer using Claude Code to build OAuth apps, I've got a free tool for your local dev workflow and a $12/mo URL shortener with a proper API. Come check out what else I'm building."
+Search `src/index.js` for: `ADMIN_EMAIL`, `getUserPlan`
 
 ---
 
@@ -564,3 +586,11 @@ if (path.startsWith('api/categories/') && !path.endsWith('/share') && request.me
 - Archived section: owner-only compact table, `#0d0d0f` row bg, muted zinc palette
 - Restore button: zinc default → purple hover
 - All inline CSS (no external stylesheets) — standalone page, no CSS variable dependencies
+
+<!-- llmstxt:start -->
+## Installed Documentation (llmstxt)
+
+When working with these technologies, read the corresponding skill for detailed reference:
+
+- Clerk: .agents/skills/clerk/SKILL.md
+<!-- llmstxt:end -->

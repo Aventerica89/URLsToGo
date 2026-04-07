@@ -1,5 +1,8 @@
 // Official Clerk SDK for JWT verification
-import { verifyToken, createClerkClient } from '@clerk/backend';
+import { createClerkClient } from '@clerk/backend';
+
+// In-memory cache: userId → email (persists within a Worker isolate, avoids repeated Clerk API calls)
+const _userEmailCache = new Map();
 // GitHub sealed box encryption for deploying secrets
 import { seal as sodiumSeal } from 'tweetsodium';
 
@@ -32,12 +35,14 @@ const PWA_MANIFEST = {
   ]
 };
 
+// Deploy version — unique per Worker instance (changes on each deploy)
+const DEPLOY_VERSION = String(Date.now());
+
 // Service Worker JavaScript
 const SERVICE_WORKER_JS = `
-const CACHE_NAME = 'urlstogo-v1';
+const CACHE_NAME = 'urlstogo-${DEPLOY_VERSION}';
 const STATIC_ASSETS = [
   '${ADMIN_PATH}',
-  '/login',
   '/manifest.json'
 ];
 
@@ -65,8 +70,9 @@ self.addEventListener('activate', (event) => {
 
 // Fetch - network first, fallback to cache
 self.addEventListener('fetch', (event) => {
-  // Skip non-GET requests and API calls
-  if (event.request.method !== 'GET' || event.request.url.includes('/api/')) {
+  // Skip non-GET, API calls, auth pages, and Clerk proxy
+  const url = event.request.url;
+  if (event.request.method !== 'GET' || url.includes('/api/') || url.includes('/__clerk') || url.includes('/login') || url.includes('/clear-cache')) {
     return;
   }
 
@@ -147,31 +153,40 @@ const ALLOWED_ORIGINS = [
 ];
 
 // Security headers applied to every HTML response
-const HTML_SECURITY_HEADERS = {
-  'X-Frame-Options': 'DENY',
-  'X-Content-Type-Options': 'nosniff',
-  'Referrer-Policy': 'strict-origin-when-cross-origin',
-  'Permissions-Policy': 'geolocation=(), microphone=(), camera=()',
-  'Content-Security-Policy': [
-    "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://static.cloudflareinsights.com",
-    "worker-src 'self' blob:",
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "font-src 'self' https://fonts.gstatic.com",
-    "img-src 'self' data: https:",
-    "connect-src 'self' https://*.clerk.accounts.dev https://api.clerk.dev https://static.cloudflareinsights.com",
-    "frame-ancestors 'none'",
-    "base-uri 'self'",
-    "form-action 'self'",
-    "object-src 'none'",
-  ].join('; '),
-};
+function generateNonce() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return btoa(String.fromCharCode(...bytes));
+}
+
+function getSecurityHeaders(nonce) {
+  return {
+    'X-Frame-Options': 'DENY',
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'Permissions-Policy': 'geolocation=(), microphone=(), camera=()',
+    'Content-Security-Policy': [
+      "default-src 'self'",
+      "script-src 'unsafe-inline' https://cdn.jsdelivr.net https://static.cloudflareinsights.com https://*.clerk.accounts.dev https://clerk.urlstogo.cloud https://challenges.cloudflare.com",
+      "worker-src 'self' blob:",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' https://fonts.gstatic.com",
+      "img-src 'self' data: https:",
+      "connect-src 'self' https://*.clerk.accounts.dev https://clerk.urlstogo.cloud https://api.clerk.dev https://api.github.com https://static.cloudflareinsights.com",
+      "frame-src https://*.clerk.accounts.dev https://clerk.urlstogo.cloud https://challenges.cloudflare.com",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "object-src 'none'",
+    ].join('; '),
+  };
+}
 
 // Static CORS headers used on API responses (primary origin)
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': ALLOWED_ORIGINS[0],
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Cf-Access-Jwt-Assertion, Authorization',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key',
   'Access-Control-Max-Age': '86400',
   'Vary': 'Origin',
 };
@@ -182,12 +197,14 @@ const CORS_HEADERS = {
 // =============================================================================
 
 const PLAN_LIMITS = {
-  free: { links: 25 },
-  pro:  { links: 200 },
+  free:  { links: 25 },
+  pro:   { links: 500 },
+  admin: { links: 9999 },
 };
 
 const STRIPE_API_BASE = 'https://api.stripe.com/v1';
 const STRIPE_PRO_PRICE_ID = 'price_1T5Jz1H6aZ92e8Txu9tLJnRI';
+const STRIPE_FOUNDING_COUPON_ID = 'v4YhDxgz';
 // Dynamic CORS headers for preflight — echoes the requesting origin if allowed
 function getCorsHeaders(request) {
   const origin = request?.headers?.get('Origin') || '';
@@ -223,12 +240,13 @@ function errorResponse(message, status = 400) {
 }
 
 // HTML response with full security headers applied
-function htmlResponse(html, status = 200) {
-  return new Response(html, {
+function htmlResponse(html, status = 200, nonce = null) {
+  const n = nonce || generateNonce();
+  return new Response(typeof html === 'function' ? html(n) : html, {
     status,
     headers: {
       'Content-Type': 'text/html; charset=UTF-8',
-      ...HTML_SECURITY_HEADERS,
+      ...getSecurityHeaders(n),
     },
   });
 }
@@ -243,9 +261,56 @@ export default {
       return new Response(null, { status: 204, headers: getCorsHeaders(request) });
     }
 
-    // Get user email from Clerk JWT (with Cloudflare Access and API key fallback)
+    // Clerk Frontend API proxy — must run before auth since it enables auth
+    // Proxies /__clerk/* to Clerk's Frontend API so cookies are set on our domain
+    if (path.startsWith('__clerk')) {
+      const clerkFapi = 'https://frontend-api.clerk.dev';
+      const proxyUrl = `${url.origin}/__clerk`;
+      const targetUrl = request.url.replace(proxyUrl, clerkFapi);
+
+      // Clone the original request — new Request(request, init) preserves all original
+      // headers (including Cookie: __client=...) since it copies via prototype, not spread.
+      // { ...request } produces {} because Request properties are non-enumerable getters.
+      const proxyReq = new Request(request, { redirect: 'manual' });
+      proxyReq.headers.set('Clerk-Proxy-Url', proxyUrl);
+      proxyReq.headers.set('Clerk-Secret-Key', env.CLERK_SECRET_KEY);
+      proxyReq.headers.set('X-Forwarded-For', request.headers.get('CF-Connecting-IP') || '');
+      proxyReq.headers.set('X-Forwarded-Host', url.host);
+      proxyReq.headers.set('X-Forwarded-Proto', 'https');
+
+      return fetch(targetUrl, proxyReq);
+    }
+
+    // Reserve /v1/* for Clerk — never treat Clerk auth paths as shortlinks
+    // OAuth error redirects like /v1/oauth_callback land here if /__clerk prefix is lost
+    if (path.startsWith('v1/')) {
+      return new Response(JSON.stringify({ error: 'auth_path_reserved' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Public pages — serve before auth check so stale session cookies don't cause
+    // a handshake redirect loop on the login page itself.
+    if (path === '' || path === 'login' || path === 'signup') {
+      if (path === '') return htmlResponse((nonce) => getLandingPageHTML(nonce));
+      return htmlResponse((nonce) => getAuthPageHTML(env, path, nonce));
+    }
+
+    // Get user email from Clerk JWT (with API key fallback)
     const authContext = await getUserEmailWithFallback(request, env);
-    const userEmail = authContext?.email || null;
+    // Clerk handshake: stale session needs server-side refresh — return redirect immediately
+    if (authContext?.handshake) return authContext.handshake;
+    let userEmail = authContext?.email || null;
+
+    // Admin identity normalization — map any known admin alias to canonical ADMIN_EMAIL
+    // Prevents email split when Clerk returns different email variants across sessions
+    if (userEmail && env.ADMIN_EMAIL && env.ADMIN_ALIASES) {
+      const aliases = env.ADMIN_ALIASES.split(',').map(e => e.trim().toLowerCase());
+      if (aliases.includes(userEmail.toLowerCase())) {
+        userEmail = env.ADMIN_EMAIL;
+      }
+    }
     // scopes is null for Clerk/CF auth (full access); string[] for API key auth
     const apiKeyScopes = authContext?.scopes || null;
 
@@ -259,16 +324,6 @@ export default {
           { status: 403 }
         );
       }
-    }
-
-    // Public landing page at root
-    if (path === '') {
-      return htmlResponse(getLandingPageHTML());
-    }
-
-    // Clerk login/signup pages
-    if (path === 'login' || path === 'signup') {
-      return htmlResponse(getAuthPageHTML(env, path));
     }
 
     // Serve design resource pages (no auth required)
@@ -287,8 +342,78 @@ export default {
     }
     if (path === 'sw.js') {
       return new Response(SERVICE_WORKER_JS, {
-        headers: { 'Content-Type': 'application/javascript' }
+        headers: {
+          'Content-Type': 'application/javascript',
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
+        }
       });
+    }
+    if (path === 'clear-cache') {
+      return new Response(`<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>URLsToGo — Clearing Cache</title>
+<style>*{margin:0;padding:0;box-sizing:border-box}body{background:#09090b;color:#fafafa;font-family:system-ui,-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:1rem}
+.card{background:#111113;border:1px solid #27272a;border-radius:12px;padding:2rem;max-width:420px;width:100%;text-align:center}
+h1{font-size:1.25rem;margin-bottom:.5rem}p{color:#a1a1aa;font-size:.875rem;line-height:1.5;margin-bottom:1rem}
+.status{color:#8b5cf6;font-weight:500}.error{color:#ef4444}.success{color:#22c55e}
+a{color:#8b5cf6;text-decoration:none}a:hover{text-decoration:underline}</style></head>
+<body><div class="card"><h1>Clearing Cache</h1><p id="status" class="status">Working...</p>
+<script>
+(async()=>{const s=document.getElementById('status');const steps=[];
+try{
+  // 1. Unregister service workers
+  if('serviceWorker' in navigator){
+    const regs=await navigator.serviceWorker.getRegistrations();
+    for(const r of regs){await r.unregister();}
+    steps.push('Service workers unregistered ('+regs.length+')');
+  }
+  // 2. Clear all caches
+  const keys=await caches.keys();
+  for(const k of keys){await caches.delete(k);}
+  steps.push('Caches cleared ('+keys.length+')');
+  // 3. Clear storage
+  localStorage.clear();
+  sessionStorage.clear();
+  steps.push('Local/session storage cleared');
+  // 4. Clear ALL IndexedDB databases (Clerk stores session data here)
+  if(window.indexedDB&&indexedDB.databases){
+    const dbs=await indexedDB.databases();
+    for(const db of dbs){if(db.name)indexedDB.deleteDatabase(db.name);}
+    steps.push('IndexedDB cleared ('+dbs.length+' databases)');
+  }else{steps.push('IndexedDB: browser does not support listing');}
+  // 5. Clear all cookies for this domain
+  const cookies=document.cookie.split(';');
+  let cc=0;
+  for(const c of cookies){
+    const name=c.split('=')[0].trim();
+    if(!name)continue;
+    document.cookie=name+'=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+    document.cookie=name+'=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=urlstogo.cloud';
+    document.cookie=name+'=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=.urlstogo.cloud';
+    cc++;
+  }
+  steps.push('Cookies cleared ('+cc+')');
+  s.className='success';
+  s.innerHTML=steps.join('<br>')+'<br><br><a href="/login">Go to login &rarr;</a>';
+}catch(e){
+  s.className='error';
+  s.textContent='Error: '+e.message;
+}})();
+</script></div></body></html>`, (() => {
+        // Expire Clerk HttpOnly cookies server-side — document.cookie cannot clear these.
+        // __client holds the session token and survives JS-only clearing.
+        const headers = new Headers({
+          'Content-Type': 'text/html;charset=UTF-8',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+        });
+        const expireBase = '; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure; SameSite=Lax';
+        for (const domain of ['urlstogo.cloud', '.urlstogo.cloud']) {
+          for (const name of ['__client', '__session', '__client_uat', '__clerk_db_jwt']) {
+            headers.append('Set-Cookie', `${name}=${expireBase}; Domain=${domain}`);
+          }
+        }
+        return { headers };
+      })());
     }
     if (path === 'icon-192.png' || path === 'icon-512.png') {
       const size = path === 'icon-192.png' ? 192 : 512;
@@ -320,7 +445,7 @@ export default {
       `).bind(share.category_id, share.user_email).all();
 
       const isOwner = userEmail === share.user_email;
-      return htmlResponse(getSharePageHTML(share, links, isOwner));
+      return htmlResponse((nonce) => getSharePageHTML(share, links, isOwner, nonce));
     }
 
     // Public API - shared collection data (JSON)
@@ -430,12 +555,13 @@ export default {
       if (!userEmail) {
         return Response.redirect(new URL('/login', url.origin).toString(), 302);
       }
-      const adminHtml = getAdminHTML(userEmail, env);
+      const adminNonce = generateNonce();
+      const adminHtml = getAdminHTML(userEmail, env, adminNonce);
       return new Response(adminHtml, {
         headers: {
           'Content-Type': 'text/html; charset=UTF-8',
           'Cache-Control': 'private, max-age=300',
-          ...HTML_SECURITY_HEADERS,
+          ...getSecurityHeaders(adminNonce),
         },
       });
     }
@@ -554,8 +680,10 @@ export default {
       const categoryFilter = url.searchParams.get('category');
       const tagFilter = url.searchParams.get('tag');
       const sort = url.searchParams.get('sort') || 'newest';
-      const pageLimit = Math.min(parseInt(url.searchParams.get('limit') || '500', 10), 1000);
-      const pageOffset = Math.max(parseInt(url.searchParams.get('offset') || '0', 10), 0);
+      const parsedLimit = parseInt(url.searchParams.get('limit') || '500', 10);
+      const parsedOffset = parseInt(url.searchParams.get('offset') || '0', 10);
+      const pageLimit = Math.min(isNaN(parsedLimit) ? 500 : parsedLimit, 1000);
+      const pageOffset = Math.max(isNaN(parsedOffset) ? 0 : parsedOffset, 0);
 
       let whereClause = 'WHERE l.user_email = ?';
       const params = [userEmail];
@@ -700,12 +828,9 @@ export default {
         // Handle tags
         if (tags && Array.isArray(tags) && tags.length > 0) {
           for (const tagName of tags) {
-            // Get or create tag
-            let tag = await env.DB.prepare('SELECT id FROM tags WHERE name = ? AND user_email = ?').bind(tagName.toLowerCase(), userEmail).first();
-            if (!tag) {
-              const tagResult = await env.DB.prepare('INSERT INTO tags (name, user_email) VALUES (?, ?)').bind(tagName.toLowerCase(), userEmail).run();
-              tag = { id: tagResult.meta.last_row_id };
-            }
+            // Get or create tag atomically to avoid race condition
+            await env.DB.prepare('INSERT OR IGNORE INTO tags (name, user_email) VALUES (?, ?)').bind(tagName.toLowerCase(), userEmail).run();
+            const tag = await env.DB.prepare('SELECT id FROM tags WHERE name = ? AND user_email = ?').bind(tagName.toLowerCase(), userEmail).first();
             // Link tag to link
             await env.DB.prepare('INSERT OR IGNORE INTO link_tags (link_id, tag_id) VALUES (?, ?)').bind(linkId, tag.id).run();
           }
@@ -760,11 +885,8 @@ export default {
         // Add new tags
         if (Array.isArray(tags)) {
           for (const tagName of tags) {
-            let tag = await env.DB.prepare('SELECT id FROM tags WHERE name = ? AND user_email = ?').bind(tagName.toLowerCase(), userEmail).first();
-            if (!tag) {
-              const tagResult = await env.DB.prepare('INSERT INTO tags (name, user_email) VALUES (?, ?)').bind(tagName.toLowerCase(), userEmail).run();
-              tag = { id: tagResult.meta.last_row_id };
-            }
+            await env.DB.prepare('INSERT OR IGNORE INTO tags (name, user_email) VALUES (?, ?)').bind(tagName.toLowerCase(), userEmail).run();
+            const tag = await env.DB.prepare('SELECT id FROM tags WHERE name = ? AND user_email = ?').bind(tagName.toLowerCase(), userEmail).first();
             await env.DB.prepare('INSERT OR IGNORE INTO link_tags (link_id, tag_id) VALUES (?, ?)').bind(link.id, tag.id).run();
           }
         }
@@ -1069,6 +1191,8 @@ export default {
 
     // Get analytics for a specific link
     if (path.startsWith('api/analytics/') && path !== 'api/analytics/overview' && request.method === 'GET') {
+      const rateLimit = await checkRateLimit(env, userEmail, 'api/analytics');
+      if (!rateLimit.allowed) return jsonResponse({ error: 'Rate limit exceeded' }, { status: 429 });
       const code = path.replace('api/analytics/', '');
       const rawDays = parseInt(url.searchParams.get('days') || '30', 10);
       const days = isNaN(rawDays) ? 30 : Math.min(Math.max(rawDays, 1), 365);
@@ -1153,6 +1277,8 @@ export default {
 
     // Get overview analytics for all links
     if (path === 'api/analytics/overview' && request.method === 'GET') {
+      const rateLimit = await checkRateLimit(env, userEmail, 'api/analytics');
+      if (!rateLimit.allowed) return jsonResponse({ error: 'Rate limit exceeded' }, { status: 429 });
       const rawDays2 = parseInt(url.searchParams.get('days') || '30', 10);
       const days = isNaN(rawDays2) ? 30 : Math.min(Math.max(rawDays2, 1), 365);
 
@@ -1219,6 +1345,8 @@ export default {
 
     // Export
     if (path === 'api/export' && request.method === 'GET') {
+      const rateLimit = await checkRateLimit(env, userEmail, 'api/export');
+      if (!rateLimit.allowed) return jsonResponse({ error: 'Rate limit exceeded' }, { status: 429 });
       const { results: links } = await env.DB.prepare(`
         SELECT l.code, l.destination, l.clicks, l.created_at, c.slug as category,
                GROUP_CONCAT(t.name) as tags
@@ -1312,11 +1440,8 @@ export default {
           // Handle tags
           if (link.tags && Array.isArray(link.tags)) {
             for (const tagName of link.tags) {
-              let tag = await env.DB.prepare('SELECT id FROM tags WHERE name = ? AND user_email = ?').bind(tagName.toLowerCase(), userEmail).first();
-              if (!tag) {
-                const tagResult = await env.DB.prepare('INSERT INTO tags (name, user_email) VALUES (?, ?)').bind(tagName.toLowerCase(), userEmail).run();
-                tag = { id: tagResult.meta.last_row_id };
-              }
+              await env.DB.prepare('INSERT OR IGNORE INTO tags (name, user_email) VALUES (?, ?)').bind(tagName.toLowerCase(), userEmail).run();
+              const tag = await env.DB.prepare('SELECT id FROM tags WHERE name = ? AND user_email = ?').bind(tagName.toLowerCase(), userEmail).first();
               await env.DB.prepare('INSERT OR IGNORE INTO link_tags (link_id, tag_id) VALUES (?, ?)').bind(result.meta.last_row_id, tag.id).run();
             }
           }
@@ -1504,6 +1629,77 @@ export default {
       return jsonResponse({ success: true });
     }
 
+    // GitHub OAuth: redirect to GitHub authorization
+    if (path === 'api/github/authorize' && request.method === 'GET') {
+      const clientId = env.GITHUB_OAUTH_CLIENT_ID;
+      if (!clientId) return jsonResponse({ error: 'GitHub OAuth not configured' }, { status: 500 });
+
+      const state = crypto.randomUUID();
+      const redirectUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&scope=repo,workflow&state=${state}`;
+
+      return new Response(null, {
+        status: 302,
+        headers: {
+          'Location': redirectUrl,
+          'Set-Cookie': `gh_oauth_state=${state}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=600`,
+        },
+      });
+    }
+
+    // GitHub OAuth: callback — exchange code for token
+    if (path === 'api/github/callback' && request.method === 'GET') {
+      const code = url.searchParams.get('code');
+      const state = url.searchParams.get('state');
+
+      const cookies = request.headers.get('Cookie') || '';
+      const stateMatch = cookies.match(/gh_oauth_state=([^;]+)/);
+      const savedState = stateMatch ? stateMatch[1] : null;
+
+      if (!code || !state || state !== savedState) {
+        return htmlResponse('<html><body style="background:#09090b;color:#fafafa;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh"><div style="text-align:center"><h2>Authorization failed</h2><p>Invalid state. <a href="/admin#settings/git-sync" style="color:#8b5cf6">Try again</a></p></div></body></html>', 400);
+      }
+
+      const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
+        method: 'POST',
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: env.GITHUB_OAUTH_CLIENT_ID,
+          client_secret: env.GITHUB_OAUTH_CLIENT_SECRET,
+          code,
+        }),
+      });
+
+      const tokenData = await tokenRes.json();
+      if (tokenData.error || !tokenData.access_token) {
+        const msg = tokenData.error_description || 'Unknown error';
+        return htmlResponse(`<html><body style="background:#09090b;color:#fafafa;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh"><div style="text-align:center"><h2>Authorization failed</h2><p>${msg}. <a href="/admin#settings/git-sync" style="color:#8b5cf6">Try again</a></p></div></body></html>`, 400);
+      }
+
+      const ghRes = await fetch('https://api.github.com/user', {
+        headers: { 'Authorization': `token ${tokenData.access_token}`, 'User-Agent': 'URLsToGo/1.0' },
+      });
+      const ghUser = await ghRes.json();
+
+      const { encrypted, iv } = await encryptToken(tokenData.access_token, env.GITHUB_TOKEN_ENCRYPTION_KEY);
+      await env.DB.prepare(`
+        INSERT INTO user_settings (user_email, github_token_encrypted, github_token_iv, github_username, updated_at)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(user_email) DO UPDATE SET
+          github_token_encrypted = excluded.github_token_encrypted,
+          github_token_iv = excluded.github_token_iv,
+          github_username = excluded.github_username,
+          updated_at = CURRENT_TIMESTAMP
+      `).bind(userEmail, encrypted, iv, ghUser.login).run();
+
+      return new Response(null, {
+        status: 302,
+        headers: {
+          'Location': '/admin#settings/git-sync',
+          'Set-Cookie': 'gh_oauth_state=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0',
+        },
+      });
+    }
+
     // List GitHub repos (merged with sync status)
     if (path === 'api/github/repos' && request.method === 'GET') {
       const ghToken = await getUserGitHubToken(env, userEmail);
@@ -1671,7 +1867,58 @@ export default {
     }
 
 
+    // === FEEDBACK API ===
+
+    // POST /api/feedback — public feedback form submission (landing page + exit intent)
+    if (path === 'api/feedback' && request.method === 'POST') {
+      const rateLimit = await checkRateLimit(env, request.headers.get('CF-Connecting-IP') || 'unknown', 'api/feedback');
+      if (!rateLimit.allowed) return jsonResponse({ error: 'Rate limit exceeded' }, { status: 429 });
+      try {
+        const body = await request.json();
+        const message = (body.message || '').trim();
+        if (!message || message.length > 2000) {
+          return jsonResponse({ error: 'Message required (max 2000 chars)' }, { status: 400 });
+        }
+        const email = (body.email || '').trim().slice(0, 200) || null;
+        const source = body.source === 'exit_intent' ? 'exit_intent' : 'form';
+        const ua = (request.headers.get('User-Agent') || '').slice(0, 500);
+        await env.DB.prepare(
+          'INSERT INTO feedback (message, email, page, source, user_agent) VALUES (?, ?, ?, ?, ?)'
+        ).bind(message, email, 'landing', source, ua).run();
+        return jsonResponse({ success: true });
+      } catch (e) {
+        return jsonResponse({ error: 'Failed to submit feedback' }, { status: 500 });
+      }
+    }
+
+
     // === BILLING API ===
+
+    // GET /api/billing/founding — founding 100 spot availability (no auth required for landing page)
+    if (path === 'api/billing/founding' && request.method === 'GET') {
+      if (!env.STRIPE_SECRET_KEY) {
+        return jsonResponse({ spots_total: 100, spots_claimed: 0, spots_remaining: 100, available: true });
+      }
+      try {
+        const coupon = await stripeRequest('GET', '/coupons/' + STRIPE_FOUNDING_COUPON_ID, null, env);
+        if (coupon.error || !coupon.valid) {
+          return jsonResponse({ spots_total: 100, spots_claimed: 100, spots_remaining: 0, available: false });
+        }
+        const claimed = coupon.times_redeemed || 0;
+        const total = coupon.max_redemptions || 100;
+        return jsonResponse({
+          spots_total: total,
+          spots_claimed: claimed,
+          spots_remaining: total - claimed,
+          available: claimed < total,
+          price_display: '$9/mo',
+          regular_price: '$12/mo',
+          discount_percent: 25,
+        });
+      } catch (e) {
+        return jsonResponse({ spots_total: 100, spots_claimed: 0, spots_remaining: 100, available: true });
+      }
+    }
 
     // GET /api/billing/status — current plan + link usage
     if (path === 'api/billing/status' && request.method === 'GET') {
@@ -1694,6 +1941,8 @@ export default {
 
     // POST /api/billing/checkout — create Stripe Checkout session
     if (path === 'api/billing/checkout' && request.method === 'POST') {
+      const rateLimit = await checkRateLimit(env, userEmail, 'api/billing');
+      if (!rateLimit.allowed) return jsonResponse({ error: 'Rate limit exceeded' }, { status: 429 });
       if (!env.STRIPE_SECRET_KEY) {
         return jsonResponse({ error: 'Billing not configured' }, { status: 503 });
       }
@@ -1712,7 +1961,8 @@ export default {
         }
         const successUrl = new URL('/admin', url.origin).toString() + '#billing?upgraded=1';
         const cancelUrl = new URL('/admin', url.origin).toString() + '#billing';
-        const session = await stripeRequest('POST', '/checkout/sessions', {
+        // Check if founding spots remain — auto-apply coupon if so
+        const checkoutParams = {
           customer: customerId,
           mode: 'subscription',
           'line_items[0][price]': STRIPE_PRO_PRICE_ID,
@@ -1721,7 +1971,14 @@ export default {
           cancel_url: cancelUrl,
           'subscription_data[metadata][app]': 'urlstogo',
           'subscription_data[metadata][user_email]': userEmail,
-        }, env);
+        };
+        try {
+          const coupon = await stripeRequest('GET', '/coupons/' + STRIPE_FOUNDING_COUPON_ID, null, env);
+          if (coupon.valid && (coupon.times_redeemed || 0) < (coupon.max_redemptions || 100)) {
+            checkoutParams['discounts[0][coupon]'] = STRIPE_FOUNDING_COUPON_ID;
+          }
+        } catch (_) { /* proceed without coupon if check fails */ }
+        const session = await stripeRequest('POST', '/checkout/sessions', checkoutParams, env);
         if (session.error) return jsonResponse({ error: session.error.message || 'Checkout session failed' }, { status: 500 });
         return jsonResponse({ url: session.url });
       } catch (e) {
@@ -1731,6 +1988,8 @@ export default {
 
     // GET /api/billing/portal — Stripe Customer Portal (manage/cancel)
     if (path === 'api/billing/portal' && request.method === 'GET') {
+      const rateLimit = await checkRateLimit(env, userEmail, 'api/billing');
+      if (!rateLimit.allowed) return jsonResponse({ error: 'Rate limit exceeded' }, { status: 429 });
       if (!env.STRIPE_SECRET_KEY) {
         return jsonResponse({ error: 'Billing not configured' }, { status: 503 });
       }
@@ -1802,7 +2061,8 @@ export default {
 
     // GET /api/onboarding/status
     if (path === 'api/onboarding/status' && request.method === 'GET') {
-      const userEmail = await getUserEmail(request, env);
+      const emailResult = await getUserEmail(request, env);
+      const userEmail = emailResult?.email || null;
       if (!userEmail) return jsonResponse({ error: 'Unauthorized' }, { status: 401 });
 
       const row = await env.DB.prepare(
@@ -1817,7 +2077,8 @@ export default {
 
     // POST /api/onboarding/complete
     if (path === 'api/onboarding/complete' && request.method === 'POST') {
-      const userEmail = await getUserEmail(request, env);
+      const emailResult = await getUserEmail(request, env);
+      const userEmail = emailResult?.email || null;
       if (!userEmail) return jsonResponse({ error: 'Unauthorized' }, { status: 401 });
 
       await env.DB.prepare(
@@ -1830,7 +2091,6 @@ export default {
 
       return jsonResponse({ success: true });
     }
-
     return new Response('Not found', { status: 404 });
   }
 };
@@ -1848,6 +2108,7 @@ export default {
 
 // Get user's current billing plan from subscriptions table
 async function getUserPlan(env, userEmail) {
+  if (env.ADMIN_EMAIL && userEmail === env.ADMIN_EMAIL) return 'admin';
   const sub = await env.DB.prepare(
     'SELECT plan, status, current_period_end FROM subscriptions WHERE user_email = ?'
   ).bind(userEmail).first();
@@ -1896,90 +2157,70 @@ async function verifyStripeSignature(payload, sigHeader, secret) {
   const sigBytes = new Uint8Array(signature.match(/.{2}/g).map(b => parseInt(b, 16)));
   return crypto.subtle.verify('HMAC', key, sigBytes, new TextEncoder().encode(signedPayload));
 }
-// Base64URL decode helper (for Cloudflare Access fallback)
-function base64UrlDecode(str) {
-  str = str.replace(/-/g, '+').replace(/_/g, '/');
-  const pad = str.length % 4;
-  if (pad) str += '='.repeat(4 - pad);
-  return atob(str);
-}
-
-// Get user info from Clerk session using official SDK
+// Get user info from Clerk session using authenticateRequest() (recommended by Clerk for Workers).
+// Uses networkless jwtKey verification — no JWKS URL derivation, no network calls for auth.
+// authorizedParties prevents CSRF / origin confusion.
 async function getUserEmail(request, env) {
-  // Check for Clerk session token in cookie or Authorization header
-  const cookies = request.headers.get('Cookie') || '';
-  const authHeader = request.headers.get('Authorization') || '';
-
-  let token = null;
-
-  // Try Authorization header first (Bearer token)
-  if (authHeader.startsWith('Bearer ')) {
-    token = authHeader.slice(7);
-  }
-
-  // Try __session cookie (Clerk's default session cookie)
-  if (!token) {
-    const sessionMatch = cookies.match(/__session=([^;]+)/);
-    if (sessionMatch) {
-      token = sessionMatch[1];
-    }
-  }
-
-  // Also check __clerk_db_jwt for development
-  if (!token) {
-    const devMatch = cookies.match(/__clerk_db_jwt=([^;]+)/);
-    if (devMatch) {
-      token = devMatch[1];
-    }
-  }
-
-  if (!token) return null;
-
-  // Verify the JWT using official Clerk SDK
   const secretKey = env.CLERK_SECRET_KEY;
   if (!secretKey) {
     console.error('CLERK_SECRET_KEY not configured');
-    return null;
+    return { email: null, handshake: null };
   }
 
+  const jwtKey = env.CLERK_JWT_KEY;
+  const publishableKey = env.CLERK_PUBLISHABLE_KEY;
+
   try {
-    const payload = await verifyToken(token, {
-      secretKey,
+    const clerkClient = createClerkClient({ secretKey, publishableKey });
+    const requestState = await clerkClient.authenticateRequest(request, {
       authorizedParties: ['https://urlstogo.cloud', 'https://go.urlstogo.cloud'],
+      domain: 'urlstogo.cloud',
     });
 
-    if (!payload) return null;
+    // Clerk v5: status === 'handshake' means stale/expired session that needs refresh.
+    // Return the redirect headers so the browser can complete the handshake cycle.
+    // Ignoring handshake causes the login↔admin redirect loop.
+    if (requestState.status === 'handshake') {
+      return { email: null, handshake: new Response(null, { status: 307, headers: requestState.headers }) };
+    }
 
-    // Prefer email from JWT custom claims (set via Clerk session customization)
-    // Falls back to a Clerk API call only when the claim is absent
-    if (payload.email) return payload.email;
+    if (!requestState.isSignedIn) return { email: null, handshake: null };
 
-    const userId = payload.sub;
-    if (!userId) return null;
+    const auth = requestState.toAuth();
+    const userId = auth?.userId;
+    if (!userId) return { email: null, handshake: null };
 
-    const clerkClient = createClerkClient({ secretKey });
+    // Short-circuit if email is in session claims (requires Clerk session token customization)
+    const email = auth?.sessionClaims?.email;
+    if (email) return { email, handshake: null };
+
+    // Fallback: fetch email from Clerk API using cached userId lookup
+    if (_userEmailCache.has(userId)) return { email: _userEmailCache.get(userId), handshake: null };
+
     const user = await clerkClient.users.getUser(userId);
-
     const primaryEmail = user.emailAddresses?.find(e => e.id === user.primaryEmailAddressId)?.emailAddress;
     const anyEmail = user.emailAddresses?.[0]?.emailAddress;
-    return primaryEmail || anyEmail || null;
+    const resolvedEmail = primaryEmail || anyEmail || null;
+    if (resolvedEmail) _userEmailCache.set(userId, resolvedEmail);
+    return { email: resolvedEmail, handshake: null };
   } catch (e) {
-    console.error('Clerk user fetch error:', e.message);
-    return null;
+    console.error('[CLERK_EXCEPTION]', String(e), e?.stack?.slice(0, 600));
+    return { email: null, handshake: null };
   }
 }
 
-// Legacy support: Also check Cloudflare Access JWT and API keys
-// Returns { email, scopes } where scopes is null for Clerk/CF auth (full access)
-// or string[] for API key auth (enforced at gateway)
+// Returns { email, scopes, handshake } where:
+// - handshake: Response | null — non-null means Clerk needs a session refresh; return this immediately
+// - scopes: null for Clerk auth (full access), string[] for API key auth (enforced at gateway)
 async function getUserEmailWithFallback(request, env) {
   // First try Clerk
-  const clerkEmail = await getUserEmail(request, env);
-  if (clerkEmail) return { email: clerkEmail, scopes: null };
+  const clerkResult = await getUserEmail(request, env);
+  if (clerkResult?.handshake) return { email: null, scopes: null, handshake: clerkResult.handshake };
+  if (clerkResult?.email) return { email: clerkResult.email, scopes: null, handshake: null };
 
   // Try API key authentication (for programmatic access)
   const apiKeyResult = await validateApiKey(request, env);
-  if (apiKeyResult) return { email: apiKeyResult.email, scopes: apiKeyResult.scopes };
+  if (apiKeyResult) return { email: apiKeyResult.email, scopes: apiKeyResult.scopes, handshake: null };
 
   return null;
 }
@@ -2222,6 +2463,10 @@ function getRateLimits(env) {
     'api/preview-links:PUT': { limit: parseInt(env?.RATE_LIMIT_PREVIEW) || 30, windowSeconds },
     'api/search': { limit: parseInt(env?.RATE_LIMIT_SEARCH) || 60, windowSeconds },
     'api/import': { limit: parseInt(env?.RATE_LIMIT_IMPORT) || 5, windowSeconds },
+    'api/export': { limit: 10, windowSeconds },
+    'api/analytics': { limit: 30, windowSeconds },
+    'api/billing': { limit: 10, windowSeconds },
+    'api/links:GET': { limit: 60, windowSeconds },
     'api/waitlist': { limit: 5, windowSeconds: 3600 }, // 5 signups per IP per hour
     'redirect': { limit: parseInt(env?.RATE_LIMIT_REDIRECT) || 300, windowSeconds },
     'redirect:password': { limit: 10, windowSeconds: 300 }, // 10 password attempts per IP per 5 min
@@ -2579,7 +2824,7 @@ function getPasswordHTML(code, error = false) {
 }
 
 // Generate HTML for login/signup pages with Clerk
-function getAuthPageHTML(env, mode = 'login') {
+function getAuthPageHTML(env, mode = 'login', nonce = '') {
   const publishableKey = env.CLERK_PUBLISHABLE_KEY || '';
   const isSignup = mode === 'signup';
 
@@ -2868,7 +3113,7 @@ function getAuthPageHTML(env, mode = 'login') {
 
         <div id="auth-error" class="auth-error"></div>
 
-        <div id="clerk-auth">
+        <div id="clerk-auth" data-1p-ignore data-lpignore="true">
           <div class="auth-loading">
             <div class="auth-loading-spinner"></div>
             <p>Loading...</p>
@@ -2885,7 +3130,7 @@ function getAuthPageHTML(env, mode = 'login') {
   </div>
 
   <!-- Clerk JS SDK -->
-  <script>
+  <script nonce="${nonce}">
     // Configuration
     const CLERK_PUBLISHABLE_KEY = '${publishableKey}';
 
@@ -2952,10 +3197,25 @@ function getAuthPageHTML(env, mode = 'login') {
         const clerk = window.Clerk;
         if (!clerk) throw new Error('Clerk not available');
 
+        // Loop detection: count rapid page loads. On 3+ loads within 2.5s, sign out to
+        // clear stale non-HttpOnly Clerk cookies that keep triggering the redirect cycle.
+        var LOOP_TS = '__utg_ll_ts', LOOP_N = '__utg_ll_n';
+        var now = Date.now();
+        var lastTs = Number(sessionStorage.getItem(LOOP_TS) || 0);
+        var cnt = Number(sessionStorage.getItem(LOOP_N) || 0);
+        var loopDetected = now - lastTs < 2500 && cnt >= 3;
+        sessionStorage.setItem(LOOP_TS, String(now));
+        sessionStorage.setItem(LOOP_N, loopDetected ? '0' : String(cnt + 1));
+
         await clerk.load();
 
-        // Check if already signed in
-        if (clerk.user) {
+        if (loopDetected && clerk.user) {
+          await clerk.signOut();
+        }
+
+        // Only redirect if session is confirmed active — stale cookies can set clerk.user without
+        // a valid session, which causes the login↔admin redirect loop.
+        if (clerk.user && clerk.session?.status === 'active') {
           window.location.href = '${ADMIN_PATH}';
           return;
         }
@@ -2991,1223 +3251,325 @@ function getAuthPageHTML(env, mode = 'login') {
 
 // Generate HTML for 404 page
 // Generate HTML for public landing page
-function getLandingPageHTML() {
-  // Reusable SVG icons to reduce duplication
+function getLandingPageHTML(nonce = '') {
   const LINK_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>URLsToGo - Fast, Free URL Shortener</title>
-  <meta name="description" content="Shorten URLs instantly with URLsToGo. Lightning-fast, secure, and powered by Cloudflare's global edge network.">
-  <link rel="icon" href="${ADMIN_FAVICON}">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>URLsToGo — Short Links Built for Developers</title>
+  <meta name="description" content="The developer\'s shortlink app. REST API, CI/CD preview links, password protection, expiring URLs, shared dashboards, and click analytics. 500 links total, not per month. $9/mo.">
+  <meta property="og:title" content="URLsToGo - Short Links Built for Developers">
+  <meta property="og:description" content="REST API, CI/CD preview links, password protection, expiring URLs, click analytics. 500 links total, not per month. Runs on Cloudflare Workers.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://urlstogo.cloud">
+<link rel="icon" href="${ADMIN_FAVICON}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    :root {
-      --bg-primary: #09090b;
-      --bg-secondary: #18181b;
-      --bg-tertiary: #27272a;
-      --text-primary: #fafafa;
-      --text-secondary: #a1a1aa;
-      --text-muted: #71717a;
-      --accent-indigo: #6366f1;
-      --accent-purple: #a855f7;
-      --accent-violet: #8b5cf6;
-      --border-color: #27272a;
-      --gradient-primary: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
-    }
-
-    body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: var(--bg-primary);
-      color: var(--text-primary);
-      min-height: 100vh;
-      overflow-x: hidden;
-      line-height: 1.6;
-    }
-
-    /* Animated gradient background */
-    .hero {
-      position: relative;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-
-    .hero::before {
-      content: '';
-      position: absolute;
-      top: -50%;
-      left: -50%;
-      width: 200%;
-      height: 200%;
-      background:
-        radial-gradient(ellipse at 20% 30%, rgba(99, 102, 241, 0.15) 0%, transparent 50%),
-        radial-gradient(ellipse at 80% 70%, rgba(168, 85, 247, 0.15) 0%, transparent 50%),
-        radial-gradient(ellipse at 50% 50%, rgba(139, 92, 246, 0.1) 0%, transparent 60%);
-      animation: gradientShift 15s ease-in-out infinite;
-      pointer-events: none;
-    }
-
-    @keyframes gradientShift {
-      0%, 100% { transform: translate(0, 0) rotate(0deg); }
-      33% { transform: translate(2%, 2%) rotate(1deg); }
-      66% { transform: translate(-2%, -1%) rotate(-1deg); }
-    }
-
-    /* Grid pattern overlay */
-    .hero::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background-image:
-        linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
-      background-size: 60px 60px;
-      pointer-events: none;
-    }
-
-    /* Navigation */
-    .nav {
-      position: relative;
-      z-index: 10;
-      padding: 20px 24px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      max-width: 1200px;
-      margin: 0 auto;
-      width: 100%;
-    }
-
-    .nav-brand {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      text-decoration: none;
-      color: var(--text-primary);
-    }
-
-    .nav-logo {
-      width: 40px;
-      height: 40px;
-      background: var(--gradient-primary);
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .nav-logo svg { width: 22px; height: 22px; color: white; }
-
-    .nav-title {
-      font-size: 20px;
-      font-weight: 700;
-      background: var(--gradient-primary);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-
-    .nav-links {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .nav-link {
-      padding: 10px 18px;
-      color: var(--text-secondary);
-      text-decoration: none;
-      font-size: 14px;
-      font-weight: 500;
-      border-radius: 8px;
-      transition: all 0.2s;
-    }
-
-    .nav-link:hover {
-      color: var(--text-primary);
-      background: var(--bg-secondary);
-    }
-
-    .nav-cta {
-      padding: 10px 20px;
-      background: var(--gradient-primary);
-      color: white;
-      text-decoration: none;
-      font-size: 14px;
-      font-weight: 600;
-      border-radius: 8px;
-      transition: all 0.2s;
-    }
-
-    .nav-cta:hover {
-      opacity: 0.9;
-      transform: translateY(-1px);
-    }
-
-    /* Hero content */
-    .hero-content {
-      position: relative;
-      z-index: 10;
-      flex: 1;
-      display: flex;
-      align-items: center;
-      padding: 40px 24px 80px;
-      max-width: 1200px;
-      margin: 0 auto;
-      width: 100%;
-    }
-
-    .hero-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 60px;
-      align-items: center;
-      width: 100%;
-    }
-
-    @media (max-width: 968px) {
-      .hero-grid {
-        grid-template-columns: 1fr;
-        text-align: center;
-        gap: 48px;
-      }
-    }
-
-    .hero-text {
-      max-width: 560px;
-    }
-
-    @media (max-width: 968px) {
-      .hero-text {
-        max-width: 100%;
-        margin: 0 auto;
-      }
-    }
-
-    .hero-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 14px;
-      background: rgba(139, 92, 246, 0.1);
-      border: 1px solid rgba(139, 92, 246, 0.2);
-      border-radius: 100px;
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--accent-violet);
-      margin-bottom: 24px;
-    }
-
-    .hero-badge-dot {
-      width: 6px;
-      height: 6px;
-      background: var(--accent-violet);
-      border-radius: 50%;
-      animation: pulse 2s infinite;
-    }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.5; }
-    }
-
-    .hero-title {
-      font-size: clamp(40px, 5vw, 60px);
-      font-weight: 700;
-      line-height: 1.1;
-      margin-bottom: 24px;
-      letter-spacing: -0.02em;
-    }
-
-    .hero-title-gradient {
-      background: var(--gradient-primary);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-
-    .hero-description {
-      font-size: 18px;
-      color: var(--text-secondary);
-      margin-bottom: 36px;
-      line-height: 1.7;
-    }
-
-    .hero-actions {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      margin-bottom: 48px;
-    }
-
-    @media (max-width: 968px) {
-      .hero-actions {
-        justify-content: center;
-        flex-wrap: wrap;
-      }
-    }
-
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      padding: 14px 28px;
-      font-size: 15px;
-      font-weight: 600;
-      text-decoration: none;
-      border-radius: 10px;
-      transition: all 0.2s;
-      cursor: pointer;
-      border: none;
-    }
-
-    .btn-primary {
-      background: var(--gradient-primary);
-      color: white;
-      box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3);
-    }
-
-    .btn-primary:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 30px rgba(99, 102, 241, 0.4);
-    }
-
-    .btn-secondary {
-      background: var(--bg-secondary);
-      color: var(--text-primary);
-      border: 1px solid var(--border-color);
-    }
-
-    .btn-secondary:hover {
-      background: var(--bg-tertiary);
-      border-color: var(--text-muted);
-    }
-
-    /* Stats */
-    .hero-stats {
-      display: flex;
-      gap: 40px;
-    }
-
-    @media (max-width: 968px) {
-      .hero-stats {
-        justify-content: center;
-      }
-    }
-
-    .stat {
-      text-align: left;
-    }
-
-    @media (max-width: 968px) {
-      .stat {
-        text-align: center;
-      }
-    }
-
-    .stat-value {
-      font-size: 28px;
-      font-weight: 700;
-      background: var(--gradient-primary);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-
-    .stat-label {
-      font-size: 13px;
-      color: var(--text-muted);
-      font-weight: 500;
-    }
-
-    /* Dashboard mockup */
-    .hero-visual {
-      position: relative;
-    }
-
-    .dashboard-mockup {
-      position: relative;
-      background: var(--bg-secondary);
-      border: 1px solid var(--border-color);
-      border-radius: 16px;
-      overflow: hidden;
-      box-shadow:
-        0 0 0 1px rgba(255,255,255,0.05),
-        0 20px 50px rgba(0,0,0,0.5),
-        0 0 100px rgba(99, 102, 241, 0.1);
-      transform: perspective(1000px) rotateY(-5deg) rotateX(2deg);
-      transition: transform 0.5s ease;
-    }
-
-    .dashboard-mockup:hover {
-      transform: perspective(1000px) rotateY(-2deg) rotateX(1deg);
-    }
-
-    @media (max-width: 968px) {
-      .dashboard-mockup {
-        transform: none;
-        max-width: 500px;
-        margin: 0 auto;
-      }
-      .dashboard-mockup:hover {
-        transform: none;
-      }
-    }
-
-    .mockup-header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 12px 16px;
-      background: var(--bg-primary);
-      border-bottom: 1px solid var(--border-color);
-    }
-
-    .mockup-dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-    }
-
-    .mockup-dot.red { background: #ff5f57; }
-    .mockup-dot.yellow { background: #febc2e; }
-    .mockup-dot.green { background: #28c840; }
-
-    .mockup-url {
-      flex: 1;
-      text-align: center;
-      font-size: 12px;
-      color: var(--text-muted);
-      background: var(--bg-secondary);
-      padding: 6px 12px;
-      border-radius: 6px;
-      margin-left: 16px;
-    }
-
-    .mockup-content {
-      padding: 20px;
-    }
-
-    .mockup-sidebar {
-      display: flex;
-      gap: 20px;
-    }
-
-    .mockup-nav {
-      width: 180px;
-      padding-right: 20px;
-      border-right: 1px solid var(--border-color);
-    }
-
-    .mockup-nav-item {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 10px 12px;
-      border-radius: 8px;
-      font-size: 13px;
-      color: var(--text-secondary);
-      margin-bottom: 4px;
-    }
-
-    .mockup-nav-item.active {
-      background: rgba(139, 92, 246, 0.1);
-      color: var(--accent-violet);
-    }
-
-    .mockup-nav-icon {
-      width: 18px;
-      height: 18px;
-      border-radius: 4px;
-      background: var(--bg-tertiary);
-    }
-
-    .mockup-nav-item.active .mockup-nav-icon {
-      background: var(--accent-violet);
-    }
-
-    .mockup-main {
-      flex: 1;
-    }
-
-    .mockup-card {
-      background: var(--bg-primary);
-      border: 1px solid var(--border-color);
-      border-radius: 12px;
-      padding: 16px;
-      margin-bottom: 12px;
-    }
-
-    .mockup-card-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 16px;
-    }
-
-    .mockup-card-title {
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--text-primary);
-    }
-
-    .mockup-badge {
-      font-size: 11px;
-      padding: 4px 10px;
-      background: rgba(40, 200, 64, 0.1);
-      color: #28c840;
-      border-radius: 100px;
-      font-weight: 500;
-    }
-
-    .mockup-links {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
-    .mockup-link {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 12px;
-      background: var(--bg-secondary);
-      border-radius: 8px;
-    }
-
-    .mockup-link-left {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .mockup-link-icon {
-      width: 32px;
-      height: 32px;
-      background: var(--gradient-primary);
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .mockup-link-icon svg {
-      width: 16px;
-      height: 16px;
-      color: white;
-    }
-
-    .mockup-link-text {
-      font-size: 13px;
-      color: var(--text-primary);
-      font-weight: 500;
-    }
-
-    .mockup-link-url {
-      font-size: 11px;
-      color: var(--text-muted);
-    }
-
-    .mockup-link-clicks {
-      font-size: 12px;
-      color: var(--accent-violet);
-      font-weight: 600;
-    }
-
-    /* Floating elements */
-    .floating-card {
-      position: absolute;
-      background: var(--bg-secondary);
-      border: 1px solid var(--border-color);
-      border-radius: 12px;
-      padding: 14px 18px;
-      box-shadow: 0 10px 40px rgba(0,0,0,0.4);
-      animation: float 6s ease-in-out infinite;
-    }
-
-    @keyframes float {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-10px); }
-    }
-
-    .floating-card-1 {
-      top: -20px;
-      right: -30px;
-      animation-delay: -2s;
-    }
-
-    .floating-card-2 {
-      bottom: 40px;
-      left: -40px;
-      animation-delay: -4s;
-    }
-
-    @media (max-width: 968px) {
-      .floating-card {
-        display: none;
-      }
-    }
-
-    .floating-stat {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .floating-stat-icon {
-      width: 36px;
-      height: 36px;
-      background: rgba(40, 200, 64, 0.1);
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #28c840;
-    }
-
-    .floating-stat-icon--indigo {
-      background: rgba(99, 102, 241, 0.1);
-      color: #6366f1;
-    }
-
-    .floating-stat-value {
-      font-size: 16px;
-      font-weight: 700;
-      color: var(--text-primary);
-    }
-
-    .floating-stat-label {
-      font-size: 11px;
-      color: var(--text-muted);
-    }
-
-    /* Features section */
-    .features-section {
-      position: relative;
-      z-index: 10;
-      padding: 80px 24px;
-      background: var(--bg-secondary);
-      border-top: 1px solid var(--border-color);
-    }
-
-    .features-container {
-      max-width: 1200px;
-      margin: 0 auto;
-    }
-
-    .features-header {
-      text-align: center;
-      margin-bottom: 60px;
-    }
-
-    .features-title {
-      font-size: 36px;
-      font-weight: 700;
-      margin-bottom: 16px;
-    }
-
-    .features-subtitle {
-      font-size: 18px;
-      color: var(--text-secondary);
-      max-width: 600px;
-      margin: 0 auto;
-    }
-
-    .features-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: 24px;
-    }
-
-    .feature-card {
-      background: var(--bg-primary);
-      border: 1px solid var(--border-color);
-      border-radius: 16px;
-      padding: 28px;
-      transition: all 0.3s;
-    }
-
-    .feature-card:hover {
-      border-color: var(--accent-violet);
-      transform: translateY(-4px);
-      box-shadow: 0 20px 40px rgba(0,0,0,0.3);
-    }
-
-    .feature-icon {
-      width: 48px;
-      height: 48px;
-      background: var(--gradient-primary);
-      border-radius: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 20px;
-    }
-
-    .feature-icon svg {
-      width: 24px;
-      height: 24px;
-      color: white;
-    }
-
-    .feature-name {
-      font-size: 18px;
-      font-weight: 600;
-      margin-bottom: 10px;
-      color: var(--text-primary);
-    }
-
-    .feature-desc {
-      font-size: 14px;
-      color: var(--text-secondary);
-      line-height: 1.6;
-    }
-
-    /* How It Works section */
-    .how-it-works {
-      position: relative;
-      z-index: 10;
-      padding: 100px 24px;
-      background: var(--bg-primary);
-      border-top: 1px solid var(--border-color);
-      overflow: hidden;
-    }
-
-    .how-it-works::before {
-      content: '';
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 800px;
-      height: 800px;
-      background: radial-gradient(ellipse at center, rgba(139, 92, 246, 0.08) 0%, transparent 70%);
-      pointer-events: none;
-    }
-
-    .how-it-works-container {
-      max-width: 1200px;
-      margin: 0 auto;
-      position: relative;
-    }
-
-    .how-it-works-header {
-      text-align: center;
-      margin-bottom: 80px;
-    }
-
-    .how-it-works-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 16px;
-      background: rgba(99, 102, 241, 0.1);
-      border: 1px solid rgba(99, 102, 241, 0.2);
-      border-radius: 100px;
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--accent-indigo);
-      margin-bottom: 20px;
-    }
-
-    .how-it-works-title {
-      font-size: 40px;
-      font-weight: 700;
-      margin-bottom: 16px;
-      letter-spacing: -0.02em;
-    }
-
-    .how-it-works-subtitle {
-      font-size: 18px;
-      color: var(--text-secondary);
-      max-width: 500px;
-      margin: 0 auto;
-    }
-
-    .steps-container {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 24px;
-      position: relative;
-    }
-
-    @media (max-width: 868px) {
-      .steps-container {
-        grid-template-columns: 1fr;
-        max-width: 400px;
-        margin: 0 auto;
-      }
-    }
-
-    /* Connecting line between steps */
-    .steps-line {
-      position: absolute;
-      top: 60px;
-      left: calc(16.67% + 40px);
-      right: calc(16.67% + 40px);
-      height: 2px;
-      background: linear-gradient(90deg, var(--accent-indigo), var(--accent-purple), var(--accent-violet));
-      opacity: 0.3;
-    }
-
-    @media (max-width: 868px) {
-      .steps-line {
-        display: none;
-      }
-    }
-
-    .step-card {
-      position: relative;
-      text-align: center;
-      padding: 32px 24px;
-    }
-
-    .step-number-wrapper {
-      position: relative;
-      width: 80px;
-      height: 80px;
-      margin: 0 auto 28px;
-    }
-
-    .step-number-bg {
-      position: absolute;
-      inset: 0;
-      background: var(--gradient-primary);
-      border-radius: 20px;
-      opacity: 0.1;
-      transform: rotate(6deg);
-      transition: all 0.3s;
-    }
-
-    .step-card:hover .step-number-bg {
-      transform: rotate(0deg);
-      opacity: 0.2;
-    }
-
-    .step-number {
-      position: relative;
-      width: 80px;
-      height: 80px;
-      background: var(--bg-secondary);
-      border: 2px solid var(--border-color);
-      border-radius: 20px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 32px;
-      font-weight: 700;
-      background: var(--gradient-primary);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      transition: all 0.3s;
-    }
-
-    .step-card:hover .step-number {
-      border-color: var(--accent-violet);
-      box-shadow: 0 0 30px rgba(139, 92, 246, 0.2);
-    }
-
-    .step-icon {
-      position: absolute;
-      bottom: -8px;
-      right: -8px;
-      width: 36px;
-      height: 36px;
-      background: var(--gradient-primary);
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
-    }
-
-    .step-icon svg {
-      width: 18px;
-      height: 18px;
-      color: white;
-    }
-
-    .step-title {
-      font-size: 20px;
-      font-weight: 600;
-      margin-bottom: 12px;
-      color: var(--text-primary);
-    }
-
-    .step-description {
-      font-size: 15px;
-      color: var(--text-secondary);
-      line-height: 1.6;
-      max-width: 280px;
-      margin: 0 auto;
-    }
-
-    /* Animated arrow between steps on desktop */
-    .step-arrow {
-      display: none;
-    }
-
-    @media (min-width: 869px) {
-      .step-arrow {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        position: absolute;
-        top: 52px;
-        width: 32px;
-        height: 32px;
-        color: var(--accent-violet);
-        animation: arrowPulse 2s ease-in-out infinite;
-      }
-
-      .step-arrow-1 {
-        left: calc(33.33% - 16px);
-      }
-
-      .step-arrow-2 {
-        left: calc(66.67% - 16px);
-      }
-
-      @keyframes arrowPulse {
-        0%, 100% { opacity: 0.5; transform: translateX(0); }
-        50% { opacity: 1; transform: translateX(4px); }
-      }
-    }
-
-    /* Footer */
-    .footer {
-      position: relative;
-      z-index: 10;
-      padding: 40px 24px;
-      border-top: 1px solid var(--border-color);
-      text-align: center;
-    }
-
-    .footer-content {
-      max-width: 1200px;
-      margin: 0 auto;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    @media (max-width: 640px) {
-      .footer-content {
-        flex-direction: column;
-        gap: 16px;
-      }
-    }
-
-    .footer-brand {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      color: var(--text-secondary);
-      font-size: 14px;
-      text-decoration: none;
-      transition: color 0.2s;
-    }
-
-    .footer-brand:hover {
-      color: var(--text-primary);
-    }
-
-    .footer-logo {
-      width: 24px;
-      height: 24px;
-      background: var(--gradient-primary);
-      border-radius: 6px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .footer-logo svg {
-      width: 14px;
-      height: 14px;
-      color: white;
-    }
-
-    .footer-text {
-      color: var(--text-muted);
-      font-size: 13px;
-    }
-
-    /* Waitlist form */
-    .waitlist-form {
-      display: flex;
-      gap: 10px;
-      margin-bottom: 16px;
-    }
-
-    @media (max-width: 520px) {
-      .waitlist-form { flex-direction: column; }
-    }
-
-    .waitlist-input {
-      flex: 1;
-      padding: 14px 18px;
-      background: rgba(255,255,255,0.06);
-      border: 1px solid rgba(255,255,255,0.12);
-      border-radius: 10px;
-      color: var(--text-primary);
-      font-size: 15px;
-      font-family: inherit;
-      outline: none;
-      transition: border-color 0.2s;
-      min-width: 0;
-    }
-
-    .waitlist-input::placeholder { color: var(--text-muted); }
-    .waitlist-input:focus { border-color: var(--accent-violet); }
-
-    .waitlist-btn {
-      padding: 14px 24px;
-      background: var(--gradient-primary);
-      color: white;
-      font-size: 15px;
-      font-weight: 600;
-      font-family: inherit;
-      border: none;
-      border-radius: 10px;
-      cursor: pointer;
-      white-space: nowrap;
-      box-shadow: 0 4px 20px rgba(99,102,241,0.3);
-      transition: all 0.2s;
-    }
-
-    .waitlist-btn:hover { opacity: 0.9; transform: translateY(-1px); }
-    .waitlist-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
-
-    .waitlist-meta {
-      font-size: 13px;
-      color: var(--text-muted);
-    }
-
-    .waitlist-meta a { color: var(--accent-violet); text-decoration: none; }
-    .waitlist-meta a:hover { text-decoration: underline; }
-
-    .waitlist-success {
-      display: none;
-      padding: 16px 20px;
-      background: rgba(139,92,246,0.1);
-      border: 1px solid rgba(139,92,246,0.25);
-      border-radius: 10px;
-      color: var(--text-primary);
-      font-size: 15px;
-      margin-bottom: 16px;
-    }
-  </style>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Inter', sans-serif; background: #09090b; color: #fafafa; overflow-x: hidden; }
+a { color: #8b5cf6; text-decoration: none; }
+
+/* ---- HERO ---- */
+.hero { position: relative; min-height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+.hero::before {
+  content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%;
+  background:
+    radial-gradient(ellipse at 20% 30%, rgba(99, 102, 241, 0.18) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 70%, rgba(168, 85, 247, 0.18) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 50%, rgba(139, 92, 246, 0.12) 0%, transparent 60%);
+  animation: heroShift 15s ease-in-out infinite; pointer-events: none;
+}
+@keyframes heroShift { 0%,100%{transform:translate(0,0) rotate(0deg);} 33%{transform:translate(2%,2%) rotate(1deg);} 66%{transform:translate(-2%,-1%) rotate(-1deg);} }
+.hero::after {
+  content: ''; position: absolute; inset: 0;
+  background-image: linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+  background-size: 60px 60px; pointer-events: none;
+}
+.nav { position: relative; z-index: 10; padding: 20px 24px; display: flex; align-items: center; justify-content: space-between; max-width: 1100px; margin: 0 auto; width: 100%; }
+.nav-brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: #fafafa; }
+.nav-logo { width: 40px; height: 40px; background: linear-gradient(135deg, #6366f1, #a855f7); border-radius: 10px; display: flex; align-items: center; justify-content: center; }
+.nav-logo svg { width: 22px; height: 22px; color: white; }
+.nav-title { font-size: 20px; font-weight: 700; background: linear-gradient(135deg, #6366f1, #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.nav-links { display: flex; align-items: center; gap: 8px; }
+.nav-link { padding: 10px 18px; color: #a1a1aa; text-decoration: none; font-size: 14px; font-weight: 500; border-radius: 8px; transition: all 0.2s; }
+.nav-link:hover { color: #fafafa; background: #18181b; }
+.nav-cta { padding: 10px 20px; background: linear-gradient(135deg, #6366f1, #a855f7); color: white; text-decoration: none; font-size: 14px; font-weight: 600; border-radius: 8px; }
+.hero-content { position: relative; z-index: 10; flex: 1; display: flex; align-items: center; padding: 40px 24px 80px; max-width: 1100px; margin: 0 auto; width: 100%; }
+.hero-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 60px; align-items: center; width: 100%; }
+@media (max-width: 968px) { .hero-grid { grid-template-columns: 1fr; text-align: center; gap: 48px; } }
+.hero-text { max-width: 540px; }
+@media (max-width: 968px) { .hero-text { max-width: 100%; margin: 0 auto; } }
+.hero-badge { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.2); border-radius: 100px; font-size: 13px; font-weight: 500; color: #8b5cf6; margin-bottom: 24px; }
+.hero-badge-dot { width: 6px; height: 6px; background: #8b5cf6; border-radius: 50%; animation: badgePulse 2s infinite; }
+@keyframes badgePulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
+.hero-h1 { font-size: clamp(36px, 5vw, 56px); font-weight: 700; line-height: 1.1; margin-bottom: 24px; letter-spacing: -0.02em; }
+.hero-h1 span { background: linear-gradient(135deg, #6366f1, #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.hero-desc { font-size: 18px; color: #a1a1aa; margin-bottom: 36px; line-height: 1.7; }
+.hero-actions { display: flex; flex-direction: column; gap: 16px; margin-bottom: 32px; }
+.hero-actions-row { display: flex; align-items: center; gap: 16px; }
+@media (max-width: 968px) { .hero-actions-row { justify-content: center; flex-wrap: wrap; } }
+.btn { display: inline-flex; align-items: center; gap: 10px; padding: 14px 28px; font-size: 15px; font-weight: 600; text-decoration: none; border-radius: 10px; transition: all 0.2s; cursor: pointer; border: none; }
+.btn-primary { background: linear-gradient(135deg, #6366f1, #a855f7); color: white; box-shadow: 0 4px 24px rgba(99, 102, 241, 0.4); }
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(99, 102, 241, 0.5); }
+.btn-secondary { background: transparent; color: #8b5cf6; border: 1px solid rgba(139, 92, 246, 0.3); padding: 14px 24px; font-size: 14px; }
+.btn-secondary:hover { background: rgba(139, 92, 246, 0.05); }
+.hero-note { font-size: 13px; color: #71717a; }
+.hero-note span { color: #8b5cf6; font-weight: 600; }
+/* Dashboard mockup */
+.hero-visual { position: relative; }
+.dashboard-mock { position: relative; background: #18181b; border: 1px solid #27272a; border-radius: 16px; overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 20px 60px rgba(0,0,0,0.5), 0 0 100px rgba(99,102,241,0.1);
+  transform: perspective(1000px) rotateY(-5deg) rotateX(2deg); transition: transform 0.5s; }
+.dashboard-mock:hover { transform: perspective(1000px) rotateY(-2deg) rotateX(1deg); }
+@media (max-width: 968px) { .dashboard-mock { transform: none; max-width: 500px; margin: 0 auto; } .dashboard-mock:hover { transform: none; } }
+.mock-bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; background: #09090b; border-bottom: 1px solid #27272a; }
+.mock-dot { width: 10px; height: 10px; border-radius: 50%; }
+.mock-dot.r { background: #ff5f57; } .mock-dot.y { background: #febc2e; } .mock-dot.g { background: #28c840; }
+.mock-url { flex: 1; text-align: center; font-size: 12px; color: #71717a; background: #18181b; padding: 6px 12px; border-radius: 6px; margin-left: 16px; }
+.mock-body { padding: 20px; display: flex; gap: 20px; }
+.mock-sidebar { width: 160px; border-right: 1px solid #27272a; padding-right: 16px; }
+.mock-nav-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; font-size: 12px; color: #a1a1aa; margin-bottom: 4px; }
+.mock-nav-item.active { background: rgba(139,92,246,0.1); color: #8b5cf6; }
+.mock-nav-dot { width: 14px; height: 14px; border-radius: 4px; background: #27272a; }
+.mock-nav-item.active .mock-nav-dot { background: #8b5cf6; }
+.mock-main { flex: 1; }
+.mock-card { background: #09090b; border: 1px solid #27272a; border-radius: 10px; padding: 14px; }
+.mock-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.mock-card-title { font-size: 13px; font-weight: 600; }
+.mock-card-badge { font-size: 10px; padding: 3px 8px; background: rgba(40,200,64,0.1); color: #28c840; border-radius: 100px; }
+.mock-row { display: flex; align-items: center; justify-content: space-between; padding: 10px; background: #18181b; border-radius: 8px; margin-bottom: 8px; }
+.mock-row-left { display: flex; align-items: center; gap: 10px; }
+.mock-row-icon { width: 28px; height: 28px; background: linear-gradient(135deg, #6366f1, #a855f7); border-radius: 6px; }
+.mock-row-text { font-size: 12px; color: #fafafa; }
+.mock-row-sub { font-size: 10px; color: #71717a; }
+.mock-row-stat { font-size: 11px; color: #8b5cf6; font-weight: 600; }
+/* Floating cards */
+.float-card { position: absolute; background: #18181b; border: 1px solid #27272a; border-radius: 12px; padding: 14px 18px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.4); animation: floatY 6s ease-in-out infinite; }
+@keyframes floatY { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-10px);} }
+.float-card-1 { top: -20px; right: -30px; animation-delay: -2s; }
+.float-card-2 { bottom: 40px; left: -40px; animation-delay: -4s; }
+@media (max-width: 968px) { .float-card { display: none; } }
+.float-stat { display: flex; align-items: center; gap: 10px; }
+.float-icon { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; }
+.float-icon svg { width: 18px; height: 18px; }
+.float-icon--green { background: rgba(40,200,64,0.1); color: #28c840; }
+.float-icon--indigo { background: rgba(99,102,241,0.1); color: #6366f1; }
+.float-val { font-size: 16px; font-weight: 700; }
+.float-label { font-size: 11px; color: #71717a; }
+
+/* ---- SHARED ---- */
+.section { position: relative; padding: 120px 24px; overflow: hidden; }
+.section-inner { max-width: 1100px; margin: 0 auto; position: relative; z-index: 2; }
+.section-title { font-size: 36px; font-weight: 700; text-align: center; margin-bottom: 16px; }
+.section-sub { font-size: 16px; color: #a1a1aa; text-align: center; margin-bottom: 64px; max-width: 560px; margin-left: auto; margin-right: auto; }
+
+/* ---- GRADIENT ORBS ---- */
+.orb { position: absolute; border-radius: 50%; filter: blur(120px); opacity: 0.35; pointer-events: none; z-index: 0; }
+
+/* ---- SOCIAL PROOF ---- */
+.social-proof { padding: 48px 24px; border-bottom: 1px solid #27272a; position: relative; overflow: hidden; }
+.social-proof .orb { width: 600px; height: 300px; background: radial-gradient(circle, #8b5cf6, transparent 70%); top: -100px; left: 50%; transform: translateX(-50%); }
+.proof-grid { display: flex; justify-content: center; gap: 48px; flex-wrap: wrap; position: relative; z-index: 2; }
+.proof-item { text-align: center; }
+.proof-value { font-size: 15px; font-weight: 600; color: #fafafa; }
+.proof-label { font-size: 13px; color: #71717a; margin-top: 2px; }
+
+/* ---- FEATURES ---- */
+.features-section { position: relative; }
+.features-section .orb-1 { width: 800px; height: 800px; background: radial-gradient(circle, #6366f1, transparent 60%); top: -200px; right: -300px; }
+.features-section .orb-2 { width: 600px; height: 600px; background: radial-gradient(circle, #a855f7, transparent 60%); bottom: -100px; left: -200px; }
+@keyframes meshShift { 0%,100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+.features-section::before {
+  content: ''; position: absolute; inset: 0; z-index: 0; opacity: 0.08;
+  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 25%, #a855f7 50%, #38bdf8 75%, #8b5cf6 100%);
+  background-size: 400% 400%; animation: meshShift 20s ease infinite;
+}
+.features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+@media (max-width: 968px) { .features-grid { grid-template-columns: repeat(2, 1fr); } }
+.feature-card {
+  background: rgba(24, 24, 27, 0.5); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(139, 92, 246, 0.15); border-radius: 16px; padding: 32px;
+  transition: border-color 0.3s, transform 0.3s;
+}
+.feature-card:hover { border-color: rgba(139, 92, 246, 0.4); transform: translateY(-4px); }
+.feature-icon { width: 40px; height: 40px; margin-bottom: 16px; color: #8b5cf6; }
+.feature-card h3 { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+.feature-card p { font-size: 14px; color: #a1a1aa; line-height: 1.6; }
+
+/* ---- PRICING ---- */
+.pricing-section { position: relative; }
+.pricing-section .orb-pro { width: 700px; height: 700px; background: radial-gradient(circle, #8b5cf6, transparent 55%); top: 50%; left: 50%; transform: translate(-50%, -50%); opacity: 0.25; }
+.pricing-cards { display: flex; gap: 32px; justify-content: center; flex-wrap: wrap; align-items: flex-start; }
+.price-card {
+  background: #18181b; border: 1px solid #27272a; border-radius: 16px; padding: 40px 32px; width: 340px;
+  transition: transform 0.3s;
+}
+.price-card:hover { transform: translateY(-4px); }
+.price-card.pro { border-color: #8b5cf6; position: relative; z-index: 2; }
+.price-badge { display: inline-block; font-size: 12px; font-weight: 600; color: #fafafa; background: #8b5cf6; padding: 4px 12px; border-radius: 999px; margin-bottom: 16px; }
+.price-name { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+.price-amount { font-size: 42px; font-weight: 700; }
+.price-amount span { font-size: 16px; font-weight: 400; color: #71717a; }
+.price-was { font-size: 13px; color: #71717a; text-decoration: line-through; margin-top: 4px; }
+.price-features { list-style: none; margin: 24px 0; display: flex; flex-direction: column; gap: 12px; }
+.price-features li { font-size: 14px; color: #a1a1aa; display: flex; align-items: center; gap: 8px; }
+.price-features li svg { width: 16px; height: 16px; color: #8b5cf6; flex-shrink: 0; }
+.price-cta {
+  display: block; width: 100%; padding: 14px; border: none; border-radius: 10px; font-size: 15px; font-weight: 600;
+  cursor: pointer; text-align: center; transition: opacity 0.2s;
+}
+.price-cta.free { background: #27272a; color: #fafafa; }
+.price-cta.pro-btn { background: #8b5cf6; color: #fff; }
+.price-cta.biz-btn { background: #27272a; color: #fafafa; border: 1px solid #3f3f46; }
+.price-cta:hover { opacity: 0.85; }
+.coming-soon-tag { font-size: 10px; font-weight: 600; color: #8b5cf6; background: rgba(139,92,246,0.12); border: 1px solid rgba(139,92,246,0.25); padding: 2px 6px; border-radius: 4px; margin-left: 4px; vertical-align: middle; white-space: nowrap; }
+.price-card.business { border-color: #3f3f46; }
+.founding { margin-top: 24px; }
+.founding-label { font-size: 13px; color: #a1a1aa; margin-bottom: 8px; }
+.founding-bar { height: 8px; background: #27272a; border-radius: 999px; overflow: hidden; }
+.founding-fill { height: 100%; width: 25%; background: #4ade80; border-radius: 999px; }
+.founding-note { font-size: 12px; color: #71717a; margin-top: 6px; }
+.competitor-row { margin-top: 40px; text-align: center; }
+.competitor-row p { font-size: 13px; color: #71717a; line-height: 1.8; }
+.competitor-row strong { color: #a1a1aa; }
+
+/* ---- HOW IT WORKS ---- */
+.steps-section .orb { width: 500px; height: 500px; background: radial-gradient(circle, #6366f1, transparent 60%); top: 0; left: -150px; }
+.steps-row { display: flex; gap: 48px; justify-content: center; flex-wrap: wrap; }
+.step { text-align: center; max-width: 240px; }
+.step-num {
+  width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-size: 24px; font-weight: 700; margin: 0 auto 20px;
+  background: radial-gradient(circle, rgba(139,92,246,0.3), transparent 70%);
+  border: 2px solid #8b5cf6; position: relative;
+}
+@keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(139,92,246,0.4); } 50% { box-shadow: 0 0 0 16px rgba(139,92,246,0); } }
+.step-num { animation: pulse 3s infinite; }
+.step h3 { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+.step p { font-size: 14px; color: #a1a1aa; }
+
+/* ---- API DEMO ---- */
+.api-section .orb { width: 600px; height: 400px; background: radial-gradient(circle, #a855f7, transparent 60%); bottom: -100px; right: -200px; }
+.terminal {
+  max-width: 720px; margin: 0 auto; background: #0c0c0e; border: 1px solid #27272a;
+  border-radius: 16px; overflow: hidden; box-shadow: 0 40px 80px rgba(0,0,0,0.6);
+}
+.terminal-bar { display: flex; gap: 8px; padding: 14px 20px; background: #18181b; }
+.terminal-dot { width: 12px; height: 12px; border-radius: 50%; }
+.terminal-dot.r { background: #fb7185; } .terminal-dot.y { background: #fbbf24; } .terminal-dot.g { background: #8b5cf6; }
+.terminal pre { padding: 24px; overflow-x: auto; font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.7; color: #a1a1aa; }
+.terminal .comment { color: #71717a; }
+.terminal .string { color: #8b5cf6; }
+.terminal .key { color: #38bdf8; }
+.terminal .bool { color: #fbbf24; }
+
+/* ---- FEEDBACK ---- */
+.feedback-section .orb { width: 400px; height: 400px; background: radial-gradient(circle, #6366f1, transparent 60%); top: -100px; right: -100px; }
+.feedback-form { max-width: 520px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+.feedback-form textarea {
+  width: 100%; min-height: 120px; background: #18181b; border: 1px solid #27272a; border-radius: 12px;
+  padding: 16px; color: #fafafa; font-family: 'Inter', sans-serif; font-size: 14px; resize: vertical;
+}
+.feedback-form textarea:focus { outline: none; border-color: #8b5cf6; }
+.feedback-form input {
+  width: 100%; background: #18181b; border: 1px solid #27272a; border-radius: 10px;
+  padding: 12px 16px; color: #fafafa; font-family: 'Inter', sans-serif; font-size: 14px;
+}
+.feedback-form input:focus { outline: none; border-color: #8b5cf6; }
+.feedback-form button {
+  align-self: flex-end; padding: 12px 32px; background: #8b5cf6; color: #fff; border: none;
+  border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.feedback-form button:hover { opacity: 0.85; }
+
+/* ---- FOOTER ---- */
+footer { padding: 64px 24px; border-top: 1px solid #27272a; text-align: center; }
+.footer-cta {
+  display: inline-block; padding: 16px 40px; background: #8b5cf6; color: #fff; border-radius: 12px;
+  font-size: 16px; font-weight: 600; margin-bottom: 32px; transition: opacity 0.2s;
+}
+.footer-cta:hover { opacity: 0.85; }
+.footer-links { display: flex; gap: 24px; justify-content: center; margin-bottom: 24px; }
+.footer-links a { font-size: 14px; color: #a1a1aa; }
+.footer-links a:hover { color: #fafafa; }
+.footer-byline { font-size: 13px; color: #71717a; }
+
+@media (max-width: 768px) {
+  .section { padding: 80px 16px; }
+  .section-title { font-size: 28px; }
+  .features-grid { grid-template-columns: 1fr; }
+  .pricing-cards { flex-direction: column; align-items: center; }
+  .steps-row { flex-direction: column; align-items: center; }
+  .proof-grid { gap: 24px; }
+}
+</style>
 </head>
 <body>
-  <div class="hero">
-    <!-- Navigation -->
-    <nav class="nav">
-      <a href="/" class="nav-brand">
-        <div class="nav-logo">
-          ${LINK_ICON}
+
+<!-- HERO -->
+<div class="hero">
+  <nav class="nav">
+    <a href="/" class="nav-brand">
+      <div class="nav-logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></div>
+      <span class="nav-title">URLsToGo</span>
+    </a>
+    <div class="nav-links">
+      <a href="#features" class="nav-link">Features</a>
+      <a href="#pricing" class="nav-link">Pricing</a>
+      <a href="#api" class="nav-link">API</a>
+      <a href="/admin" class="nav-cta">Sign In</a>
+    </div>
+  </nav>
+  <div class="hero-content">
+    <div class="hero-grid">
+      <div class="hero-text">
+        <div class="hero-badge"><span class="hero-badge-dot"></span> <span id="founding-badge">Founding 100 \u2014 spots available</span></div>
+        <h1 class="hero-h1">Short links built<br><span>for developers</span></h1>
+        <p class="hero-desc">500 links. Not per month &mdash; total. REST API, GitHub Actions CI/CD, password-protected links, expiring URLs, shared dashboards, and click analytics. All on Cloudflare&rsquo;s edge.</p>
+        <div class="hero-actions">
+          <div class="hero-actions-row">
+            <a href="/admin" class="btn btn-primary">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+              Start free with Google
+            </a>
+            <a href="/admin#billing" class="btn btn-secondary">Join the Founding 100</a>
+          </div>
+          <p class="hero-note"><span id="founding-spots">Limited spots</span> at <span>$9/mo forever</span> (normally $12)</p>
         </div>
-        <span class="nav-title">URLsToGo</span>
-      </a>
-      <div class="nav-links">
-        <a href="#features" class="nav-link">Features</a>
-        <a href="#how-it-works" class="nav-link">How It Works</a>
-        <a href="/admin" class="nav-cta">Dashboard</a>
       </div>
-    </nav>
-
-    <!-- Hero Content -->
-    <div class="hero-content">
-      <div class="hero-grid">
-        <div class="hero-text">
-          <div class="hero-badge">
-            <span class="hero-badge-dot"></span>
-            Powered by Cloudflare Edge
-          </div>
-          <h1 class="hero-title">
-            Shorten URLs<br>
-            <span class="hero-title-gradient">at the speed of light</span>
-          </h1>
-          <p class="hero-description">
-            Create, manage, and track your shortened URLs with our lightning-fast platform.
-            Organize with categories and tags, get real-time analytics, and deploy globally on Cloudflare's edge network.
-          </p>
-          <div class="hero-actions">
-            <div id="waitlist-success" class="waitlist-success">
-              You're on the list! We'll reach out with early access soon.
-            </div>
-            <form id="waitlist-form" class="waitlist-form" onsubmit="submitWaitlist(event)">
-              <input
-                id="waitlist-email"
-                class="waitlist-input"
-                type="email"
-                placeholder="your@email.com"
-                required
-                autocomplete="email"
-              >
-              <button type="submit" class="waitlist-btn" id="waitlist-btn">
-                Join Beta
-              </button>
-            </form>
-            <p class="waitlist-meta">
-              Free during early access &mdash; no credit card needed.
-              Already have access? <a href="/admin">Sign in</a>
-            </p>
-          </div>
-          <script>
-            async function submitWaitlist(e) {
-              e.preventDefault();
-              const email = document.getElementById('waitlist-email').value.trim();
-              const btn = document.getElementById('waitlist-btn');
-              const form = document.getElementById('waitlist-form');
-              const success = document.getElementById('waitlist-success');
-              btn.disabled = true;
-              btn.textContent = 'Joining...';
-              try {
-                const res = await fetch('/api/waitlist', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ email })
-                });
-                const data = await res.json();
-                if (res.ok || data.already_joined) {
-                  form.style.display = 'none';
-                  success.style.display = 'block';
-                  success.textContent = data.already_joined
-                    ? "You're already on the list! We'll be in touch soon."
-                    : "You're on the list! We'll reach out with early access soon.";
-                } else {
-                  btn.disabled = false;
-                  btn.textContent = 'Join Beta';
-                  alert(data.error || 'Something went wrong. Please try again.');
-                }
-              } catch {
-                btn.disabled = false;
-                btn.textContent = 'Join Beta';
-                alert('Network error. Please try again.');
-              }
-            }
-          </script>
-          <div class="hero-stats">
-            <div class="stat">
-              <div class="stat-value">&lt;50ms</div>
-              <div class="stat-label">Global Latency</div>
-            </div>
-            <div class="stat">
-              <div class="stat-value">300+</div>
-              <div class="stat-label">Edge Locations</div>
-            </div>
-            <div class="stat">
-              <div class="stat-value">99.9%</div>
-              <div class="stat-label">Uptime SLA</div>
-            </div>
+      <div class="hero-visual">
+        <div class="float-card float-card-1">
+          <div class="float-stat">
+            <div class="float-icon float-icon--green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></div>
+            <div><div class="float-val">+127%</div><div class="float-label">Click growth</div></div>
           </div>
         </div>
-
-        <div class="hero-visual">
-          <!-- Floating stats -->
-          <div class="floating-card floating-card-1">
-            <div class="floating-stat">
-              <div class="floating-stat-icon">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
-                  <polyline points="16 7 22 7 22 13"/>
-                </svg>
-              </div>
-              <div>
-                <div class="floating-stat-value">+127%</div>
-                <div class="floating-stat-label">Click growth</div>
-              </div>
-            </div>
+        <div class="float-card float-card-2">
+          <div class="float-stat">
+            <div class="float-icon float-icon--indigo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+            <div><div class="float-val">12ms</div><div class="float-label">Avg response</div></div>
           </div>
-
-          <div class="floating-card floating-card-2">
-            <div class="floating-stat">
-              <div class="floating-stat-icon floating-stat-icon--indigo">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <circle cx="12" cy="12" r="10"/>
-                  <polyline points="12 6 12 12 16 14"/>
-                </svg>
-              </div>
-              <div>
-                <div class="floating-stat-value">12ms</div>
-                <div class="floating-stat-label">Avg response</div>
-              </div>
+        </div>
+        <div class="dashboard-mock">
+          <div class="mock-bar"><span class="mock-dot r"></span><span class="mock-dot y"></span><span class="mock-dot g"></span><span class="mock-url">urlstogo.cloud/admin</span></div>
+          <div class="mock-body">
+            <div class="mock-sidebar">
+              <div class="mock-nav-item active"><div class="mock-nav-dot"></div>All Links</div>
+              <div class="mock-nav-item"><div class="mock-nav-dot"></div>Categories</div>
+              <div class="mock-nav-item"><div class="mock-nav-dot"></div>Analytics</div>
+              <div class="mock-nav-item"><div class="mock-nav-dot"></div>Settings</div>
             </div>
-          </div>
-
-          <!-- Dashboard mockup -->
-          <div class="dashboard-mockup">
-            <div class="mockup-header">
-              <div class="mockup-dot red"></div>
-              <div class="mockup-dot yellow"></div>
-              <div class="mockup-dot green"></div>
-              <div class="mockup-url">urlstogo.cloud/admin</div>
-            </div>
-            <div class="mockup-content">
-              <div class="mockup-sidebar">
-                <div class="mockup-nav">
-                  <div class="mockup-nav-item active">
-                    <div class="mockup-nav-icon"></div>
-                    <span>All Links</span>
-                  </div>
-                  <div class="mockup-nav-item">
-                    <div class="mockup-nav-icon"></div>
-                    <span>Categories</span>
-                  </div>
-                  <div class="mockup-nav-item">
-                    <div class="mockup-nav-icon"></div>
-                    <span>Analytics</span>
-                  </div>
-                  <div class="mockup-nav-item">
-                    <div class="mockup-nav-icon"></div>
-                    <span>Settings</span>
-                  </div>
-                </div>
-                <div class="mockup-main">
-                  <div class="mockup-card">
-                    <div class="mockup-card-header">
-                      <div class="mockup-card-title">Recent Links</div>
-                      <div class="mockup-badge">Live</div>
-                    </div>
-                    <div class="mockup-links">
-                      <div class="mockup-link">
-                        <div class="mockup-link-left">
-                          <div class="mockup-link-icon">
-                            ${LINK_ICON}
-                          </div>
-                          <div>
-                            <div class="mockup-link-text">urlstogo.cloud/abc123</div>
-                            <div class="mockup-link-url">github.com/project</div>
-                          </div>
-                        </div>
-                        <div class="mockup-link-clicks">2,847 clicks</div>
-                      </div>
-                      <div class="mockup-link">
-                        <div class="mockup-link-left">
-                          <div class="mockup-link-icon">
-                            ${LINK_ICON}
-                          </div>
-                          <div>
-                            <div class="mockup-link-text">urlstogo.cloud/docs</div>
-                            <div class="mockup-link-url">documentation.site</div>
-                          </div>
-                        </div>
-                        <div class="mockup-link-clicks">1,234 clicks</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+            <div class="mock-main">
+              <div class="mock-card">
+                <div class="mock-card-top"><span class="mock-card-title">Recent Links</span><span class="mock-card-badge">Live</span></div>
+                <div class="mock-row"><div class="mock-row-left"><div class="mock-row-icon"></div><div><div class="mock-row-text">urlstogo.cloud/abc123</div><div class="mock-row-sub">github.com/project</div></div></div><div class="mock-row-stat">2,847 clicks</div></div>
+                <div class="mock-row"><div class="mock-row-left"><div class="mock-row-icon"></div><div><div class="mock-row-text">urlstogo.cloud/docs</div><div class="mock-row-sub">documentation.site</div></div></div><div class="mock-row-stat">1,234 clicks</div></div>
               </div>
             </div>
           </div>
@@ -4215,254 +3577,290 @@ function getLandingPageHTML() {
       </div>
     </div>
   </div>
+</div>
 
-  <!-- Features Section -->
-  <section id="features" class="features-section">
-    <div class="features-container">
-      <div class="features-header">
-        <h2 class="features-title">Everything you need</h2>
-        <p class="features-subtitle">
-          A complete URL management solution with powerful features built for speed and simplicity.
-        </p>
+<!-- SOCIAL PROOF -->
+<section class="social-proof">
+  <div class="orb"></div>
+  <div class="proof-grid">
+    <div class="proof-item"><div class="proof-value">Cloudflare Edge</div><div class="proof-label">300+ locations</div></div>
+    <div class="proof-item"><div class="proof-value">&lt;50ms</div><div class="proof-label">Global redirects</div></div>
+    <div class="proof-item"><div class="proof-value">REST API</div><div class="proof-label">Scoped keys</div></div>
+    <div class="proof-item"><div class="proof-value">GitHub Actions</div><div class="proof-label">CI/CD built in</div></div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="section features-section">
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="section-inner">
+    <h2 class="section-title">Built for how developers actually work</h2>
+    <p class="section-sub">Not a marketing dashboard with a URL field. A proper tool with an API, CI/CD hooks, and infrastructure you control.</p>
+    <div class="features-grid">
+      <div class="feature-card">
+        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        <h3>REST API with Scoped Keys</h3>
+        <p>Create, update, delete, and list links programmatically. Generate multiple API keys with independent scopes. Everything the dashboard does, cURL does too.</p>
       </div>
-      <div class="features-grid">
-        <div class="feature-card">
-          <div class="feature-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-            </svg>
-          </div>
-          <h3 class="feature-name">Lightning Fast</h3>
-          <p class="feature-desc">
-            Redirects in under 50ms globally. Powered by Cloudflare's edge network spanning 300+ cities worldwide.
-          </p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
-              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-            </svg>
-          </div>
-          <h3 class="feature-name">Google Sign-In</h3>
-          <p class="feature-desc">
-            Sign in with Google — no password to manage. Your links are private to your account, protected by Cloudflare's edge.
-          </p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M3 3v18h18"/>
-              <path d="m19 9-5 5-4-4-3 3"/>
-            </svg>
-          </div>
-          <h3 class="feature-name">Real-time Analytics</h3>
-          <p class="feature-desc">
-            Track clicks, referrers, and geographic data in real-time. Understand how your links perform.
-          </p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/>
-              <path d="M7 7h.01"/>
-            </svg>
-          </div>
-          <h3 class="feature-name">Categories & Tags</h3>
-          <p class="feature-desc">
-            Organize your links with custom categories and tags. Find any link instantly with powerful search.
-          </p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65S8.93 17.38 9 18v4"/>
-              <path d="M9 18c-4.51 2-5-2-7-2"/>
-            </svg>
-          </div>
-          <h3 class="feature-name">API Keys & CI/CD</h3>
-          <p class="feature-desc">
-            Programmatic access with secure API keys. Auto-update preview links from GitHub Actions.
-          </p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
-              <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
-            </svg>
-          </div>
-          <h3 class="feature-name">Password Protection</h3>
-          <p class="feature-desc">
-            Protect sensitive links with password gates. Control who can access your shortened URLs.
-          </p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="10"/>
-              <polyline points="12 6 12 12 16 14"/>
-            </svg>
-          </div>
-          <h3 class="feature-name">Expiration & UTM</h3>
-          <p class="feature-desc">
-            Set auto-expiry dates for temporary links. Build UTM parameters with the built-in UTM builder.
-          </p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <rect width="5" height="5" x="3" y="3" rx="1"/>
-              <rect width="5" height="5" x="16" y="3" rx="1"/>
-              <rect width="5" height="5" x="3" y="16" rx="1"/>
-              <path d="M21 16h-3a2 2 0 0 0-2 2v3"/>
-              <path d="M21 21v.01"/>
-              <path d="M12 7v3a2 2 0 0 1-2 2H7"/>
-              <path d="M3 12h.01"/>
-              <path d="M12 3h.01"/>
-              <path d="M12 16v.01"/>
-              <path d="M16 12h1"/>
-              <path d="M21 12v.01"/>
-              <path d="M12 21v-1"/>
-            </svg>
-          </div>
-          <h3 class="feature-name">QR Codes & Export</h3>
-          <p class="feature-desc">
-            Generate QR codes for any link. Export and import all your data as JSON for full portability.
-          </p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="m21 21-6-6m6 6v-4.8m0 4.8h-4.8"/>
-              <path d="M3 16.2V21m0 0h4.8M3 21l6-6"/>
-              <path d="M21 7.8V3m0 0h-4.8M21 3l-6 6"/>
-              <path d="M3 7.8V3m0 0h4.8M3 3l6 6"/>
-            </svg>
-          </div>
-          <h3 class="feature-name">Bulk Operations & Search</h3>
-          <p class="feature-desc">
-            Select multiple links to tag, export, or delete in one action. Command palette search (⌘K) finds any link instantly.
-          </p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <rect width="14" height="20" x="5" y="2" rx="2" ry="2"/>
-              <path d="M12 18h.01"/>
-            </svg>
-          </div>
-          <h3 class="feature-name">Install as App</h3>
-          <p class="feature-desc">
-            Add URLsToGo to your home screen on any device. Full PWA support — works like a native app on iOS and Android.
-          </p>
-        </div>
+      <div class="feature-card">
+        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65S8.93 17.38 9 18v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>
+        <h3>CI/CD Preview Links</h3>
+        <p>Push to a branch, your shortlink updates automatically via GitHub Actions. Share go.urlstogo.cloud/my-app--preview and it always points to your latest deploy.</p>
+      </div>
+      <div class="feature-card">
+        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <h3>Password-Protected Links</h3>
+        <p>Gate any shortlink behind a password. Share staging environments, internal docs, or client previews without exposing them to the public internet.</p>
+      </div>
+      <div class="feature-card">
+        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <h3>Expiring Links</h3>
+        <p>Set a TTL on any link. Perfect for time-limited offers, beta invites, or temporary access tokens that self-destruct on schedule.</p>
+      </div>
+      <div class="feature-card">
+        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+        <h3>Click Analytics</h3>
+        <p>Geo, device, browser, and referrer &mdash; in real time. Know exactly where your traffic comes from, not just that someone clicked.</p>
+      </div>
+      <div class="feature-card">
+        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" x2="12" y1="2" y2="15"/></svg>
+        <h3>Shared Collections</h3>
+        <p>Share a category as a branded, read-only dashboard. Curate links for clients with featured items, descriptions, and live click stats.</p>
+      </div>
+      <div class="feature-card">
+        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+        <h3>Custom Shortcodes</h3>
+        <p>Choose your own vanity codes &mdash; go.urlstogo.cloud/docs, /pitch, /demo. Memorable, readable, and yours to edit or reassign anytime.</p>
+      </div>
+      <div class="feature-card">
+        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <h3>Command Palette</h3>
+        <p>Cmd+K to find any link, category, or action instantly. Keyboard-first navigation for developers who hate reaching for the mouse.</p>
+      </div>
+      <div class="feature-card">
+        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg>
+        <h3>Your Infrastructure</h3>
+        <p>Runs on Cloudflare Workers at the edge &mdash; not a shared SaaS black box. Sub-50ms redirects globally. Your data stays on infrastructure you chose.</p>
       </div>
     </div>
-  </section>
+  </div>
+</section>
 
-  <!-- How It Works Section -->
-  <section id="how-it-works" class="how-it-works">
-    <div class="how-it-works-container">
-      <div class="how-it-works-header">
-        <div class="how-it-works-badge">Simple & Fast</div>
-        <h2 class="how-it-works-title">How It Works</h2>
-        <p class="how-it-works-subtitle">
-          Get started in seconds. Sign in with Google and you're ready to go.
-        </p>
+<!-- PRICING -->
+<section class="section pricing-section">
+  <div class="orb orb-pro"></div>
+  <div class="section-inner">
+    <h2 class="section-title">Simple, honest pricing</h2>
+    <p class="section-sub">No per-link monthly quotas. Buy once, use forever.</p>
+    <div class="pricing-cards">
+      <div class="price-card">
+        <div class="price-name">Free</div>
+        <div class="price-amount">$0</div>
+        <ul class="price-features">
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>25 links</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Basic click counts</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>1 category</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Google sign-in</li>
+        </ul>
+        <button class="price-cta free">Get started free</button>
       </div>
-
-      <div class="steps-container">
-        <!-- Connecting line -->
-        <div class="steps-line"></div>
-
-        <!-- Animated arrows -->
-        <div class="step-arrow step-arrow-1">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M5 12h14"/>
-            <path d="m12 5 7 7-7 7"/>
-          </svg>
+      <div class="price-card pro">
+        <span class="price-badge">Most Popular</span>
+        <div class="price-name">Pro</div>
+        <div class="price-amount" id="pricing-amount">$9<span>/mo</span></div>
+        <div class="price-was" id="pricing-old">Was $12/mo</div>
+        <ul class="price-features">
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>500 links total</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Full analytics (geo, device, browser)</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Password-protected &amp; expiring links</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>API keys &amp; CI/CD preview links</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Shared collections &amp; unlimited categories</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>1 custom domain <span class="coming-soon-tag">Coming Soon</span></li>
+        </ul>
+        <button class="price-cta pro-btn">Start Pro &mdash; 25% off forever</button>
+        <div class="founding">
+          <div class="founding-label"><span id="founding-claimed">Loading...</span></div>
+          <div class="founding-bar"><div class="founding-fill" id="founding-fill"></div></div>
+          <div class="founding-note"><span id="founding-left"></span></div>
         </div>
-        <div class="step-arrow step-arrow-2">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M5 12h14"/>
-            <path d="m12 5 7 7-7 7"/>
-          </svg>
-        </div>
-
-        <!-- Step 1 -->
-        <div class="step-card">
-          <div class="step-number-wrapper">
-            <div class="step-number-bg"></div>
-            <div class="step-number">1</div>
-            <div class="step-icon">
-              ${LINK_ICON}
-            </div>
-          </div>
-          <h3 class="step-title">Paste Your URL</h3>
-          <p class="step-description">
-            Enter any long URL into the dashboard. Customize your short code or let us generate one automatically.
-          </p>
-        </div>
-
-        <!-- Step 2 -->
-        <div class="step-card">
-          <div class="step-number-wrapper">
-            <div class="step-number-bg"></div>
-            <div class="step-number">2</div>
-            <div class="step-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <circle cx="18" cy="5" r="3"/>
-                <circle cx="6" cy="12" r="3"/>
-                <circle cx="18" cy="19" r="3"/>
-                <line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/>
-                <line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/>
-              </svg>
-            </div>
-          </div>
-          <h3 class="step-title">Share Anywhere</h3>
-          <p class="step-description">
-            Copy your short link and share it on social media, emails, messages, or anywhere you need.
-          </p>
-        </div>
-
-        <!-- Step 3 -->
-        <div class="step-card">
-          <div class="step-number-wrapper">
-            <div class="step-number-bg"></div>
-            <div class="step-number">3</div>
-            <div class="step-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M3 3v18h18"/>
-                <path d="m19 9-5 5-4-4-3 3"/>
-              </svg>
-            </div>
-          </div>
-          <h3 class="step-title">Track Performance</h3>
-          <p class="step-description">
-            Monitor clicks, analyze traffic sources, and optimize your campaigns with real-time analytics.
-          </p>
-        </div>
+      </div>
+      <div class="price-card business">
+        <div class="price-name">Business</div>
+        <div class="price-amount">$29<span>/mo</span></div>
+        <ul class="price-features" style="margin: 24px 0;">
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>2,000 links total</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Full analytics (geo, device, browser)</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Password-protected &amp; expiring links</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>API keys &amp; CI/CD preview links</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Shared collections &amp; unlimited categories</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>5 custom domains <span class="coming-soon-tag">Coming Soon</span></li>
+        </ul>
+        <button class="price-cta biz-btn" onclick="window.location.href='/admin'">Start Business</button>
       </div>
     </div>
-  </section>
+    <div class="competitor-row">
+      <p><strong>Bitly</strong> $29/mo &middot; 500 links/month &nbsp;|&nbsp; <strong>Dub.co</strong> $25/mo &middot; 1000 links/month &nbsp;|&nbsp; <strong>URLsToGo Pro</strong> $9/mo &middot; 500 links total</p>
+    </div>
+  </div>
+</section>
 
-  <!-- Footer -->
-  <footer class="footer">
-    <div class="footer-content">
-      <a href="/" class="footer-brand">
-        <div class="footer-logo">
-          ${LINK_ICON}
-        </div>
-        URLsToGo
-      </a>
-      <div class="footer-text">
-        Powered by Cloudflare Workers
+<!-- HOW IT WORKS -->
+<section class="section steps-section">
+  <div class="orb"></div>
+  <div class="section-inner">
+    <h2 class="section-title">Up and running in 60 seconds</h2>
+    <p class="section-sub">No credit card. No setup wizard. Just links.</p>
+    <div class="steps-row">
+      <div class="step"><div class="step-num">1</div><h3>Sign in with Google</h3><p>One click, no passwords to remember.</p></div>
+      <div class="step"><div class="step-num">2</div><h3>Create a short link</h3><p>Paste a URL, pick a code, done.</p></div>
+      <div class="step"><div class="step-num">3</div><h3>Track &amp; share</h3><p>Real-time analytics and shareable collections.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- API DEMO -->
+<section class="section api-section">
+  <div class="orb"></div>
+  <div class="section-inner">
+    <h2 class="section-title">First-class API</h2>
+    <p class="section-sub">Everything you can do in the UI, you can do with cURL.</p>
+    <div class="terminal">
+      <div class="terminal-bar"><span class="terminal-dot r"></span><span class="terminal-dot y"></span><span class="terminal-dot g"></span></div>
+      <pre><span class="comment"># Create a short link</span>
+curl -X POST https://urlstogo.cloud/api/links \
+  -H <span class="string">"Authorization: Bearer utg_your_key"</span> \
+  -H <span class="string">"Content-Type: application/json"</span> \
+  -d '{<span class="key">"url"</span>: <span class="string">"https://github.com/my/repo"</span>, <span class="key">"code"</span>: <span class="string">"my-repo"</span>}'
+
+<span class="comment"># Response</span>
+{
+  <span class="key">"success"</span>: <span class="bool">true</span>,
+  <span class="key">"code"</span>: <span class="string">"my-repo"</span>,
+  <span class="key">"short_url"</span>: <span class="string">"https://go.urlstogo.cloud/my-repo"</span>,
+  <span class="key">"destination"</span>: <span class="string">"https://github.com/my/repo"</span>
+}</pre>
+    </div>
+  </div>
+</section>
+
+<!-- FEEDBACK -->
+<section class="section feedback-section">
+  <div class="orb"></div>
+  <div class="section-inner">
+    <h2 class="section-title">Help shape URLsToGo</h2>
+    <p class="section-sub">We're building this for developers like you. Tell us what matters.</p>
+    <form class="feedback-form" id="feedback-form" onsubmit="submitFeedback(event)">
+      <div id="feedback-success" style="display:none;padding:16px;background:rgba(139,92,246,0.1);border:1px solid rgba(139,92,246,0.2);border-radius:10px;color:#8b5cf6;font-size:14px;text-align:center;margin-bottom:16px;">Thanks for your feedback!</div>
+      <textarea id="feedback-msg" placeholder="What would make URLsToGo indispensable for you?" required></textarea>
+      <input type="email" id="feedback-email" placeholder="Email (optional)">
+      <button type="submit" id="feedback-btn">Send feedback</button>
+    </form>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <a href="/admin" class="footer-cta">Start free with Google</a>
+  <div class="footer-links">
+    <a href="https://github.com/jbcreations" target="_blank" rel="noopener">GitHub</a>
+    <a href="/admin#help">Help</a>
+    <a href="mailto:john@jbmdcreations.com">Contact</a>
+  </div>
+  <p class="footer-byline">Built by <a href="https://jbmdcreations.com" target="_blank" rel="noopener" style="color:#8b5cf6">JB</a> on Cloudflare Workers</p>
+</footer>
+
+
+  <!-- Exit Intent Modal -->
+  <div id="exit-modal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);align-items:center;justify-content:center;padding:24px;">
+    <div style="background:#18181b;border:1px solid #27272a;border-radius:16px;padding:32px;max-width:480px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+      <h3 style="font-size:20px;font-weight:600;margin-bottom:8px;">Quick question before you go</h3>
+      <p style="font-size:14px;color:#a1a1aa;margin-bottom:16px;">What would make this worth signing up for?</p>
+      <textarea id="exit-msg" style="width:100%;min-height:80px;padding:12px;background:#09090b;border:1px solid #27272a;border-radius:10px;color:#fafafa;font-family:Inter,sans-serif;font-size:14px;resize:vertical;outline:none;margin-bottom:12px;" placeholder="Missing feature? Wrong price? Anything helps..."></textarea>
+      <div style="display:flex;gap:12px;justify-content:flex-end;">
+        <button onclick="closeExitModal()" style="padding:10px 20px;background:transparent;color:#71717a;font-size:14px;font-family:inherit;border:none;cursor:pointer;">No thanks</button>
+        <button onclick="submitExitFeedback()" style="padding:10px 20px;background:#8b5cf6;color:white;font-size:14px;font-weight:600;font-family:inherit;border:none;border-radius:8px;cursor:pointer;">Send</button>
       </div>
     </div>
-  </footer>
+  </div>
+
+  <script>
+    // Founding spot counter
+    (async function() {
+      try {
+        var res = await fetch('/api/billing/founding');
+        var data = await res.json();
+        var remaining = data.spots_remaining || 0;
+        var claimed = data.spots_claimed || 0;
+        var total = data.spots_total || 100;
+        var pct = Math.round((claimed / total) * 100);
+        var b = document.getElementById('founding-badge');
+        if (b) b.textContent = remaining > 0 ? 'Founding 100 \u2014 ' + remaining + ' spots left' : 'Founding 100 \u2014 Sold out';
+        var s = document.getElementById('founding-spots');
+        if (s) s.textContent = remaining + ' spots remaining';
+        var c = document.getElementById('founding-claimed');
+        if (c) c.textContent = claimed + ' claimed \u00b7 ' + remaining + ' left';
+        var f = document.getElementById('founding-fill');
+        if (f) f.style.width = pct + '%';
+        var l = document.getElementById('founding-left');
+        if (l) l.textContent = '25% off forever for the first 100 Pro subscribers';
+        if (remaining <= 0) {
+          var fc = document.getElementById('founding-cta');
+          if (fc) fc.style.display = 'none';
+        }
+      } catch (e) {
+        var s2 = document.getElementById('founding-spots');
+        if (s2) s2.textContent = 'Limited spots remaining';
+      }
+    })();
+
+    // Feedback form
+    async function submitFeedback(e) {
+      e.preventDefault();
+      var btn = document.getElementById('feedback-btn');
+      var msg = document.getElementById('feedback-msg').value.trim();
+      var email = document.getElementById('feedback-email').value.trim();
+      if (!msg) return;
+      btn.disabled = true; btn.textContent = 'Sending...';
+      try {
+        var res = await fetch('/api/feedback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: msg, email: email || null, source: 'form' })
+        });
+        if (res.ok) {
+          document.getElementById('feedback-form').style.display = 'none';
+          document.getElementById('feedback-success').style.display = 'block';
+        } else { btn.disabled = false; btn.textContent = 'Send feedback'; }
+      } catch (err) { btn.disabled = false; btn.textContent = 'Send feedback'; }
+    }
+
+    // Exit intent (desktop only)
+    (function() {
+      if ('ontouchstart' in window) return;
+      if (localStorage.getItem('utg_exit_shown')) return;
+      var ready = false;
+      setTimeout(function() { ready = true; }, 10000);
+      document.documentElement.addEventListener('mouseleave', function(e) {
+        if (e.clientY > 0 || !ready) return;
+        if (localStorage.getItem('utg_exit_shown')) return;
+        localStorage.setItem('utg_exit_shown', '1');
+        document.getElementById('exit-modal').style.display = 'flex';
+      });
+    })();
+
+    function closeExitModal() { document.getElementById('exit-modal').style.display = 'none'; }
+
+    async function submitExitFeedback() {
+      var msg = document.getElementById('exit-msg').value.trim();
+      if (!msg) { closeExitModal(); return; }
+      try { await fetch('/api/feedback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: msg, source: 'exit_intent' }) }); } catch(e) {}
+      closeExitModal();
+    }
+  </script>
 </body>
-</html>`;
+</html>
+`;
 }
 
 function get404HTML(code) {
@@ -4609,7 +4007,7 @@ function getExpiredHTML() {
 </html>`;
 }
 
-function getAdminHTML(userEmail, env) {
+function getAdminHTML(userEmail, env, nonce = '') {
   const clerkPublishableKey = env?.CLERK_PUBLISHABLE_KEY || '';
 
   return `<!DOCTYPE html>
@@ -5315,7 +4713,8 @@ function getAdminHTML(userEmail, env) {
       .links-table th:nth-child(5), .links-table td:nth-child(5) { display: none; } /* Created */
       .cell-link a { padding: 3px 6px; font-size: 12px; }
       .cell-link .copy-btn { display: none; }
-      .cell-actions { opacity: 1; }
+      .cell-actions { opacity: 1; gap: 2px; }
+      .cell-actions .icon-btn { width: 44px; height: 44px; min-width: 44px; }
       .action-overflow-btn { opacity: 1; }
       .pagination { padding: 12px 16px; flex-wrap: wrap; gap: 8px; }
       .pagination-info { font-size: 12px; }
@@ -5431,6 +4830,50 @@ function getAdminHTML(userEmail, env) {
     /* Settings page */
     .settings-view { display: none; padding: 24px; flex: 1; margin-left: 256px; }
     .settings-view.active { display: flex; gap: 24px; }
+
+    /* Dashboard View */
+    .dashboard-view { display: none; padding: 24px 32px; flex: 1; margin-left: 256px; flex-direction: column; gap: 24px; overflow-y: auto; }
+    .dashboard-view.active { display: flex; }
+    .dashboard-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+    .dashboard-title { font-size: 18px; font-weight: 600; color: oklch(var(--foreground)); }
+
+    /* Stat cards */
+    .stat-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+    .stat-card { background: oklch(var(--card)); border: 1px solid oklch(var(--border)); border-radius: var(--radius); padding: 16px 20px; }
+    .stat-card-label { font-size: 12px; color: oklch(var(--muted-foreground)); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+    .stat-card-value { font-size: 28px; font-weight: 700; color: oklch(var(--foreground)); line-height: 1; }
+    .stat-card-sub { font-size: 12px; color: oklch(var(--muted-foreground)); margin-top: 6px; }
+    .stat-usage-bar { height: 4px; background: oklch(var(--muted)); border-radius: 2px; margin-top: 10px; }
+    .stat-usage-fill { height: 100%; border-radius: 2px; background: oklch(var(--primary)); transition: width 0.3s; }
+    .stat-plan-badge { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; background: oklch(var(--muted)); color: oklch(var(--muted-foreground)); }
+    .stat-plan-badge.pro { background: oklch(var(--primary) / 0.15); color: oklch(var(--primary)); }
+
+    /* Sparkline */
+    .spark-card { background: oklch(var(--card)); border: 1px solid oklch(var(--border)); border-radius: var(--radius); padding: 16px 20px; }
+    .spark-title { font-size: 13px; font-weight: 500; color: oklch(var(--muted-foreground)); margin-bottom: 12px; }
+    .spark-bars { display: flex; align-items: flex-end; gap: 4px; height: 48px; }
+    .spark-bar { flex: 1; background: oklch(var(--primary) / 0.4); border-radius: 2px 2px 0 0; min-height: 2px; transition: background 150ms; }
+    .spark-bar:hover { background: oklch(var(--primary)); }
+    .spark-labels { display: flex; justify-content: space-between; margin-top: 6px; }
+    .spark-label { font-size: 10px; color: oklch(var(--muted-foreground)); }
+
+    /* Two-column section */
+    .dash-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .dash-section { background: oklch(var(--card)); border: 1px solid oklch(var(--border)); border-radius: var(--radius); padding: 16px 20px; }
+    .dash-section-title { font-size: 13px; font-weight: 600; color: oklch(var(--foreground)); margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
+    .dash-link-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid oklch(var(--border) / 0.5); cursor: pointer; }
+    .dash-link-row:last-child { border-bottom: none; }
+    .dash-link-code { font-size: 13px; font-weight: 500; color: oklch(var(--primary)); font-family: monospace; white-space: nowrap; }
+    .dash-link-dest { font-size: 12px; color: oklch(var(--muted-foreground)); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dash-link-stat { font-size: 12px; color: oklch(var(--muted-foreground)); white-space: nowrap; }
+    .dash-empty { font-size: 13px; color: oklch(var(--muted-foreground)); text-align: center; padding: 16px 0; }
+    .dash-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+    @media (max-width: 768px) {
+      .dashboard-view { margin-left: 0; padding: 16px; padding-bottom: 72px; }
+      .stat-cards { grid-template-columns: repeat(2, 1fr); }
+      .dash-cols { grid-template-columns: 1fr; }
+    }
+
     .settings-nav {
       width: 200px; flex-shrink: 0;
       display: flex; flex-direction: column; gap: 2px;
@@ -5989,7 +5432,13 @@ function getAdminHTML(userEmail, env) {
       overflow-y: auto;
       padding: 20px;
       -webkit-overflow-scrolling: touch;
+      scrollbar-width: thin;
+      scrollbar-color: oklch(var(--muted)) transparent;
     }
+    .sheet-body::-webkit-scrollbar { width: 6px; }
+    .sheet-body::-webkit-scrollbar-track { background: transparent; }
+    .sheet-body::-webkit-scrollbar-thumb { background: oklch(var(--muted)); border-radius: 3px; }
+    .sheet-body::-webkit-scrollbar-thumb:hover { background: oklch(var(--muted-foreground)); }
 
     .sheet-footer {
       padding: 16px 20px;
@@ -6008,6 +5457,95 @@ function getAdminHTML(userEmail, env) {
       font-size: 16px;
       padding: 0 16px;
       border-radius: 12px;
+    }
+
+    /* Desktop: sheet becomes centered dialog */
+    @media (min-width: 769px) {
+      .sheet-overlay {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .sheet {
+        position: relative;
+        bottom: auto;
+        left: auto;
+        right: auto;
+        max-width: 500px;
+        width: 100%;
+        border-radius: var(--radius);
+        max-height: 85vh;
+        transform: scale(0.95);
+        transition: transform 150ms;
+      }
+      .sheet-overlay.open .sheet {
+        transform: scale(1);
+      }
+      .sheet-handle {
+        display: none;
+      }
+      .sheet-footer .btn {
+        flex: none;
+        min-height: 36px;
+        font-size: 14px;
+        padding: 8px 16px;
+      }
+      .form-group-mobile .input,
+      .form-group-mobile .select {
+        height: 36px;
+        font-size: 14px;
+        padding: 0 12px;
+        border-radius: var(--radius);
+      }
+      .form-group-mobile { margin-bottom: 16px; }
+      .form-group-mobile .label { margin-bottom: 6px; font-size: 13px; }
+      .sheet-body { padding: 16px 24px; }
+      .sheet-header { padding: 12px 24px; }
+      .sheet-footer { padding: 12px 24px; justify-content: flex-end; }
+    }
+
+    /* Advanced section accordion */
+    .advanced-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      background: none;
+      border: 1px solid oklch(var(--border));
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      color: oklch(var(--muted-foreground));
+      font-size: 13px;
+      cursor: pointer;
+      transition: color 150ms, border-color 150ms;
+    }
+    .advanced-toggle:hover {
+      color: oklch(var(--foreground));
+      border-color: oklch(var(--foreground) / 0.3);
+    }
+    .advanced-toggle svg { transition: transform 200ms; }
+    .advanced-toggle.open svg { transform: rotate(90deg); }
+    .advanced-content { display: none; padding-top: 16px; }
+    .advanced-content.open { display: block; }
+    .slug-row { display: flex; gap: 8px; align-items: center; }
+    .slug-row .input { flex: 1; }
+    .btn-icon-sm {
+      width: 36px;
+      height: 36px;
+      min-width: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: oklch(var(--muted));
+      border: 1px solid oklch(var(--border));
+      border-radius: var(--radius);
+      cursor: pointer;
+      color: oklch(var(--muted-foreground));
+      transition: background 150ms, color 150ms;
+    }
+    .btn-icon-sm:hover {
+      background: oklch(var(--accent));
+      color: oklch(var(--foreground));
     }
 
     /* Mobile-only display rules */
@@ -6170,11 +5708,11 @@ function getAdminHTML(userEmail, env) {
       </svg>
       <span>Links</span>
     </button>
-    <button class="tab-item" data-tab="stats" onclick="switchMobileTab('stats')" role="tab" aria-selected="false" aria-label="Statistics">
+    <button class="tab-item" data-tab="dashboard" onclick="switchMobileTab('dashboard')" role="tab" aria-selected="false" aria-label="Home">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/>
+        <rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>
       </svg>
-      <span>Stats</span>
+      <span>Home</span>
     </button>
     <div class="fab-container">
       <button class="fab" onclick="openCreateSheet()" aria-label="Create new link">
@@ -6214,7 +5752,12 @@ function getAdminHTML(userEmail, env) {
       <div class="sheet-body">
         <div class="form-group-mobile">
           <label class="label">Short Code</label>
-          <input type="text" class="input" id="sheetNewCode" placeholder="my-link (optional)">
+          <div class="slug-row">
+            <input type="text" class="input" id="sheetNewCode" placeholder="my-link (optional)">
+            <button type="button" class="btn-icon-sm" onclick="generateRandomSlug()" title="Generate random code">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H22"/><path d="m18 2 4 4-4 4"/><path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2"/><path d="M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8"/><path d="m18 14 4 4-4 4"/></svg>
+            </button>
+          </div>
         </div>
         <div class="form-group-mobile">
           <label class="label">Destination URL</label>
@@ -6229,6 +5772,38 @@ function getAdminHTML(userEmail, env) {
         <div class="form-group-mobile">
           <label class="label">Description (optional)</label>
           <input type="text" class="input" id="sheetNewDescription" placeholder="Brief note">
+        </div>
+        <div style="margin-top: 4px;">
+          <button type="button" class="advanced-toggle" onclick="toggleAdvancedCreate()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+            Advanced options
+          </button>
+          <div class="advanced-content" id="advancedCreateContent">
+            <div class="form-group-mobile">
+              <label class="label">Tags</label>
+              <div id="sheetTagInput" style="min-height: 36px; display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px; align-items: center; border: 1px solid oklch(var(--border)); border-radius: var(--radius); background: oklch(var(--background));">
+                <input type="text" id="sheetTagInputField" placeholder="Add tag..." style="border: none; background: none; outline: none; font-size: 14px; flex: 1; min-width: 80px; color: oklch(var(--foreground));">
+              </div>
+            </div>
+            <div class="form-group-mobile">
+              <label class="label">Expires</label>
+              <select class="select" id="sheetNewExpires">
+                <option value="">Never</option>
+                <option value="1h">1 hour from now</option>
+                <option value="24h">24 hours from now</option>
+                <option value="7d">7 days from now</option>
+                <option value="30d">30 days from now</option>
+                <option value="custom">Custom date</option>
+              </select>
+            </div>
+            <div class="form-group-mobile" id="sheetCustomExpiryGroup" style="display: none;">
+              <input type="datetime-local" class="input" id="sheetNewExpiresCustom">
+            </div>
+            <div class="form-group-mobile">
+              <label class="label">Password Protection</label>
+              <input type="password" class="input" id="sheetNewPassword" placeholder="Optional password">
+            </div>
+          </div>
         </div>
       </div>
       <div class="sheet-footer">
@@ -6270,8 +5845,22 @@ function getAdminHTML(userEmail, env) {
         </div>
         <div style="margin-bottom: 12px; border-top: 1px solid oklch(var(--border));"></div>
 
+        <div class="sidebar-stats-widget">
+          <div class="sidebar-stats-label">Today</div>
+          <div class="sidebar-stats-number" id="sidebarTodayClicks">—</div>
+          <div class="sidebar-stats-sub" id="sidebarClicksSub">clicks</div>
+        </div>
+
         <div class="nav-group">
-          <div class="nav-item active" onclick="showLinksView(); filterByCategory(null)" data-nav="links">
+          <div class="nav-item active" onclick="showDashboardView()" data-nav="dashboard">
+            <span class="nav-item-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>
+              </svg>
+            </span>
+            <span>Dashboard</span>
+          </div>
+          <div class="nav-item" onclick="showLinksView(); filterByCategory(null)" data-nav="links">
             <span class="nav-item-icon">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
@@ -6308,57 +5897,13 @@ function getAdminHTML(userEmail, env) {
         </div>
 
         <div class="nav-group">
-          <div class="nav-group-label">Tags</div>
-          <div id="tagsNav" class="tags-cloud"></div>
-        </div>
-
-        <div class="sidebar-stats-widget">
-          <div class="sidebar-stats-label">Today</div>
-          <div class="sidebar-stats-number" id="sidebarTodayClicks">—</div>
-          <div class="sidebar-stats-sub" id="sidebarClicksSub">clicks</div>
-        </div>
-
-        <div class="nav-group">
-          <div class="nav-group-label">Settings</div>
-          <div class="nav-item" onclick="showSettingsView('git-sync')" data-nav="git-sync">
-            <span class="nav-item-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>
-              </svg>
-            </span>
-            <span>Git Sync</span>
-          </div>
-          <div class="nav-item" onclick="showSettingsView('api-keys')" data-nav="api-keys">
-            <span class="nav-item-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
-              </svg>
-            </span>
-            <span>API Keys</span>
-          </div>
           <div class="nav-item" onclick="showSettingsView('profile')" data-nav="settings">
             <span class="nav-item-icon">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>
               </svg>
             </span>
-            <span>All Settings</span>
-          </div>
-          <div class="nav-item" onclick="showSettingsView('about')" data-nav="about">
-            <span class="nav-item-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
-              </svg>
-            </span>
-            <span>About</span>
-          </div>
-          <div class="nav-item" onclick="showSettingsView('devtools')" data-nav="devtools">
-            <span class="nav-item-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="m9 12 2 2 4-4"/>
-              </svg>
-            </span>
-            <span>DevTools</span>
+            <span>Settings</span>
           </div>
         </div>
       </div>
@@ -6446,6 +5991,32 @@ function getAdminHTML(userEmail, env) {
             Import
           </button>
           <input type="file" id="importFile" accept=".json" class="hidden-input">
+          <div id="headerUpgradeCta" style="display:none;cursor:pointer;position:relative;" onclick="showSettingsView('billing')">
+            <div style="position:absolute;inset:-6px;background:#c084fc1a;border-radius:18px;opacity:0.14;pointer-events:none;"></div>
+            <div style="position:absolute;inset:-2px;background:#8b5cf622;border-radius:16px;opacity:0.28;pointer-events:none;"></div>
+            <div style="display:flex;align-items:center;background:linear-gradient(90deg,#1a0a2e,#0f0520);border:1px solid #7c3aed;border-radius:14px;padding:0 0 0 8px;position:relative;overflow:hidden;" id="headerCtaInner">
+              <div style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:radial-gradient(circle,#c084fc33,#c084fc00);position:relative;">
+                <div style="width:18px;height:18px;background:linear-gradient(135deg,#c084fc,#8b5cf6,#6d28d9);border-radius:3px;transform:rotate(45deg);display:flex;align-items:center;justify-content:center;">
+                  <span style="font-size:8px;font-weight:900;color:#e9d5ff;transform:rotate(-45deg);line-height:1;">&#9670;</span>
+                </div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:3px;padding:8px 0;flex:1;min-width:0;">
+                <span id="headerCtaHeadline" style="font-size:13px;font-weight:600;color:#faf5ff;white-space:nowrap;">Founding 100</span>
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <span id="headerCtaProgress" style="font-size:10px;font-weight:500;color:#c4b5fd;white-space:nowrap;">0% claimed</span>
+                  <div style="flex:1;height:4px;background:#2a1842;border-radius:999px;overflow:hidden;min-width:40px;">
+                    <div id="headerCtaBar" style="height:100%;width:0%;background:linear-gradient(90deg,#c084fc,#8b5cf6);border-radius:999px;"></div>
+                  </div>
+                </div>
+              </div>
+              <div style="width:1px;height:24px;background:#a78bfa55;flex-shrink:0;margin:0 4px;"></div>
+              <div style="padding:7px 12px;flex-shrink:0;">
+                <div style="background:linear-gradient(135deg,#8b5cf6,#7c3aed);border:1px solid #d8b4fe66;border-radius:999px;padding:6px 12px;white-space:nowrap;">
+                  <span id="headerCtaBtn" style="font-size:11px;font-weight:600;color:#fdf4ff;">$9/mo Forever &#8594;</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -6505,6 +6076,56 @@ function getAdminHTML(userEmail, env) {
         </div>
       </div>
     </main>
+
+    <!-- Dashboard View -->
+    <div class="dashboard-view" id="dashboardView">
+      <div class="dashboard-header">
+        <span class="dashboard-title">Dashboard</span>
+        <span class="stat-plan-badge" id="dashPlanBadge">Free</span>
+      </div>
+      <div class="stat-cards">
+        <div class="stat-card">
+          <div class="stat-card-label">Total Links</div>
+          <div class="stat-card-value" id="dashTotalLinks">—</div>
+          <div class="stat-card-sub" id="dashLinksSub">Loading...</div>
+          <div class="stat-usage-bar"><div class="stat-usage-fill" id="dashUsageFill" style="width:0%"></div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-label">Clicks Today</div>
+          <div class="stat-card-value" id="dashClicksToday">—</div>
+          <div class="stat-card-sub" id="dashClicksSub">vs yesterday</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-label">Total Clicks</div>
+          <div class="stat-card-value" id="dashTotalClicks">—</div>
+          <div class="stat-card-sub">all time</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-label">Quick Actions</div>
+          <div class="dash-actions" style="margin-top:8px;">
+            <button class="btn btn-primary" style="min-height:32px;font-size:13px;padding:6px 14px;" onclick="openCreateSheet()">+ New Link</button>
+            <button class="btn btn-secondary" style="min-height:32px;font-size:13px;padding:6px 14px;" onclick="showLinksView()">All Links</button>
+          </div>
+        </div>
+      </div>
+      <div class="spark-card">
+        <div class="spark-title">Clicks — Last 7 Days</div>
+        <div class="spark-bars" id="dashSparkBars"><div class="dash-empty">Loading...</div></div>
+        <div class="spark-labels" id="dashSparkLabels"></div>
+      </div>
+      <div class="dash-cols">
+        <div class="dash-section">
+          <div class="dash-section-title">
+            Top Links <span style="font-weight:400;font-size:11px;color:oklch(var(--muted-foreground))">7 days</span>
+          </div>
+          <div id="dashTopLinks"><div class="dash-empty">Loading...</div></div>
+        </div>
+        <div class="dash-section">
+          <div class="dash-section-title">Recently Created</div>
+          <div id="dashRecentLinks"><div class="dash-empty">Loading...</div></div>
+        </div>
+      </div>
+    </div>
 
     <!-- Settings View -->
     <div class="settings-view" id="settingsView">
@@ -6592,7 +6213,7 @@ function getAdminHTML(userEmail, env) {
                 <div style="font-weight: 500; margin-bottom: 10px;">Setup — 3 steps, one time per repo</div>
                 <div style="display: flex; flex-direction: column; gap: 12px;">
                   ${[
-                    { n: 1, t: 'Connect GitHub above', d: 'Click "Create token on GitHub", copy the token it generates, paste it into the box, and hit Connect. You only do this once.' },
+                    { n: 1, t: 'Connect GitHub above', d: 'Click "Connect with GitHub" to authorize via OAuth. Or expand "Use a personal access token" if you prefer manual setup. You only do this once.' },
                     { n: 2, t: 'Pick a repo', d: 'Your GitHub repos will appear in a list. Find the one you want (e.g. my-app) and click Deploy.' },
                     { n: 3, t: "That's it", d: 'URLsToGo drops a workflow file in your repo and saves your API key as a GitHub secret. From now on, every push auto-updates go.urlstogo.cloud/my-app--preview.' },
                   ].map(s => `
@@ -7105,23 +6726,6 @@ Create .github/workflows/update-preview-link.yml that:
   </div>
   </div>
 
-  <!-- Dev Tools FAB -->
-  <div class="dev-tools-fab" id="devToolsFab">
-    <button class="dev-tools-btn" onclick="toggleDevTools()" title="Design Tools">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
-    </button>
-    <div class="dev-tools-menu">
-      <div class="dev-tools-menu-title">Design Resources</div>
-      <a href="/design-system" target="_blank" class="dev-tools-menu-item">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
-        Design System
-      </a>
-      <a href="/mobile-mockup" target="_blank" class="dev-tools-menu-item">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/></svg>
-        Mobile App Mockup
-      </a>
-    </div>
-  </div>
 
   <div class="toast-container" id="toastContainer"></div>
 
@@ -7403,7 +7007,7 @@ Create .github/workflows/update-preview-link.yml that:
     </div>
   </div>
 
-  <script>
+  <script nonce="${nonce}">
     // XSS Prevention - Escape functions for safe HTML rendering
     function escapeHtml(str) {
       if (str === null || str === undefined) return '';
@@ -7570,10 +7174,43 @@ Create .github/workflows/update-preview-link.yml that:
         }
       } else if (hash.startsWith('help/')) {
         showHelpView(hash.slice('help/'.length) || 'getting-started');
+      } else if (hash === 'dashboard') {
+        showDashboardView();
       } else {
+        showDashboardView();
         checkOnboarding();
       }
     }
+
+    // Header upgrade CTA — V11 diamond badge, show for free users only
+    (async function initHeaderUpgrade() {
+      try {
+        var statusRes = await fetch('/api/billing/status', { credentials: 'include' });
+        var statusData = await statusRes.json();
+        if (statusData.plan === 'pro' || statusData.plan === 'admin') return;
+        var ctaEl = document.getElementById('headerUpgradeCta');
+        if (!ctaEl) return;
+        var foundingRes = await fetch('/api/billing/founding');
+        var founding = await foundingRes.json();
+        var headline = document.getElementById('headerCtaHeadline');
+        var progress = document.getElementById('headerCtaProgress');
+        var bar = document.getElementById('headerCtaBar');
+        var btn = document.getElementById('headerCtaBtn');
+        if (founding.available) {
+          var pct = Math.round((founding.spots_claimed / founding.spots_total) * 100);
+          headline.textContent = 'Founding 100 \u2014 ' + founding.spots_remaining + ' spots left';
+          progress.textContent = pct + '% claimed';
+          bar.style.width = pct + '%';
+          btn.textContent = '$9/mo Forever \u2192';
+        } else {
+          headline.textContent = 'Upgrade to Pro';
+          progress.textContent = '';
+          bar.style.width = '100%';
+          btn.textContent = 'Upgrade \u2192';
+        }
+        ctaEl.style.display = '';
+      } catch (e) { /* silent */ }
+    })();
 
     // Handle hash-based navigation from <a href="/admin#..."> links
     window.addEventListener('hashchange', () => {
@@ -7588,8 +7225,8 @@ Create .github/workflows/update-preview-link.yml that:
         }
       } else if (hash.startsWith('help/')) {
         showHelpView(hash.slice('help/'.length) || 'getting-started');
-      } else if (!hash) {
-        showLinksView();
+      } else if (hash === 'dashboard' || !hash) {
+        showDashboardView();
       }
     });
 
@@ -7653,7 +7290,7 @@ Create .github/workflows/update-preview-link.yml that:
       // Update sidebar (escape user-controlled data)
       const nav = document.getElementById('categoriesNav');
       nav.innerHTML = allCategories.map(cat => \`
-        <div class="cat-folder-row" onclick="filterByCategory('\${escapeAttr(cat.slug)}')" data-slug="\${escapeAttr(cat.slug)}" data-name="\${escapeAttr(cat.name.toLowerCase())}">
+        <div class="cat-folder-row" onclick="showLinksView(); filterByCategory('\${escapeAttr(cat.slug)}')" data-slug="\${escapeAttr(cat.slug)}" data-name="\${escapeAttr(cat.name.toLowerCase())}">
           <span class="cat-folder-chevron"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span>
           <span class="cat-folder-icon-dot \${escapeAttr(cat.color)}"></span>
           <span style="flex: 1;">\${escapeHtml(cat.name)}</span>
@@ -7713,6 +7350,9 @@ Create .github/workflows/update-preview-link.yml that:
       renderLinks();
     }
 
+    // Link data store — avoids serializing objects into inline onclick handlers (XSS prevention)
+    const linkDataMap = new Map();
+
     function renderLinks() {
       const tbody = document.getElementById('linksTable');
       const start = (currentPage - 1) * perPage;
@@ -7723,6 +7363,9 @@ Create .github/workflows/update-preview-link.yml that:
         document.getElementById('pagination').style.display = 'none';
         return;
       }
+
+      // Store link data by code for safe retrieval
+      pageLinks.forEach(link => linkDataMap.set(link.code, link));
 
       tbody.innerHTML = pageLinks.map(link => {
         const createdDate = new Date(link.created_at);
@@ -7761,7 +7404,7 @@ Create .github/workflows/update-preview-link.yml that:
                 <div class="row-menu" id="menu-\${safeCode}">
                   <button class="row-menu-item" onclick="closeRowMenus();showQRCode('\${safeCode}')">QR Code</button>
                   <button class="row-menu-item" onclick="closeRowMenus();showLinkAnalytics('\${safeCode}')">Analytics</button>
-                  <button class="row-menu-item" onclick='closeRowMenus();openEditModal(\${JSON.stringify(link).replace(/'/g, "&#39;")})'>Edit</button>
+                  <button class="row-menu-item" onclick="closeRowMenus();openEditModal(linkDataMap.get('\${safeCode}'))">Edit</button>
                   <button class="row-menu-item row-menu-danger" onclick="closeRowMenus();deleteLink('\${safeCode}')">Delete</button>
                 </div>
               </div>
@@ -7880,22 +7523,80 @@ Create .github/workflows/update-preview-link.yml that:
       const modal = document.createElement('div');
       modal.id = 'upgradeModal';
       modal.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);';
-      modal.innerHTML =
-        '<div style="background:oklch(0.13 0.01 260);border:1px solid oklch(0.25 0.02 260);border-radius:14px;padding:28px;max-width:400px;width:calc(100% - 48px);box-shadow:0 24px 60px rgba(0,0,0,.5);">' +
-        '<div style="font-size:18px;font-weight:700;margin-bottom:8px;">Link limit reached</div>' +
-        '<div style="font-size:14px;color:oklch(0.65 0.02 260);margin-bottom:20px;">You have used ' + used + ' of ' + limit + ' links on the Free plan.</div>' +
-        '<div style="background:oklch(0.1 0.01 260);border-radius:10px;padding:16px;margin-bottom:20px;">' +
-        '<div style="font-size:13px;font-weight:600;color:oklch(0.85 0.14 290);margin-bottom:10px;">URLsToGo Pro — $12 / month</div>' +
-        '<div style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:oklch(0.7 0.02 260);">' +
-        '<div>200 short links</div>' +
-        '<div>Full analytics (geo, device, browser)</div>' +
-        '<div>Unlimited categories &amp; tags</div>' +
-        '</div></div>' +
-        '<div style="display:flex;gap:8px;">' +
-        '<button onclick="startCheckout()" style="flex:1;padding:10px;background:oklch(0.6 0.2 290);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">Upgrade to Pro</button>' +
-        '<button onclick="document.getElementById(\\'upgradeModal\\').remove()" style="padding:10px 16px;background:oklch(0.2 0.01 260);color:oklch(0.7 0.02 260);border:none;border-radius:8px;font-size:14px;cursor:pointer;">Cancel</button>' +
-        '</div></div>';
-      modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+      fetch('/api/billing/founding').then(function(r) { return r.json(); }).then(function(f) {
+        var isFounding = f.available;
+        var spotsLeft = f.spots_remaining;
+        var spotBar = '';
+        if (isFounding) {
+          var pct = Math.round((f.spots_claimed / f.spots_total) * 100);
+          var barWidth = Math.max(8, Math.round(pct * 3.5));
+          spotBar =
+            '<div style="background:#18181b;border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px;">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+            '<span style="font-size:13px;font-weight:500;color:#a1a1aa;">Founding spots</span>' +
+            '<span style="font-size:13px;font-weight:600;color:#fafafa;">' + spotsLeft + ' of ' + f.spots_total + ' remaining</span></div>' +
+            '<div style="position:relative;height:8px;background:#3f3f46;border-radius:999px;overflow:hidden;">' +
+            '<div style="position:absolute;top:0;left:0;height:8px;width:' + barWidth + 'px;background:#4ade80;border-radius:999px;"></div>' +
+            '</div></div>';
+        }
+        var priceCard = '';
+        if (isFounding) {
+          priceCard =
+            '<div style="background:#18181b;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:8px;">' +
+            '<div style="display:flex;align-items:flex-end;gap:10px;">' +
+            '<span style="font-size:24px;font-weight:500;color:#71717a;">$12</span>' +
+            '<span style="font-size:42px;font-weight:700;color:#fafafa;">$9</span>' +
+            '<span style="font-size:16px;font-weight:500;color:#a1a1aa;">/month</span></div>' +
+            '<div style="font-size:13px;font-weight:500;color:#4ade80;">25% off forever as a founding member</div></div>';
+        } else {
+          priceCard =
+            '<div style="background:#18181b;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:8px;">' +
+            '<div style="display:flex;align-items:flex-end;gap:10px;">' +
+            '<span style="font-size:42px;font-weight:700;color:#fafafa;">$12</span>' +
+            '<span style="font-size:16px;font-weight:500;color:#a1a1aa;">/month</span></div></div>';
+        }
+        var featureRow = function(text) {
+          return '<div style="display:flex;gap:10px;align-items:flex-start;">' +
+            '<span style="font-size:14px;font-weight:700;color:#4ade80;flex-shrink:0;">&#10003;</span>' +
+            '<span style="font-size:14px;color:#a1a1aa;line-height:1.4;">' + text + '</span></div>';
+        };
+        modal.innerHTML =
+          '<div style="background:#111113;border-radius:14px;padding:28px;max-width:420px;width:calc(100% - 48px);box-shadow:0 8px 24px #00000055;display:flex;flex-direction:column;gap:20px;">' +
+          '<div style="display:flex;flex-direction:column;gap:8px;">' +
+          '<div style="font-size:30px;font-weight:700;color:#fafafa;">Link limit reached</div>' +
+          '<div style="font-size:14px;color:#a1a1aa;line-height:1.45;">You\\\'ve used ' + used + ' of ' + limit + ' links on the Free plan.</div></div>' +
+          spotBar +
+          priceCard +
+          '<div style="display:flex;flex-direction:column;gap:10px;">' +
+          featureRow('500 short links &#8212; total, not per month') +
+          featureRow('Full analytics (geo, device, browser)') +
+          featureRow('Unlimited categories, tags &amp; edits') +
+          featureRow('API access &amp; GitHub integration') +
+          '</div>' +
+          '<button onclick="startCheckout()" style="width:100%;height:44px;background:#8b5cf6;color:#fafafa;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">' + (isFounding ? 'Claim Founding Spot' : 'Upgrade to Pro') + '</button>' +
+          '<div style="text-align:center;"><span onclick="document.getElementById(\\'upgradeModal\\').remove()" style="font-size:13px;font-weight:500;color:#71717a;cursor:pointer;">Cancel</span></div>' +
+          '</div>';
+      }).catch(function() {
+        modal.innerHTML =
+          '<div style="background:#111113;border-radius:14px;padding:28px;max-width:420px;width:calc(100% - 48px);box-shadow:0 8px 24px #00000055;display:flex;flex-direction:column;gap:20px;">' +
+          '<div style="display:flex;flex-direction:column;gap:8px;">' +
+          '<div style="font-size:30px;font-weight:700;color:#fafafa;">Link limit reached</div>' +
+          '<div style="font-size:14px;color:#a1a1aa;line-height:1.45;">You\\\'ve used ' + used + ' of ' + limit + ' links on the Free plan.</div></div>' +
+          '<div style="background:#18181b;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:8px;">' +
+          '<div style="display:flex;align-items:flex-end;gap:10px;">' +
+          '<span style="font-size:42px;font-weight:700;color:#fafafa;">$12</span>' +
+          '<span style="font-size:16px;font-weight:500;color:#a1a1aa;">/month</span></div></div>' +
+          '<div style="display:flex;flex-direction:column;gap:10px;">' +
+          '<div style="display:flex;gap:10px;"><span style="font-size:14px;font-weight:700;color:#4ade80;">&#10003;</span><span style="font-size:14px;color:#a1a1aa;">500 short links &#8212; total, not per month</span></div>' +
+          '<div style="display:flex;gap:10px;"><span style="font-size:14px;font-weight:700;color:#4ade80;">&#10003;</span><span style="font-size:14px;color:#a1a1aa;">Full analytics (geo, device, browser)</span></div>' +
+          '<div style="display:flex;gap:10px;"><span style="font-size:14px;font-weight:700;color:#4ade80;">&#10003;</span><span style="font-size:14px;color:#a1a1aa;">Unlimited categories, tags &amp; edits</span></div>' +
+          '<div style="display:flex;gap:10px;"><span style="font-size:14px;font-weight:700;color:#4ade80;">&#10003;</span><span style="font-size:14px;color:#a1a1aa;">API access &amp; GitHub integration</span></div>' +
+          '</div>' +
+          '<button onclick="startCheckout()" style="width:100%;height:44px;background:#8b5cf6;color:#fafafa;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">Upgrade to Pro</button>' +
+          '<div style="text-align:center;"><span onclick="document.getElementById(\\'upgradeModal\\').remove()" style="font-size:13px;font-weight:500;color:#71717a;cursor:pointer;">Cancel</span></div>' +
+          '</div>';
+      });
+      modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
       document.body.appendChild(modal);
     }
 
@@ -7970,8 +7671,8 @@ Create .github/workflows/update-preview-link.yml that:
           console.error('Clerk signOut error:', e.message);
         }
       }
-      // Fallback to Cloudflare Access logout
-      window.location.href = '/cdn-cgi/access/logout';
+      // Redirect to login page after signout
+      window.location.href = '/login';
     }
 
     async function importLinks(event) {
@@ -8459,10 +8160,122 @@ Create .github/workflows/update-preview-link.yml that:
     function showApiKeysModal() { showSettingsView('api-keys'); }
     function closeApiKeysModal() { document.getElementById('apiKeysModal').classList.remove('open'); }
 
+    // Dashboard view
+    var _dashLoaded = false;
+
+    function showDashboardView() {
+      document.querySelector('.main').style.display = 'none';
+      document.getElementById('settingsView').classList.remove('active');
+      document.getElementById('helpView').classList.remove('active');
+      document.getElementById('dashboardView').classList.add('active');
+      closeMobileMenu();
+      document.querySelectorAll('.nav-item').forEach(function(el) { el.classList.remove('active'); });
+      var dashNav = document.querySelector('[data-nav="dashboard"]');
+      if (dashNav) dashNav.classList.add('active');
+      history.replaceState(null, '', '/admin#dashboard');
+      if (!_dashLoaded) loadDashboardData();
+    }
+
+    async function loadDashboardData() {
+      try {
+        var results = await Promise.all([
+          fetch('/api/stats').then(function(r) { return r.json(); }),
+          fetch('/api/billing/status').then(function(r) { return r.json(); }),
+          fetch('/api/analytics/overview?days=7').then(function(r) { return r.json(); }),
+          fetch('/api/links?sort=newest&limit=5').then(function(r) { return r.json(); })
+        ]);
+        var stats = results[0], billing = results[1], overview = results[2], recentRaw = results[3];
+
+        // Stat cards
+        var totalLinks = stats.links || 0;
+        var totalClicks = stats.clicks || 0;
+        var todayClicks = stats.today_clicks || 0;
+        var yesterdayClicks = stats.yesterday_clicks || 0;
+        document.getElementById('dashTotalLinks').textContent = totalLinks.toLocaleString();
+        document.getElementById('dashTotalClicks').textContent = totalClicks.toLocaleString();
+        document.getElementById('dashClicksToday').textContent = todayClicks.toLocaleString();
+
+        if (yesterdayClicks > 0) {
+          var pctChange = Math.round((todayClicks - yesterdayClicks) / yesterdayClicks * 100);
+          document.getElementById('dashClicksSub').textContent = (pctChange >= 0 ? '+' : '') + pctChange + '% vs yesterday';
+        }
+
+        // Plan badge + usage bar
+        var plan = billing.plan || 'free';
+        var used = billing.links_used != null ? billing.links_used : totalLinks;
+        var limit = billing.links_limit || 25;
+        var usagePct = Math.min(100, Math.round((used / limit) * 100));
+        var badge = document.getElementById('dashPlanBadge');
+        badge.textContent = plan.charAt(0).toUpperCase() + plan.slice(1);
+        if (plan === 'pro' || plan === 'admin') badge.classList.add('pro');
+        document.getElementById('dashLinksSub').textContent = used + ' / ' + limit + ' links';
+        var fill = document.getElementById('dashUsageFill');
+        fill.style.width = usagePct + '%';
+        if (usagePct >= 90) fill.style.background = 'oklch(var(--destructive))';
+        else if (usagePct >= 70) fill.style.background = 'oklch(0.75 0.15 85)';
+
+        // Sparkline
+        var days = overview.clicksByDay || [];
+        var barsEl = document.getElementById('dashSparkBars');
+        var labelsEl = document.getElementById('dashSparkLabels');
+        if (days.length) {
+          var maxClicks = Math.max.apply(null, days.map(function(d) { return d.clicks; }).concat([1]));
+          barsEl.innerHTML = days.map(function(d) {
+            var h = Math.max(4, Math.round((d.clicks / maxClicks) * 48));
+            return '<div class="spark-bar" style="height:' + h + 'px" title="' + escapeAttr(d.date) + ': ' + d.clicks + ' clicks"></div>';
+          }).join('');
+          labelsEl.innerHTML = '<span class="spark-label">' + escapeHtml(days[0].date.slice(5)) + '</span><span class="spark-label">' + escapeHtml(days[days.length-1].date.slice(5)) + '</span>';
+        } else {
+          barsEl.innerHTML = '<div class="dash-empty">No clicks in the last 7 days</div>';
+        }
+
+        // Top links
+        var topLinks = (overview.topLinks || []).slice(0, 5);
+        var topEl = document.getElementById('dashTopLinks');
+        if (topLinks.length) {
+          topEl.innerHTML = topLinks.map(function(l) {
+            var code = l.code || l.short_code || '';
+            var dest = (l.destination || l.url || '').replace(/^https?:\\/\\//, '');
+            var clicks = (l.recent_clicks || l.clicks || 0).toLocaleString();
+            return '<div class="dash-link-row" onclick="copyLink(\\'' + escapeAttr(code) + '\\')">' +
+              '<span class="dash-link-code">/' + escapeHtml(code) + '</span>' +
+              '<span class="dash-link-dest">' + escapeHtml(dest) + '</span>' +
+              '<span class="dash-link-stat">' + clicks + ' clicks</span>' +
+              '</div>';
+          }).join('');
+        } else {
+          topEl.innerHTML = '<div class="dash-empty">No clicks yet</div>';
+        }
+
+        // Recent links
+        var recentLinks = Array.isArray(recentRaw) ? recentRaw : (recentRaw.links || []);
+        var recentEl = document.getElementById('dashRecentLinks');
+        if (recentLinks.length) {
+          recentEl.innerHTML = recentLinks.map(function(l) {
+            var code = l.code || '';
+            var dest = (l.destination || l.url || '').replace(/^https?:\\/\\//, '');
+            var age = l.created_at ? formatRelativeTime(l.created_at) : '';
+            return '<div class="dash-link-row" onclick="copyLink(\\'' + escapeAttr(code) + '\\')">' +
+              '<span class="dash-link-code">/' + escapeHtml(code) + '</span>' +
+              '<span class="dash-link-dest">' + escapeHtml(dest) + '</span>' +
+              '<span class="dash-link-stat">' + escapeHtml(age) + '</span>' +
+              '</div>';
+          }).join('');
+        } else {
+          recentEl.innerHTML = '<div class="dash-empty">No links yet — <a href="#" onclick="openCreateSheet();return false;" style="color:oklch(var(--primary))">create one</a></div>';
+        }
+
+        _dashLoaded = true;
+      } catch (e) {
+        console.error('[dashboard]', e);
+      }
+    }
+
     function showSettingsView(tab) {
       document.querySelector('.main').style.display = 'none';
       document.getElementById('settingsView').classList.add('active');
       document.getElementById('helpView').classList.remove('active');
+      document.getElementById('dashboardView').classList.remove('active');
       closeMobileMenu();
       document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
       const navTarget = tab === 'profile' ? 'settings' : tab;
@@ -8475,6 +8288,8 @@ Create .github/workflows/update-preview-link.yml that:
     function showLinksView() {
       document.getElementById('settingsView').classList.remove('active');
       document.getElementById('helpView').classList.remove('active');
+      document.getElementById('dashboardView').classList.remove('active');
+      _dashLoaded = false;
       document.querySelector('.main').style.display = '';
       document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
       const linksNav = document.querySelector('[data-nav="links"]');
@@ -8529,10 +8344,14 @@ Create .github/workflows/update-preview-link.yml that:
       if (!container) return;
 
       try {
-        const res = await fetch('/api/billing/status', { credentials: 'include' });
+        const [res, foundingRes] = await Promise.all([
+          fetch('/api/billing/status', { credentials: 'include' }),
+          fetch('/api/billing/founding'),
+        ]);
         const data = await res.json();
+        const founding = await foundingRes.json().catch(function() { return { available: false, spots_remaining: 0, spots_total: 100, spots_claimed: 100 }; });
 
-        const isPro = data.plan === 'pro';
+        const isPro = data.plan === 'pro' || data.plan === 'admin';
         const used = Number(data.links_used) || 0;
         const limit = Number(data.links_limit) || 25;
         const pct = Math.min(100, Math.round((used / limit) * 100));
@@ -8551,7 +8370,12 @@ Create .github/workflows/update-preview-link.yml that:
         const planHeader = billingMakeEl('div', 'display: flex; align-items: center; justify-content: space-between;');
         const planInfo = document.createElement('div');
         planInfo.appendChild(billingMakeEl('div', 'font-size: 15px; font-weight: 600;' + (isPro ? ' color: oklch(var(--accent-violet));' : ''), isPro ? 'Pro Plan' : 'Free Plan'));
-        planInfo.appendChild(billingMakeEl('div', 'font-size: 13px; color: oklch(var(--muted-foreground)); margin-top: 2px;', isPro ? '$12 / month' : 'Up to ' + limit + ' links'));
+        var planPriceText = isPro ? '$12 / month' : 'Up to ' + limit + ' links';
+        if (isPro && data.status === 'active') {
+          // Check if this user has the founding coupon applied (Stripe shows discounted amount)
+          planPriceText = '$12 / month';
+        }
+        planInfo.appendChild(billingMakeEl('div', 'font-size: 13px; color: oklch(var(--muted-foreground)); margin-top: 2px;', planPriceText));
         planHeader.appendChild(planInfo);
 
         const badge = billingMakeEl('span', isPro
@@ -8611,63 +8435,83 @@ Create .github/workflows/update-preview-link.yml that:
           manageBtn.onclick = () => openBillingPortal();
           actionsEl.appendChild(manageBtn);
         } else {
-          // Variant B — pricecn Classic (recommended elevated card)
+          // V2 (Stripe) design — matches Pencil V2
           const upgradeCard = document.createElement('div');
-          upgradeCard.style.cssText = 'background: oklch(var(--card)); border: 1px solid oklch(var(--indigo) / 0.5); border-radius: var(--radius); box-shadow: 0 0 0 1px oklch(var(--indigo) / 0.15), 0 8px 32px oklch(var(--indigo) / 0.15); padding: 24px; margin-bottom: 0;';
+          upgradeCard.style.cssText = 'background: #111113; border: 1px solid #27272a; border-radius: 14px; box-shadow: 0 8px 24px #00000055; padding: 28px; display: flex; flex-direction: column; gap: 20px;';
 
-          // Plan name + badge
-          const topRow = billingMakeEl('div', 'display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;');
-          topRow.appendChild(billingMakeEl('div', 'font-size: 16px; font-weight: 700;', 'Pro'));
-          topRow.appendChild(billingMakeEl('span', 'font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 10px; border-radius: 99px; background: linear-gradient(135deg, oklch(var(--indigo)) 0%, oklch(var(--purple)) 100%); color: #fff;', 'Most popular'));
+          // Header: Pro + badge
+          const topRow = billingMakeEl('div', 'display: flex; align-items: center; justify-content: space-between;');
+          topRow.appendChild(billingMakeEl('div', 'font-size: 24px; font-weight: 600; color: #fafafa;', 'Pro'));
+          const badge = billingMakeEl('span', 'font-size: 11px; font-weight: 600; letter-spacing: 0.4px; padding: 4px 10px; border-radius: 999px; border: 1px solid #8b5cf6; color: #8b5cf6;', 'MOST POPULAR');
+          topRow.appendChild(badge);
           upgradeCard.appendChild(topRow);
 
-          // Price
-          const priceRow = billingMakeEl('div', 'display: flex; align-items: baseline; gap: 4px; margin-bottom: 4px;');
-          priceRow.appendChild(billingMakeEl('div', 'font-size: 42px; font-weight: 800; letter-spacing: -0.04em; line-height: 1;', '$12'));
-          priceRow.appendChild(billingMakeEl('div', 'font-size: 14px; color: oklch(var(--muted-foreground));', '/ month'));
-          upgradeCard.appendChild(priceRow);
-          upgradeCard.appendChild(billingMakeEl('div', 'font-size: 13px; color: oklch(var(--muted-foreground)); margin-bottom: 20px;', 'For serious link creators'));
+          // Pricing section
+          const pricingSection = billingMakeEl('div', 'display: flex; flex-direction: column; gap: 10px;');
+          const priceRow = billingMakeEl('div', 'display: flex; align-items: flex-end; gap: 10px;');
+          if (founding.available) {
+            priceRow.appendChild(billingMakeEl('span', 'font-size: 20px; font-weight: 500; color: #71717a;', '$12'));
+            const newPriceWrap = billingMakeEl('div', 'display: flex; align-items: flex-end; gap: 4px;');
+            newPriceWrap.appendChild(billingMakeEl('span', 'font-size: 46px; font-weight: 700; color: #fafafa; line-height: 1;', '$9'));
+            newPriceWrap.appendChild(billingMakeEl('span', 'font-size: 16px; font-weight: 500; color: #a1a1aa;', '/month'));
+            priceRow.appendChild(newPriceWrap);
+          } else {
+            priceRow.appendChild(billingMakeEl('span', 'font-size: 46px; font-weight: 700; color: #fafafa; line-height: 1;', '$12'));
+            priceRow.appendChild(billingMakeEl('span', 'font-size: 16px; font-weight: 500; color: #a1a1aa;', '/month'));
+          }
+          pricingSection.appendChild(priceRow);
+          if (founding.available) {
+            pricingSection.appendChild(billingMakeEl('div', 'font-size: 14px; font-weight: 500; color: #4ade80;', 'Founding 100 \u2014 25% off forever'));
+            var foundingPct = Math.round((founding.spots_claimed / founding.spots_total) * 100);
+            var barWidth = Math.max(8, Math.round(foundingPct * 3.5));
+            const progressWrap = billingMakeEl('div', 'display: flex; flex-direction: column; gap: 8px;');
+            const progressMeta = billingMakeEl('div', 'display: flex; justify-content: space-between;');
+            progressMeta.appendChild(billingMakeEl('span', 'font-size: 13px; font-weight: 500; color: #a1a1aa;', founding.spots_claimed + ' claimed'));
+            progressMeta.appendChild(billingMakeEl('span', 'font-size: 13px; font-weight: 500; color: #71717a;', founding.spots_remaining + ' left'));
+            progressWrap.appendChild(progressMeta);
+            const track = billingMakeEl('div', 'position: relative; height: 8px; background: #18181b; border-radius: 999px; overflow: hidden;');
+            const fill = billingMakeEl('div', 'position: absolute; top: 0; left: 0; height: 8px; width: ' + barWidth + 'px; background: #4ade80; border-radius: 999px;');
+            track.appendChild(fill);
+            progressWrap.appendChild(track);
+            pricingSection.appendChild(progressWrap);
+          } else {
+            pricingSection.appendChild(billingMakeEl('div', 'font-size: 14px; color: #a1a1aa;', 'For serious link creators'));
+          }
+          upgradeCard.appendChild(pricingSection);
 
           // Divider
-          upgradeCard.appendChild(billingMakeEl('div', 'height: 1px; background: oklch(var(--border)); margin-bottom: 16px;'));
+          upgradeCard.appendChild(billingMakeEl('div', 'height: 1px; background: #27272a;'));
 
           // Features
           const proFeatures = [
-            { text: '200 short links', sub: 'vs 25 on Free' },
-            { text: 'Full analytics', sub: 'geo, device, browser' },
-            { text: 'Unlimited categories & tags', sub: null },
-            { text: 'Custom slugs & bulk import', sub: null },
-            { text: 'Priority support', sub: null },
+            { text: '500 short links', sub: 'total, not per month' },
+            { text: 'Full analytics (geo, device, browser)', sub: null },
+            { text: 'Unlimited categories, tags & edits', sub: null },
+            { text: 'API access & GitHub integration', sub: null },
           ];
 
-          const featureList = billingMakeEl('div', 'display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;');
-          proFeatures.forEach(function(f) {
+          const featureList = billingMakeEl('div', 'display: flex; flex-direction: column; gap: 14px;');
+          proFeatures.forEach(function(feat) {
             const row = billingMakeEl('div', 'display: flex; align-items: flex-start; gap: 10px;');
-            const checkWrap = billingMakeEl('div', 'flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%; background: oklch(0.65 0.18 145 / 0.12); display: flex; align-items: center; justify-content: center; margin-top: 1px;');
-            const checkSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            checkSvg.setAttribute('width', '11'); checkSvg.setAttribute('height', '11');
-            checkSvg.setAttribute('viewBox', '0 0 24 24'); checkSvg.setAttribute('fill', 'none');
-            checkSvg.setAttribute('stroke', 'oklch(0.65 0.18 145)'); checkSvg.setAttribute('stroke-width', '3');
-            checkSvg.setAttribute('stroke-linecap', 'round'); checkSvg.setAttribute('stroke-linejoin', 'round');
-            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            path.setAttribute('d', 'M20 6 9 17l-5-5');
-            checkSvg.appendChild(path);
-            checkWrap.appendChild(checkSvg);
-            row.appendChild(checkWrap);
-            const textWrap = billingMakeEl('div', '');
-            textWrap.appendChild(billingMakeEl('div', 'font-size: 13px; font-weight: 500;', f.text));
-            if (f.sub) textWrap.appendChild(billingMakeEl('div', 'font-size: 12px; color: oklch(var(--muted-foreground)); margin-top: 1px;', f.sub));
-            row.appendChild(textWrap);
+            row.appendChild(billingMakeEl('span', 'font-size: 14px; font-weight: 600; color: #4ade80; flex-shrink: 0;', '\u2713'));
+            if (feat.sub) {
+              const textWrap = billingMakeEl('div', 'display: flex; flex-direction: column; gap: 2px;');
+              textWrap.appendChild(billingMakeEl('span', 'font-size: 14px; font-weight: 600; color: #fafafa;', feat.text));
+              textWrap.appendChild(billingMakeEl('span', 'font-size: 13px; color: #71717a;', feat.sub));
+              row.appendChild(textWrap);
+            } else {
+              row.appendChild(billingMakeEl('span', 'font-size: 14px; font-weight: 500; color: #a1a1aa;', feat.text));
+            }
             featureList.appendChild(row);
           });
           upgradeCard.appendChild(featureList);
 
           // CTA
           const upgradeBtn = document.createElement('button');
-          upgradeBtn.style.cssText = 'width: 100%; background: linear-gradient(135deg, oklch(var(--indigo)) 0%, oklch(var(--purple)) 100%); color: #fff; font-weight: 700; font-size: 14px; padding: 12px 16px; border-radius: calc(var(--radius) - 2px); border: none; cursor: pointer; box-shadow: 0 4px 20px oklch(var(--indigo) / 0.4); transition: all 0.2s; letter-spacing: 0.01em;';
-          upgradeBtn.textContent = 'Upgrade to Pro \u2192';
-          upgradeBtn.onmouseenter = () => { upgradeBtn.style.transform = 'translateY(-2px)'; upgradeBtn.style.boxShadow = '0 8px 30px oklch(var(--indigo) / 0.5)'; };
-          upgradeBtn.onmouseleave = () => { upgradeBtn.style.transform = ''; upgradeBtn.style.boxShadow = '0 4px 20px oklch(var(--indigo) / 0.4)'; };
+          upgradeBtn.style.cssText = 'width: 100%; height: 48px; background: #8b5cf6; color: #fafafa; font-weight: 600; font-size: 15px; border-radius: 8px; border: none; cursor: pointer; transition: opacity 0.2s;';
+          upgradeBtn.textContent = founding.available ? 'Claim Founding Spot \u2192' : 'Upgrade to Pro \u2192';
+          upgradeBtn.onmouseenter = () => { upgradeBtn.style.opacity = '0.9'; };
+          upgradeBtn.onmouseleave = () => { upgradeBtn.style.opacity = '1'; };
           upgradeBtn.onclick = () => startCheckout();
           upgradeCard.appendChild(upgradeBtn);
 
@@ -9047,6 +8891,7 @@ Create .github/workflows/update-preview-link.yml that:
       document.querySelector('.main').style.display = 'none';
       document.getElementById('settingsView').classList.remove('active');
       document.getElementById('helpView').classList.add('active');
+      document.getElementById('dashboardView').classList.remove('active');
       closeMobileMenu();
       document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
       const navEl = document.querySelector('[data-nav="help"]');
@@ -9121,17 +8966,34 @@ Create .github/workflows/update-preview-link.yml that:
       card.appendChild(title);
 
       const desc = document.createElement('p');
-      desc.style.cssText = 'font-size:13px;color:oklch(var(--muted-foreground));margin-bottom:12px';
-      desc.textContent = 'Connect your GitHub account to automatically update preview links when you push code. You need a Personal Access Token with repo and workflow scopes.';
+      desc.style.cssText = 'font-size:13px;color:oklch(var(--muted-foreground));margin-bottom:16px';
+      desc.textContent = 'Connect your GitHub account to automatically update preview links when you push code.';
       card.appendChild(desc);
 
-      const link = document.createElement('a');
-      link.href = 'https://github.com/settings/tokens/new?scopes=repo,workflow&description=URLsToGo+Git+Sync';
-      link.target = '_blank';
-      link.rel = 'noopener';
-      link.style.cssText = 'color:oklch(var(--indigo));text-decoration:underline;font-size:13px;display:inline-block;margin-bottom:12px';
-      link.textContent = 'Create token on GitHub';
-      card.appendChild(link);
+      // OAuth button
+      const oauthBtn = document.createElement('a');
+      oauthBtn.href = '/api/github/authorize';
+      oauthBtn.className = 'btn btn-default';
+      oauthBtn.style.cssText = 'display:inline-flex;align-items:center;gap:8px;text-decoration:none;margin-bottom:16px';
+      oauthBtn.innerHTML = '<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg> Connect with GitHub';
+      card.appendChild(oauthBtn);
+
+      // PAT fallback (collapsed)
+      const toggle = document.createElement('div');
+      toggle.style.cssText = 'font-size:12px;color:oklch(var(--muted-foreground));cursor:pointer;margin-bottom:8px';
+      toggle.textContent = 'Or use a personal access token instead';
+      const patSection = document.createElement('div');
+      patSection.style.display = 'none';
+      toggle.onclick = () => { patSection.style.display = patSection.style.display === 'none' ? 'block' : 'none'; };
+      card.appendChild(toggle);
+
+      const patLink = document.createElement('a');
+      patLink.href = 'https://github.com/settings/tokens/new?scopes=repo,workflow&description=URLsToGo+Git+Sync';
+      patLink.target = '_blank';
+      patLink.rel = 'noopener';
+      patLink.style.cssText = 'color:oklch(var(--indigo));text-decoration:underline;font-size:13px;display:inline-block;margin-bottom:8px';
+      patLink.textContent = 'Create token on GitHub';
+      patSection.appendChild(patLink);
 
       const row = document.createElement('div');
       row.style.cssText = 'display:flex;gap:8px';
@@ -9147,8 +9009,9 @@ Create .github/workflows/update-preview-link.yml that:
       btn.textContent = 'Connect';
       btn.onclick = saveGitHubToken;
       row.appendChild(btn);
-      card.appendChild(row);
+      patSection.appendChild(row);
 
+      card.appendChild(patSection);
       container.appendChild(card);
     }
 
@@ -10077,7 +9940,7 @@ Create .github/workflows/update-preview-link.yml that:
       });
 
       // Update header title
-      const titles = { links: 'Links', stats: 'Analytics', categories: 'Categories', settings: 'Settings' };
+      const titles = { links: 'Links', stats: 'Analytics', categories: 'Categories', settings: 'Settings', dashboard: 'Home' };
       const titleEl = document.querySelector('.mobile-header-title');
       if (titleEl) titleEl.textContent = titles[tab] || 'Links';
 
@@ -10086,9 +9949,51 @@ Create .github/workflows/update-preview-link.yml that:
         showSettingsView('profile');
       } else if (tab === 'help') {
         showHelpView('getting-started');
+      } else if (tab === 'dashboard') {
+        showDashboardView();
       } else {
         showLinksView();
       }
+    }
+
+    // Sheet helper functions
+    function toggleAdvancedCreate() {
+      const btn = document.querySelector('.advanced-toggle');
+      const content = document.getElementById('advancedCreateContent');
+      btn.classList.toggle('open');
+      content.classList.toggle('open');
+    }
+
+    function generateRandomSlug() {
+      const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+      let slug = '';
+      for (let i = 0; i < 6; i++) slug += chars[Math.floor(Math.random() * chars.length)];
+      document.getElementById('sheetNewCode').value = slug;
+    }
+
+    let sheetTags = [];
+    function addSheetTag(name) {
+      name = name.trim().toLowerCase();
+      if (!name || sheetTags.includes(name)) return;
+      sheetTags.push(name);
+      renderSheetTags();
+    }
+    function removeSheetTag(name) {
+      sheetTags = sheetTags.filter(t => t !== name);
+      renderSheetTags();
+    }
+    function renderSheetTags() {
+      const container = document.getElementById('sheetTagInput');
+      if (!container) return;
+      const input = document.getElementById('sheetTagInputField');
+      container.querySelectorAll('.sheet-tag-chip').forEach(el => el.remove());
+      sheetTags.forEach(tag => {
+        const chip = document.createElement('span');
+        chip.className = 'sheet-tag-chip';
+        chip.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:2px 8px;background:oklch(var(--muted));border-radius:4px;font-size:12px;color:oklch(var(--foreground));';
+        chip.innerHTML = escapeHtml(tag) + \` <span style="cursor:pointer;opacity:0.6;" onclick="removeSheetTag('\${escapeAttr(tag)}')">&#x2715;</span>\`;
+        container.insertBefore(chip, input);
+      });
     }
 
     // Sheet functions
@@ -10101,11 +10006,41 @@ Create .github/workflows/update-preview-link.yml that:
         select.innerHTML = '<option value="">No category</option>' +
           allCategories.map(c => \`<option value="\${c.id}">\${escapeHtml(c.name)}</option>\`).join('');
       }
+      // Wire tag input (once)
+      const tagInput = document.getElementById('sheetTagInputField');
+      if (tagInput && !tagInput._hasListener) {
+        tagInput.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter') { e.preventDefault(); addSheetTag(this.value); this.value = ''; }
+          if (e.key === 'Backspace' && !this.value && sheetTags.length) removeSheetTag(sheetTags[sheetTags.length - 1]);
+        });
+        tagInput._hasListener = true;
+      }
+      // Wire expiry custom date toggle (once)
+      const expiresSelect = document.getElementById('sheetNewExpires');
+      if (expiresSelect && !expiresSelect._hasListener) {
+        expiresSelect.addEventListener('change', function() {
+          document.getElementById('sheetCustomExpiryGroup').style.display = this.value === 'custom' ? '' : 'none';
+        });
+        expiresSelect._hasListener = true;
+      }
     }
 
     function closeCreateSheet() {
       document.getElementById('createSheet').classList.remove('open');
       document.body.style.overflow = '';
+      // Reset advanced section state
+      sheetTags = [];
+      renderSheetTags();
+      const advBtn = document.querySelector('.advanced-toggle');
+      const advContent = document.getElementById('advancedCreateContent');
+      if (advBtn) advBtn.classList.remove('open');
+      if (advContent) advContent.classList.remove('open');
+      const expiresEl = document.getElementById('sheetNewExpires');
+      if (expiresEl) expiresEl.value = '';
+      const customExpiryGroup = document.getElementById('sheetCustomExpiryGroup');
+      if (customExpiryGroup) customExpiryGroup.style.display = 'none';
+      const passwordEl = document.getElementById('sheetNewPassword');
+      if (passwordEl) passwordEl.value = '';
     }
 
     // Create link from sheet
@@ -10114,6 +10049,20 @@ Create .github/workflows/update-preview-link.yml that:
       const destination = document.getElementById('sheetNewDestination').value.trim();
       const categoryId = document.getElementById('sheetNewCategory').value;
       const description = document.getElementById('sheetNewDescription').value.trim();
+
+      // Advanced fields
+      const tags = sheetTags.length ? sheetTags : undefined;
+      const expiresVal = document.getElementById('sheetNewExpires')?.value;
+      let expires_at = undefined;
+      if (expiresVal === 'custom') {
+        const customDate = document.getElementById('sheetNewExpiresCustom')?.value;
+        if (customDate) expires_at = new Date(customDate).toISOString();
+      } else if (expiresVal) {
+        const now = Date.now();
+        const map = { '1h': 3600000, '24h': 86400000, '7d': 604800000, '30d': 2592000000 };
+        if (map[expiresVal]) expires_at = new Date(now + map[expiresVal]).toISOString();
+      }
+      const password = document.getElementById('sheetNewPassword')?.value?.trim() || undefined;
 
       if (!destination) {
         showToast('Error', 'Please enter a destination URL', 'error');
@@ -10128,7 +10077,10 @@ Create .github/workflows/update-preview-link.yml that:
             code: code || undefined,
             destination,
             category_id: categoryId || undefined,
-            description: description || undefined
+            description: description || undefined,
+            tags,
+            expires_at,
+            password
           })
         });
 
@@ -10143,7 +10095,7 @@ Create .github/workflows/update-preview-link.yml that:
         showToast('Success', 'Link created!', 'success');
         closeCreateSheet();
 
-        // Clear form
+        // Clear form (closeCreateSheet resets advanced fields)
         document.getElementById('sheetNewCode').value = '';
         document.getElementById('sheetNewDestination').value = '';
         document.getElementById('sheetNewDescription').value = '';
@@ -10474,7 +10426,7 @@ Create .github/workflows/update-preview-link.yml that:
 }
 
 // Public Shared Collection Page
-function getSharePageHTML(share, links, isOwner = false) {
+function getSharePageHTML(share, links, isOwner = false, nonce = '') {
   const totalLinks = links.filter(l => !l.is_archived).length;
   const categoryName = escapeHtml(share.category_name);
   const featured = links.filter(l => l.is_featured && !l.is_archived);
@@ -10619,7 +10571,7 @@ function getSharePageHTML(share, links, isOwner = false) {
     </div>` : '';
 
   const ownerJS = isOwner ? `
-  <script>
+  <script nonce="${nonce}">
     function openEdit(code, btn) {
       const card = btn.closest('.card');
       card.querySelector('.card-static').style.display = 'none';

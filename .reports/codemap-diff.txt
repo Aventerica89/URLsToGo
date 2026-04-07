@@ -1,0 +1,24 @@
+Codemap Generation Report — 2026-03-27T10:30:00Z
+
+Status: CREATED (no previous codemaps existed)
+Change percentage: 100% (new)
+
+Files generated:
+  codemaps/architecture.md  — Overall architecture, stack, deployment, file map
+  codemaps/backend.md       — All API routes, auth functions, utility functions
+  codemaps/frontend.md      — SPA views, UI components, design system, key JS functions
+  codemaps/data.md          — D1 schemas, plan limits, Stripe resources
+
+Source analyzed:
+  src/index.js              10,704 lines
+  wrangler.toml             17 lines
+  package.json              dependencies only
+  migrations*.sql           5 files
+
+Key architecture facts captured:
+  - Single-file Cloudflare Worker (no build step)
+  - 40+ API routes (links, categories, analytics, billing, GitHub, keys, settings)
+  - Clerk auth with FAPI proxy at /__clerk/*
+  - ADMIN_EMAIL bypass for 9999 link limit
+  - Add Link modal: desktop dialog (≥769px), mobile bottom sheet
+  - 3 pricing tiers: Free/25, Pro/500, Business/2000 (concurrent links)
